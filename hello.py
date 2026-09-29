@@ -877,23 +877,29 @@ async def main():
 
     reaction_state = [0]
 
-    dispatcher.message.register(
-        lambda message: handle_message(
+    async def message_handler(message):
+        await handle_message(
             message,
             database,
             developers,
             queue,
             reaction_state,
         )
-    )
 
-    dispatcher.callback_query.register(
-        lambda callback: handle_callback(
+    async def callback_handler(callback):
+        await handle_callback(
             callback,
             database,
             developers,
             reaction_state,
-        ),
+        )
+
+    dispatcher.message.register(
+        message_handler
+    )
+
+    dispatcher.callback_query.register(
+        callback_handler,
         F.data.startswith("mode:"),
     )
 
