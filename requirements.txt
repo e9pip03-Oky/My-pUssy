@@ -1,0 +1,5 @@
+aiogram
+yt-dlp
+aiofiles
+aiohttp
+aiodns
