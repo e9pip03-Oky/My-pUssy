@@ -1,201 +1,168 @@
-import asyncio
 import re
 from pathlib import Path
-
-from aiogram.enums import ChatType
-
-
-TELEGRAM_LINK_PATTERN = re.compile(
-    r"^(?:https?://)?"
-    r"(?:www\.)?"
-    r"(?:t\.me|telegram\.me|telegram\.dog)"
-    r"(?:/|$)",
-    re.IGNORECASE,
-)
+from urllib.parse import urlparse
 
 
-class DownloadQueue:
-    def __init__(
-        self,
-        max_active=3,
-        max_waiting=3,
-    ):
-        self.max_active = max_active
-        self.max_waiting = max_waiting
-        self.states = {}
-        self.condition = asyncio.Condition()
+BASE_FOLDER = Path("downloads")
 
-    def _get_state(self, scope_key):
-        return self.states.setdefault(
-            scope_key,
-            {
-                "active": 0,
-                "waiting": 0,
-            },
-        )
-
-    async def reserve(self, scope_key):
-        async with self.condition:
-            state = self._get_state(scope_key)
-
-            if state["active"] < self.max_active:
-                state["active"] += 1
-                return "active"
-
-            if state["waiting"] < self.max_waiting:
-                state["waiting"] += 1
-                return "waiting"
-
-            return None
-
-    async def acquire_waiting(self, scope_key):
-        async with self.condition:
-            state = self._get_state(scope_key)
-
-            while state["active"] >= self.max_active:
-                await self.condition.wait()
-
-            state["waiting"] -= 1
-            state["active"] += 1
-
-    async def release(self, scope_key):
-        async with self.condition:
-            state = self._get_state(scope_key)
-
-            if state["active"] > 0:
-                state["active"] -= 1
-
-            if (
-                state["active"] == 0
-                and state["waiting"] == 0
-            ):
-                self.states.pop(
-                    scope_key,
-                    None,
-                )
-
-            self.condition.notify_all()
+BLOCKED_TELEGRAM_HOSTS = {
+    "t.me",
+    "telegram.me",
+    "telegram.dog",
+}
 
 
-def get_mode_scope_key(message):
-    if message.chat.type == ChatType.PRIVATE:
-        return f"private:{message.from_user.id}"
-
-    if (
-        message.chat.type == ChatType.SUPERGROUP
-        and message.message_thread_id
-    ):
-        return (
-            f"chat:{message.chat.id}:"
-            f"topic:{message.message_thread_id}"
-        )
-
-    return f"chat:{message.chat.id}"
-
-
-def get_queue_scope_key(message):
-    if message.chat.type == ChatType.PRIVATE:
-        return f"user:{message.from_user.id}"
-
-    return f"chat:{message.chat.id}"
-
-
-def is_telegram_link(url):
-    if url.lower().startswith("tg://"):
-        return True
-
-    return bool(
-        TELEGRAM_LINK_PATTERN.match(url)
-    )
-
-
-def _clean_filename_part(value):
-    if not value:
-        return ""
-
-    value = str(value).lower()
-
-    result = []
-
-    for character in value:
-        if character.isascii():
-            if character.isalpha():
-                if character.upper() in "ATFGUJNML":
-                    result.append(character.upper())
-                else:
-                    result.append(character)
-            elif character.isdigit():
-                result.append(character)
-            elif character in "_&- ":
-                result.append(character)
-
-    return "".join(result).strip()
-
-
-def _get_video_date(info):
-    timestamp = info.get("timestamp")
-
-    if timestamp:
-        import datetime
-
-        date = datetime.datetime.fromtimestamp(
-            timestamp,
-            datetime.timezone.utc,
-        )
-        return (
-            f"{date.year}-"
-            f"{date.month}-"
-            f"{date.day}"
-        )
-
-    upload_date = info.get("upload_date")
-
-    if upload_date and len(upload_date) == 8:
-        return (
-            f"{upload_date[:4]}-"
-            f"{int(upload_date[4:6])}-"
-            f"{int(upload_date[6:8])}"
-        )
-
-    return ""
-
-
-def build_filename(info):
-    publisher = (
-        info.get("publisher")
-        or info.get("channel")
-        or info.get("uploader")
-        or ""
-    )
-
-    title = info.get("title") or ""
-
-    publisher = _clean_filename_part(
-        publisher
-    )
-    title = _clean_filename_part(title)
-
-    if not title:
-        title = _get_video_date(info)
-
-    if publisher and title:
-        return f"{publisher} - {title}"
-
-    return publisher or title
-
-
-def create_download_directory(
-    base_directory,
-    user_id,
-):
-    directory = (
-        Path(base_directory)
-        / str(user_id)
-    )
-
-    directory.mkdir(
+def initialize_base_folder() -> None:
+    BASE_FOLDER.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    return directory
+
+def context_folder(
+    context_id: int,
+) -> Path:
+    initialize_base_folder()
+
+    folder = (
+        BASE_FOLDER
+        / str(abs(context_id))
+    )
+
+    folder.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    return folder
+
+
+def is_blocked_telegram_url(
+    url: str,
+) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+
+    hostname = (
+        parsed.hostname
+        or ""
+    ).lower().rstrip(".")
+
+    if hostname in BLOCKED_TELEGRAM_HOSTS:
+        return True
+
+    return hostname.endswith(
+        ".t.me"
+    )
+
+
+def extract_urls(
+    text: str,
+) -> list[str]:
+    if not text:
+        return []
+
+    return re.findall(
+        r"https?://[^\s<>]+",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
+def get_allowed_urls(
+    text: str,
+) -> list[str]:
+    return [
+        url
+        for url in extract_urls(text)
+        if not is_blocked_telegram_url(url)
+    ]
+
+
+def normalize_text(
+    value: str,
+) -> str:
+    result = []
+
+    uppercase_letters = set(
+        "ATFGUJNML"
+    )
+
+    for char in value:
+        if char.isascii() and char.isalpha():
+            if char.upper() in uppercase_letters:
+                result.append(
+                    char.upper()
+                )
+            else:
+                result.append(
+                    char.lower()
+                )
+            continue
+
+        if char in " _&-":
+            result.append(char)
+
+    return "".join(result)
+
+
+def clean_name(
+    value: str,
+) -> str:
+    value = normalize_text(value)
+
+    value = re.sub(
+        r"\s+",
+        " ",
+        value,
+    )
+
+    return value.strip(
+        " -_"
+    )
+
+
+def make_filename(
+    publisher: str | None,
+    channel: str | None,
+    title: str,
+    extension: str,
+) -> str:
+    owner = clean_name(
+        publisher or channel or ""
+    )
+
+    title = clean_name(title)
+
+    if owner and title:
+        filename = (
+            f"{owner} - {title}"
+        )
+    else:
+        filename = owner or title
+
+    extension = extension.lstrip(".")
+
+    if extension:
+        filename = (
+            f"{filename}.{extension}"
+        )
+
+    return filename
+
+
+def cleanup_file(
+    file_path: str | Path | None,
+) -> None:
+    if not file_path:
+        return
+
+    path = Path(file_path)
+
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass

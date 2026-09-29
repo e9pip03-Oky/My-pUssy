@@ -1,231 +1,146 @@
 import asyncio
-import shutil
+import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import yt_dlp
 
 
-def _get_ffmpeg():
-    ffmpeg = shutil.which("ffmpeg")
-
-    if not ffmpeg:
-        raise RuntimeError
-
-    return ffmpeg
-
-
-def extract_info(url):
-    options = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "extract_flat": False,
-    }
-
-    with yt_dlp.YoutubeDL(options) as downloader:
-        return downloader.extract_info(
-            url,
-            download=False,
-        )
+FFMPEG = os.getenv(
+    "FFMPEG",
+    "ffmpeg",
+)
 
 
 def _download(
-    url,
-    output_template,
-    selector,
-):
-    options = {
-        "format": selector,
-        "outtmpl": output_template,
+    url: str,
+    folder: Path,
+    mode: str,
+) -> dict[str, Any]:
+    if mode == "voice":
+        format_selector = "bestaudio/best"
+    else:
+        format_selector = (
+            "bestvideo+bestaudio/best"
+        )
+
+    options: dict[str, Any] = {
+        "format": format_selector,
+        "outtmpl": str(
+            folder / "%(id)s.%(ext)s"
+        ),
+        "noplaylist": False,
         "quiet": True,
         "no_warnings": True,
-        "noplaylist": True,
         "restrictfilenames": False,
+        "windowsfilenames": False,
+        "overwrites": True,
     }
 
-    with yt_dlp.YoutubeDL(options) as downloader:
-        return downloader.extract_info(
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(
             url,
             download=True,
         )
 
+    return info
 
-def run_normal_download(
-    url,
-    output_template,
-):
-    return asyncio.to_thread(
+
+async def download(
+    url: str,
+    folder: Path,
+    mode: str,
+) -> dict[str, Any]:
+    return await asyncio.to_thread(
         _download,
         url,
-        output_template,
-        "bestvideo,bestaudio/best",
+        folder,
+        mode,
     )
 
 
-def run_voice_download(
-    url,
-    output_template,
-):
-    return asyncio.to_thread(
-        _download,
-        url,
-        output_template,
-        "bestaudio",
-    )
+def find_downloaded_files(
+    folder: Path,
+) -> list[Path]:
+    if not folder.exists():
+        return []
+
+    return [
+        path
+        for path in folder.iterdir()
+        if path.is_file()
+    ]
 
 
-def get_requested_downloads(result):
-    requested = result.get(
-        "requested_downloads"
-    )
-
-    if requested:
-        return [
-            item
-            for item in requested
-            if item
-        ]
-
-    return [result]
-
-
-def get_video_download(result):
-    for item in get_requested_downloads(result):
-        if item.get("vcodec") not in (
-            None,
-            "none",
-        ):
-            return item
-
-    return None
-
-
-def get_audio_download(result):
-    for item in get_requested_downloads(result):
-        if item.get("acodec") not in (
-            None,
-            "none",
-        ):
-            return item
-
-    return None
-
-
-def get_download_path(download):
-    filepath = download.get("filepath")
-
-    if filepath:
-        return Path(filepath)
-
-    filename = download.get("_filename")
-
-    if filename:
-        return Path(filename)
-
-    return None
-
-
-def get_video_container(video):
-    container = video.get("container")
-
-    if container:
-        return container
-
-    return video.get("ext")
-
-
-def _merge_video_audio(
-    video_path,
-    audio_path,
-    output_path,
-    video_info,
-):
-    ffmpeg = _get_ffmpeg()
-    container = get_video_container(
-        video_info
-    )
-
-    if not container:
-        raise RuntimeError
-
+async def merge_copy(
+    video_file: Path,
+    audio_file: Path,
+    output_file: Path,
+) -> Path:
     command = [
-        ffmpeg,
+        FFMPEG,
         "-y",
         "-i",
-        str(video_path),
+        str(video_file),
         "-i",
-        str(audio_path),
+        str(audio_file),
         "-map",
         "0:v:0",
         "-map",
         "1:a:0",
         "-c",
         "copy",
-        "-f",
-        container,
-        str(output_path),
+        str(output_file),
     ]
 
-    subprocess.run(
-        command,
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+    process = (
+        await asyncio.create_subprocess_exec(
+            *command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     )
 
-    return output_path
+    return_code = await process.wait()
+
+    if return_code != 0:
+        raise RuntimeError(
+            "FFmpeg merge failed"
+        )
+
+    return output_file
 
 
-def run_merge(
-    video_path,
-    audio_path,
-    output_path,
-    video_info,
-):
-    return asyncio.to_thread(
-        _merge_video_audio,
-        video_path,
-        audio_path,
-        output_path,
-        video_info,
-    )
-
-
-def _voice_conversion(
-    audio_path,
-    output_path,
-):
-    ffmpeg = _get_ffmpeg()
-
+async def convert_to_voice(
+    input_file: Path,
+    output_file: Path,
+) -> Path:
     command = [
-        ffmpeg,
+        FFMPEG,
         "-y",
         "-i",
-        str(audio_path),
+        str(input_file),
         "-c:a",
         "libopus",
         "-f",
         "ogg",
-        str(output_path),
+        str(output_file),
     ]
 
-    subprocess.run(
-        command,
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+    process = (
+        await asyncio.create_subprocess_exec(
+            *command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     )
 
-    return output_path
+    return_code = await process.wait()
 
+    if return_code != 0:
+        raise RuntimeError(
+            "FFmpeg voice conversion failed"
+        )
 
-def run_voice_conversion(
-    audio_path,
-    output_path,
-):
-    return asyncio.to_thread(
-        _voice_conversion,
-        audio_path,
-        output_path,
-    )
+    return output_file
