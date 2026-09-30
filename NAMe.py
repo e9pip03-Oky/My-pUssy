@@ -1,168 +1,120 @@
+import asyncio
 import re
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-
-BASE_FOLDER = Path("downloads")
-
-BLOCKED_TELEGRAM_HOSTS = {
+TELEGRAM_HOSTS = {
     "t.me",
     "telegram.me",
-    "telegram.dog",
+    "www.telegram.me",
 }
 
 
-def initialize_base_folder() -> None:
-    BASE_FOLDER.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+class DownloadQueue:
+    def __init__(self, running_limit=3, waiting_limit=3):
+        self.running_limit = running_limit
+        self.waiting_limit = waiting_limit
+        self.running = 0
+        self.waiting = 0
+        self.condition = asyncio.Condition()
+
+    async def acquire(self):
+        async with self.condition:
+            if self.running < self.running_limit:
+                self.running += 1
+                return True
+
+            if self.waiting >= self.waiting_limit:
+                return False
+
+            self.waiting += 1
+            try:
+                while self.running >= self.running_limit:
+                    await self.condition.wait()
+                self.waiting -= 1
+                self.running += 1
+                return True
+            except BaseException:
+                self.waiting -= 1
+                self.condition.notify_all()
+                raise
+
+    async def release(self):
+        async with self.condition:
+            self.running = max(0, self.running - 1)
+            self.condition.notify()
 
 
-def context_folder(
-    context_id: int,
-) -> Path:
-    initialize_base_folder()
+class QueueManager:
+    def __init__(self):
+        self.queues = {}
+        self.lock = asyncio.Lock()
 
-    folder = (
-        BASE_FOLDER
-        / str(abs(context_id))
-    )
+    async def acquire(self, scope):
+        async with self.lock:
+            queue = self.queues.setdefault(scope, DownloadQueue())
+        return queue if await queue.acquire() else None
 
-    folder.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    return folder
-
-
-def is_blocked_telegram_url(
-    url: str,
-) -> bool:
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return False
-
-    hostname = (
-        parsed.hostname
-        or ""
-    ).lower().rstrip(".")
-
-    if hostname in BLOCKED_TELEGRAM_HOSTS:
-        return True
-
-    return hostname.endswith(
-        ".t.me"
-    )
+    async def release(self, scope, queue):
+        await queue.release()
+        async with self.lock:
+            if queue.running == 0 and queue.waiting == 0:
+                self.queues.pop(scope, None)
 
 
-def extract_urls(
-    text: str,
-) -> list[str]:
-    if not text:
-        return []
-
-    return re.findall(
-        r"https?://[^\s<>]+",
-        text,
-        flags=re.IGNORECASE,
-    )
+def scope_key(chat_type, chat_id, user_id, thread_id):
+    if chat_type == "private":
+        return f"private:{user_id}"
+    if thread_id is not None:
+        return f"topic:{chat_id}:{thread_id}"
+    return f"chat:{chat_id}"
 
 
-def get_allowed_urls(
-    text: str,
-) -> list[str]:
-    return [
-        url
-        for url in extract_urls(text)
-        if not is_blocked_telegram_url(url)
-    ]
+def is_telegram_link(text):
+    parsed = urlparse(text.strip())
+    return parsed.netloc.lower() in TELEGRAM_HOSTS
 
 
-def normalize_text(
-    value: str,
-) -> str:
+def _clean(value):
+    value = value or ""
     result = []
-
-    uppercase_letters = set(
-        "ATFGUJNML"
-    )
+    uppercase = set("ATFGUJNML")
 
     for char in value:
         if char.isascii() and char.isalpha():
-            if char.upper() in uppercase_letters:
-                result.append(
-                    char.upper()
-                )
-            else:
-                result.append(
-                    char.lower()
-                )
-            continue
-
-        if char in " _&-":
+            char = char.lower()
+            if char.upper() in uppercase:
+                char = char.upper()
+            result.append(char)
+        elif char.isalnum() or char.isspace() or char in "_&-":
             result.append(char)
 
-    return "".join(result)
+    return re.sub(r"\s+", " ", "".join(result)).strip()
 
 
-def clean_name(
-    value: str,
-) -> str:
-    value = normalize_text(value)
+def make_filename(info):
+    publisher = info.get("uploader") or info.get("channel") or ""
+    title = info.get("title")
 
-    value = re.sub(
-        r"\s+",
-        " ",
-        value,
-    )
+    if not title:
+        date = info.get("upload_date")
+        if date and len(date) == 8:
+            title = f"{int(date[:4])}/{int(date[4:6])}/{int(date[6:8])}"
+        else:
+            timestamp = info.get("timestamp")
+            title = (
+                datetime.fromtimestamp(timestamp).strftime("%Y/%-m/%-d")
+                if timestamp
+                else "download"
+            )
 
-    return value.strip(
-        " -_"
-    )
-
-
-def make_filename(
-    publisher: str | None,
-    channel: str | None,
-    title: str,
-    extension: str,
-) -> str:
-    owner = clean_name(
-        publisher or channel or ""
-    )
-
-    title = clean_name(title)
-
-    if owner and title:
-        filename = (
-            f"{owner} - {title}"
-        )
-    else:
-        filename = owner or title
-
-    extension = extension.lstrip(".")
-
-    if extension:
-        filename = (
-            f"{filename}.{extension}"
-        )
-
-    return filename
+    publisher = _clean(publisher)
+    title = _clean(title)
+    return " - ".join(part for part in (publisher, title) if part) or "download"
 
 
-def cleanup_file(
-    file_path: str | Path | None,
-) -> None:
-    if not file_path:
-        return
-
-    path = Path(file_path)
-
-    try:
-        if path.exists():
-            path.unlink()
-    except OSError:
-        pass
+def job_directory(base, scope):
+    path = Path(base) / re.sub(r"-", "", str(scope))
+    path.mkdir(parents=True, exist_ok=True)
+    return path

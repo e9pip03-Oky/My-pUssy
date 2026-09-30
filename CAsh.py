@@ -1,218 +1,128 @@
 import sqlite3
-
-import Reply
-
-
-DATABASE = "bot.db"
+import threading
+from pathlib import Path
 
 
-def get_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(
-        DATABASE,
-        timeout=30,
-    )
-    connection.row_factory = sqlite3.Row
-    return connection
+class Database:
+    def __init__(self, path):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.connection = sqlite3.connect(
+            path,
+            check_same_thread=False,
+        )
+        self.lock = threading.RLock()
+        self._create_tables()
 
+    def _create_tables(self):
+        with self.lock, self.connection:
+            self.connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS modes (
+                    scope TEXT PRIMARY KEY,
+                    mode TEXT NOT NULL
+                );
 
-def initialize_database() -> None:
-    connection = get_connection()
+                CREATE TABLE IF NOT EXISTS replies (
+                    user_id INTEGER PRIMARY KEY,
+                    position INTEGER NOT NULL DEFAULT 0
+                );
 
-    try:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS mode_state (
-                context_key TEXT PRIMARY KEY,
-                mode TEXT NOT NULL
+                CREATE TABLE IF NOT EXISTS developer_rotation (
+                    dimension TEXT PRIMARY KEY,
+                    position INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS normal_file_ids (
+                    cache_key TEXT PRIMARY KEY,
+                    file_id TEXT NOT NULL,
+                    file_name TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS voice_file_ids (
+                    cache_key TEXT PRIMARY KEY,
+                    file_id TEXT NOT NULL,
+                    file_name TEXT
+                );
+                """
             )
-            """
-        )
-
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS reply_state (
-                user_id INTEGER PRIMARY KEY,
-                reply_index INTEGER NOT NULL
+            self.connection.executemany(
+                "INSERT OR IGNORE INTO developer_rotation(dimension) VALUES (?)",
+                (("id",), ("name",), ("style",)),
             )
-            """
-        )
 
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS file_cache (
-                cache_key TEXT PRIMARY KEY,
-                file_id TEXT NOT NULL
+    def get_mode(self, scope, default):
+        with self.lock:
+            row = self.connection.execute(
+                "SELECT mode FROM modes WHERE scope = ?",
+                (scope,),
+            ).fetchone()
+        return row[0] if row else default
+
+    def set_mode(self, scope, mode):
+        with self.lock, self.connection:
+            self.connection.execute(
+                """
+                INSERT INTO modes(scope, mode) VALUES (?, ?)
+                ON CONFLICT(scope) DO UPDATE SET mode = excluded.mode
+                """,
+                (scope, mode),
             )
-            """
-        )
 
-        connection.commit()
-    finally:
-        connection.close()
-
-
-def get_mode(context_key: str) -> str:
-    connection = get_connection()
-
-    try:
-        row = connection.execute(
-            """
-            SELECT mode
-            FROM mode_state
-            WHERE context_key = ?
-            """,
-            (context_key,),
-        ).fetchone()
-
-        if row is None:
-            return "normal"
-
-        return row["mode"]
-    finally:
-        connection.close()
-
-
-def set_mode(
-    context_key: str,
-    mode: str,
-) -> None:
-    connection = get_connection()
-
-    try:
-        connection.execute(
-            """
-            INSERT INTO mode_state (
-                context_key,
-                mode
+    def next_reply(self, user_id, total):
+        with self.lock, self.connection:
+            row = self.connection.execute(
+                "SELECT position FROM replies WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            position = row[0] if row else 0
+            self.connection.execute(
+                """
+                INSERT INTO replies(user_id, position) VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET position = excluded.position
+                """,
+                (user_id, (position + 1) % total),
             )
-            VALUES (?, ?)
-            ON CONFLICT(context_key)
-            DO UPDATE SET mode = excluded.mode
-            """,
-            (
-                context_key,
-                mode,
-            ),
-        )
+        return position
 
-        connection.commit()
-    finally:
-        connection.close()
+    def next_developer(self, totals):
+        values = {}
+        with self.lock, self.connection:
+            for dimension, total in totals.items():
+                row = self.connection.execute(
+                    "SELECT position FROM developer_rotation WHERE dimension = ?",
+                    (dimension,),
+                ).fetchone()
+                position = row[0] if row else 0
+                values[dimension] = position % total
+                self.connection.execute(
+                    "UPDATE developer_rotation SET position = ? WHERE dimension = ?",
+                    ((position + 1) % total, dimension),
+                )
+        return values
 
+    def get_file_id(self, mode, cache_key):
+        table = "normal_file_ids" if mode == "normal" else "voice_file_ids"
+        with self.lock:
+            row = self.connection.execute(
+                f"SELECT file_id FROM {table} WHERE cache_key = ?",
+                (cache_key,),
+            ).fetchone()
+        return row[0] if row else None
 
-def toggle_mode(context_key: str) -> str:
-    current_mode = get_mode(context_key)
-
-    new_mode = (
-        "voice"
-        if current_mode == "normal"
-        else "normal"
-    )
-
-    set_mode(
-        context_key,
-        new_mode,
-    )
-
-    return new_mode
-
-
-def get_next_reply(user_id: int) -> str:
-    connection = get_connection()
-
-    try:
-        row = connection.execute(
-            """
-            SELECT reply_index
-            FROM reply_state
-            WHERE user_id = ?
-            """,
-            (user_id,),
-        ).fetchone()
-
-        index = (
-            0
-            if row is None
-            else row["reply_index"]
-        )
-
-        reply = Reply.ALTERNATING_REPLIES[index]
-
-        next_index = (
-            index + 1
-        ) % len(Reply.ALTERNATING_REPLIES)
-
-        connection.execute(
-            """
-            INSERT INTO reply_state (
-                user_id,
-                reply_index
+    def save_file_id(self, mode, cache_key, file_id, file_name):
+        table = "normal_file_ids" if mode == "normal" else "voice_file_ids"
+        with self.lock, self.connection:
+            self.connection.execute(
+                f"""
+                INSERT INTO {table}(cache_key, file_id, file_name)
+                VALUES (?, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    file_id = excluded.file_id,
+                    file_name = excluded.file_name
+                """,
+                (cache_key, file_id, file_name),
             )
-            VALUES (?, ?)
-            ON CONFLICT(user_id)
-            DO UPDATE SET
-                reply_index = excluded.reply_index
-            """,
-            (
-                user_id,
-                next_index,
-            ),
-        )
 
-        connection.commit()
-
-        return reply
-    finally:
-        connection.close()
-
-
-def get_file_id(
-    cache_key: str,
-) -> str | None:
-    connection = get_connection()
-
-    try:
-        row = connection.execute(
-            """
-            SELECT file_id
-            FROM file_cache
-            WHERE cache_key = ?
-            """,
-            (cache_key,),
-        ).fetchone()
-
-        if row is None:
-            return None
-
-        return row["file_id"]
-    finally:
-        connection.close()
-
-
-def set_file_id(
-    cache_key: str,
-    file_id: str,
-) -> None:
-    connection = get_connection()
-
-    try:
-        connection.execute(
-            """
-            INSERT INTO file_cache (
-                cache_key,
-                file_id
-            )
-            VALUES (?, ?)
-            ON CONFLICT(cache_key)
-            DO UPDATE SET
-                file_id = excluded.file_id
-            """,
-            (
-                cache_key,
-                file_id,
-            ),
-        )
-
-        connection.commit()
-    finally:
-        connection.close()
+    def close(self):
+        with self.lock:
+            self.connection.close()
