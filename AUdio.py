@@ -1,97 +1,62 @@
+import asyncio
 import os
 from aiogram import Bot
-from aiogram.types import FSInputFile, Message
-import CAsh
-import ediT
-import NAMe
-import Reply
-import yTFMe
+from aiogram.types import Message
 
 
-def get_replied_media_file_id(message: Message):
-    if not message.reply_to_message:
+async def extract_file_id_and_download(message: Message, bot: Bot, target_dir: str) -> str:
+    file_id = None
+
+    if message.voice:
+        file_id = message.voice.file_id
+    elif message.audio:
+        file_id = message.audio.file_id
+    elif message.video:
+        file_id = message.video.file_id
+    elif message.video_note:
+        file_id = message.video_note.file_id
+    elif message.document and message.document.mime_type:
+        if message.document.mime_type.startswith(("audio/", "video/")):
+            file_id = message.document.file_id
+
+    if not file_id:
         return None
 
-    replied = message.reply_to_message
+    file_info = await bot.get_file(file_id)
+    download_path = os.path.join(target_dir, os.path.basename(file_info.file_path))
+    await bot.download_file(file_info.file_path, download_path)
 
-    if replied.video:
-        return replied.video.file_id
-    if replied.audio:
-        return replied.audio.file_id
-    if replied.voice:
-        return replied.voice.file_id
-    if replied.video_note:
-        return replied.video_note.file_id
-    if replied.document:
-        return replied.document.file_id
+    return download_path
 
+
+async def convert_to_voice(input_path: str, output_path: str) -> str:
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vn",
+        "-c:a", "libopus",
+        "-f", "ogg",
+        output_path
+    ]
+
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    await process.communicate()
+
+    if os.path.exists(output_path):
+        return output_path
     return None
 
 
-async def handle_audio_conversion_request(message: Message, bot: Bot) -> bool:
-    if not message.reply_to_message:
-        return False
+async def process_media_to_voice(message: Message, bot: Bot, target_dir: str) -> str:
+    downloaded_file = await extract_file_id_and_download(message, bot, target_dir)
+    if not downloaded_file:
+        return None
 
-    if not message.text or message.text.strip() != Reply.START_CONVERT_TEXT:
-        return False
+    output_voice_path = os.path.join(target_dir, "converted_voice.ogg")
+    final_file = await convert_to_voice(downloaded_file, output_voice_path)
 
-    file_id = get_replied_media_file_id(message)
-    if not file_id:
-        return False
-
-    user_id = message.from_user.id
-
-    async with ediT.USER_LOCKS[user_id]:
-        chat_id = message.chat.id
-        thread_id = message.message_thread_id
-
-        cache_key = f"conv_voice:{file_id}"
-        cached_voice_id = await CAsh.get_cached_file(cache_key, "voice")
-
-        if cached_voice_id:
-            sent_msg = await bot.send_voice(
-                chat_id=chat_id,
-                voice=cached_voice_id,
-                reply_to_message_id=message.message_id
-            )
-            await ediT.store_voice_file_id(
-                message_id=sent_msg.message_id,
-                chat_id=chat_id,
-                user_id=bot.id,
-                file_id=sent_msg.voice.file_id,
-                is_bot=True
-            )
-            return True
-
-        with NAMe.auto_managed_download_dir(chat_id, user_id, thread_id) as download_dir:
-            telegram_file = await bot.get_file(file_id)
-            
-            ext = os.path.splitext(telegram_file.file_path)[1]
-            if not ext:
-                ext = ".tmp"
-
-            input_path = os.path.join(download_dir, f"input_media{ext}")
-            output_path = os.path.join(download_dir, "output_voice.ogg")
-
-            await bot.download_file(telegram_file.file_path, destination=input_path)
-
-            success = await yTFMe.async_convert_to_voice_ogg(input_path, output_path)
-
-            if success and os.path.exists(output_path):
-                voice_file = FSInputFile(output_path)
-                sent_msg = await bot.send_voice(
-                    chat_id=chat_id,
-                    voice=voice_file,
-                    reply_to_message_id=message.message_id
-                )
-                await CAsh.save_cached_file(cache_key, "voice", sent_msg.voice.file_id)
-                await ediT.store_voice_file_id(
-                    message_id=sent_msg.message_id,
-                    chat_id=chat_id,
-                    user_id=bot.id,
-                    file_id=sent_msg.voice.file_id,
-                    is_bot=True
-                )
-                return True
-
-        return False
+    return final_file

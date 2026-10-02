@@ -1,7 +1,6 @@
 import asyncio
 import gc
 import os
-import subprocess
 from yt_dlp import YoutubeDL
 
 
@@ -17,33 +16,6 @@ def cleanup_file(file_path: str):
         pass
     finally:
         cleanup_memory()
-
-
-def convert_to_voice_ogg(input_path: str, output_path: str) -> bool:
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", input_path,
-        "-vn",
-        "-c:a", "libopus",
-        "-f", "ogg",
-        output_path
-    ]
-    try:
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-        return True
-    except Exception:
-        return False
-
-
-async def async_convert_to_voice_ogg(input_path: str, output_path: str) -> bool:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        None,
-        convert_to_voice_ogg,
-        input_path,
-        output_path
-    )
 
 
 def _extract_and_download(url: str, out_template: str, mode: str = "normal") -> dict:

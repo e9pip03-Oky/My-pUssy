@@ -56,27 +56,6 @@ async def start_handler(message: types.Message):
     await CAsh.add_user(message.from_user.id)
 
 
-@dp.message(F.voice)
-async def voice_tracker_handler(message: types.Message):
-    await ediT.store_voice_file_id(
-        message_id=message.message_id,
-        chat_id=message.chat.id,
-        user_id=message.from_user.id,
-        file_id=message.voice.file_id,
-        is_bot=message.from_user.is_bot
-    )
-
-
-@dp.message(F.reply_to_message & F.text.contains(Reply.VOICE_EDIT_TEXT))
-async def voice_edit_handler(message: types.Message):
-    await ediT.handle_voice_edit_request(message, bot)
-
-
-@dp.message(F.reply_to_message)
-async def audio_conversion_handler(message: types.Message):
-    await AUdio.handle_audio_conversion_request(message, bot)
-
-
 @dp.message(F.text == Reply.EDIT_COMMAND_TEXT)
 @dp.message(Command("edit"))
 async def edit_handler(message: types.Message):
@@ -88,14 +67,6 @@ async def edit_handler(message: types.Message):
             reply_markup=bToN.get_mode_keyboard(current_mode),
             reply_to_message_id=message.message_id
         )
-
-
-@dp.callback_query(F.data == "show_edit_guide")
-async def show_edit_guide_handler(callback: types.CallbackQuery):
-    await callback.answer(
-        text=Reply.EDIT_GUIDE_ALERT_TEXT,
-        show_alert=True
-    )
 
 
 @dp.callback_query(F.data == "set_mode_voice")
@@ -136,69 +107,173 @@ async def mode_normal_handler(callback: types.CallbackQuery):
     await callback.answer()
 
 
-async def execute_download_job(message: types.Message, url: str):
+@dp.callback_query(F.data == "show_edit_help")
+async def show_edit_help_handler(callback: types.CallbackQuery):
+    await callback.answer(text=Reply.EDIT_HELP_POPUP_TEXT, show_alert=True)
+
+
+async def execute_trim_task(message: types.Message, start_sec: int, end_sec: int):
+    replied_msg = message.reply_to_message
     chat_id = message.chat.id
     user_id = message.from_user.id
     thread_id = message.message_thread_id
 
-    current_mode = await CAsh.get_chat_mode(chat_id, thread_id)
     start_msg = await message.answer(Reply.DOWNLOAD_START_TEXT, reply_to_message_id=message.message_id)
 
     try:
         with NAMe.auto_managed_download_dir(chat_id, user_id, thread_id) as download_dir:
-            out_template = os.path.join(download_dir, "%(title)s.%(ext)s")
-            info = await yTFMe.process_media_download(url, out_template, current_mode)
+            downloaded_path = await AUdio.extract_file_id_and_download(replied_msg, bot, download_dir)
 
-            file_path = NAMe.get_downloaded_file_path(download_dir)
-
-            if not file_path or not os.path.exists(file_path):
+            if not downloaded_path or not os.path.exists(downloaded_path):
                 await start_msg.edit_text(Reply.DOWNLOAD_FAILED_TEXT)
                 return
 
-            custom_title = NAMe.build_file_name(info) if info else None
-            media_file = FSInputFile(file_path, filename=custom_title if custom_title else None)
+            trimmed_file_path = ediT.process_audio_trim(downloaded_path, start_sec, end_sec)
 
-            if current_mode == "voice":
-                sent_msg = await bot.send_voice(chat_id=chat_id, voice=media_file, reply_to_message_id=message.message_id)
-                await ediT.store_voice_file_id(
-                    message_id=sent_msg.message_id,
-                    chat_id=chat_id,
-                    user_id=bot.id,
-                    file_id=sent_msg.voice.file_id,
-                    is_bot=True
-                )
+            if not trimmed_file_path or not os.path.exists(trimmed_file_path):
+                await start_msg.edit_text(Reply.DOWNLOAD_FAILED_TEXT)
+                return
+
+            media_file = FSInputFile(trimmed_file_path)
+
+            if replied_msg.voice or replied_msg.audio:
+                await bot.send_voice(chat_id=chat_id, voice=media_file, reply_to_message_id=message.message_id)
             else:
                 await bot.send_video(chat_id=chat_id, video=media_file, reply_to_message_id=message.message_id)
 
             await start_msg.delete()
 
+    except asyncio.CancelledError:
+        try:
+            await start_msg.delete()
+        except Exception:
+            pass
+        raise
     except Exception:
         await start_msg.edit_text(Reply.DOWNLOAD_FAILED_TEXT)
+    finally:
+        CAsh.clear_user_wait_task(user_id)
+
+
+@dp.message(F.reply_to_message & F.text.func(lambda text: ediT.is_edit_trigger(text)))
+async def trim_media_reply_handler(message: types.Message):
+    user_id = message.from_user.id
+    time_query = message.text.replace(Reply.EDIT_TRIGGER_TEXT, "").strip()
+
+    if not time_query:
+        await message.answer(
+            text=Reply.EDIT_HELP_MESSAGE_TEXT,
+            reply_markup=bToN.get_edit_help_keyboard(),
+            reply_to_message_id=message.message_id
+        )
+        return
+
+    status, start_sec, end_sec = ediT.parse_trim_input(time_query)
+
+    if status == "invalid_range":
+        await message.answer(
+            text=Reply.EDIT_INVALID_TIME_TEXT,
+            reply_markup=bToN.get_edit_help_keyboard(),
+            reply_to_message_id=message.message_id
+        )
+        return
+    elif status == "invalid_format":
+        await message.answer(
+            text=Reply.EDIT_HELP_MESSAGE_TEXT,
+            reply_markup=bToN.get_edit_help_keyboard(),
+            reply_to_message_id=message.message_id
+        )
+        return
+
+    task = asyncio.create_task(execute_trim_task(message, start_sec, end_sec))
+    CAsh.register_user_wait_task(user_id, task)
+
+
+@dp.message(F.text == Reply.START_AUDIO_TRIGGER_TEXT)
+async def audio_convert_reply_handler(message: types.Message):
+    if not message.reply_to_message:
+        return
+
+    user_id = message.from_user.id
+    if not CAsh.queue_manager.can_accept_request(user_id):
+        return
+
+    CAsh.queue_manager.increment_user_count(user_id)
+    semaphore = CAsh.queue_manager.get_semaphore(user_id)
+
+    async def process():
+        async with semaphore:
+            replied_msg = message.reply_to_message
+            chat_id = message.chat.id
+            thread_id = message.message_thread_id
+
+            start_msg = await message.answer(Reply.CONVERT_START_TEXT, reply_to_message_id=message.message_id)
+
+            try:
+                with NAMe.auto_managed_download_dir(chat_id, user_id, thread_id) as download_dir:
+                    converted_voice_path = await AUdio.process_media_to_voice(replied_msg, bot, download_dir)
+
+                    if not converted_voice_path or not os.path.exists(converted_voice_path):
+                        await start_msg.edit_text(Reply.DOWNLOAD_FAILED_TEXT)
+                        return
+
+                    voice_file = FSInputFile(converted_voice_path)
+                    await bot.send_voice(chat_id=chat_id, voice=voice_file, reply_to_message_id=message.message_id)
+                    await start_msg.delete()
+
+            except Exception:
+                await start_msg.edit_text(Reply.DOWNLOAD_FAILED_TEXT)
+            finally:
+                CAsh.queue_manager.decrement_user_count(user_id)
+
+    asyncio.create_task(process())
 
 
 @dp.message(F.text.contains("http://") | F.text.contains("https://"))
 async def media_download_handler(message: types.Message):
     user_id = message.from_user.id
-    url = message.text.strip()
-
-    resources = NAMe.user_manager.get_user_resources(user_id)
-    semaphore = resources["semaphore"]
-    queue = resources["queue"]
-
-    if semaphore.locked() and queue.full():
+    if not CAsh.queue_manager.can_accept_request(user_id):
         return
 
-    try:
-        queue.put_nowait(url)
-    except asyncio.QueueFull:
-        return
+    CAsh.queue_manager.increment_user_count(user_id)
+    semaphore = CAsh.queue_manager.get_semaphore(user_id)
 
-    async with semaphore:
-        target_url = await queue.get()
-        try:
-            await execute_download_job(message, target_url)
-        finally:
-            queue.task_done()
+    async def process():
+        async with semaphore:
+            url = message.text.strip()
+            chat_id = message.chat.id
+            thread_id = message.message_thread_id
+
+            current_mode = await CAsh.get_chat_mode(chat_id, thread_id)
+            start_msg = await message.answer(Reply.DOWNLOAD_START_TEXT, reply_to_message_id=message.message_id)
+
+            try:
+                with NAMe.auto_managed_download_dir(chat_id, user_id, thread_id) as download_dir:
+                    out_template = os.path.join(download_dir, "%(title)s.%(ext)s")
+                    info = await yTFMe.process_media_download(url, out_template, current_mode)
+
+                    file_path = NAMe.get_downloaded_file_path(download_dir)
+
+                    if not file_path or not os.path.exists(file_path):
+                        await start_msg.edit_text(Reply.DOWNLOAD_FAILED_TEXT)
+                        return
+
+                    custom_title = NAMe.build_file_name(info) if info else None
+                    media_file = FSInputFile(file_path, filename=custom_title if custom_title else None)
+
+                    if current_mode == "voice":
+                        await bot.send_voice(chat_id=chat_id, voice=media_file, reply_to_message_id=message.message_id)
+                    else:
+                        await bot.send_video(chat_id=chat_id, video=media_file, reply_to_message_id=message.message_id)
+
+                    await start_msg.delete()
+
+            except Exception:
+                await start_msg.edit_text(Reply.DOWNLOAD_FAILED_TEXT)
+            finally:
+                CAsh.queue_manager.decrement_user_count(user_id)
+
+    asyncio.create_task(process())
 
 
 @dp.message(F.chat.type == ChatType.PRIVATE)
@@ -206,15 +281,18 @@ async def private_messages_handler(message: types.Message):
     if message.text and (message.text.startswith("/") or "http" in message.text):
         return
 
-    response_text = await CAsh.get_next_rotating_response(
-        message.from_user.id, Reply.ROTATING_RESPONSES
-    )
-    owner_markup = bToN.get_owner_keyboard()
-    await message.answer(
-        text=response_text,
-        reply_markup=owner_markup,
-        reply_to_message_id=message.message_id
-    )
+    user_id = message.from_user.id
+
+    if await CAsh.should_respond_private(user_id):
+        response_text = await CAsh.get_next_rotating_response(
+            user_id, Reply.ROTATING_RESPONSES
+        )
+        owner_markup = bToN.get_owner_keyboard()
+        await message.answer(
+            text=response_text,
+            reply_markup=owner_markup,
+            reply_to_message_id=message.message_id
+        )
 
 
 @dp.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))

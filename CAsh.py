@@ -1,4 +1,39 @@
+import asyncio
 import aiosqlite
+
+USER_WAITING_TASKS = {}
+
+
+class UserQueueManager:
+    def __init__(self, max_concurrent=2, max_queue_size=3):
+        self.max_concurrent = max_concurrent
+        self.max_queue_size = max_queue_size
+        self.user_semaphores = {}
+        self.user_active_counts = {}
+
+    def get_semaphore(self, user_id: int) -> asyncio.Semaphore:
+        if user_id not in self.user_semaphores:
+            self.user_semaphores[user_id] = asyncio.Semaphore(self.max_concurrent)
+            self.user_active_counts[user_id] = 0
+        return self.user_semaphores[user_id]
+
+    def can_accept_request(self, user_id: int) -> bool:
+        current_active = self.user_active_counts.get(user_id, 0)
+        return current_active < (self.max_concurrent + self.max_queue_size)
+
+    def increment_user_count(self, user_id: int):
+        self.user_active_counts[user_id] = self.user_active_counts.get(user_id, 0) + 1
+
+    def decrement_user_count(self, user_id: int):
+        if user_id in self.user_active_counts:
+            self.user_active_counts[user_id] -= 1
+            if self.user_active_counts[user_id] <= 0:
+                del self.user_active_counts[user_id]
+                if user_id in self.user_semaphores:
+                    del self.user_semaphores[user_id]
+
+
+queue_manager = UserQueueManager(max_concurrent=2, max_queue_size=3)
 
 
 async def init_db():
@@ -41,13 +76,9 @@ async def init_db():
         )
         await db.execute(
             """
-            CREATE TABLE IF NOT EXISTS voice_logs (
-                message_id INTEGER,
-                chat_id INTEGER,
-                user_id INTEGER,
-                file_id TEXT,
-                is_bot BOOLEAN,
-                PRIMARY KEY (message_id, chat_id)
+            CREATE TABLE IF NOT EXISTS user_msg_count (
+                user_id INTEGER PRIMARY KEY,
+                msg_count INTEGER DEFAULT 0
             )
             """
         )
@@ -103,6 +134,33 @@ async def get_chat_mode(chat_id: int, thread_id: int) -> str:
             return row[0] if row else "normal"
 
 
+async def should_respond_private(user_id: int) -> bool:
+    async with aiosqlite.connect("bot_data.db") as db:
+        async with db.execute(
+            "SELECT msg_count FROM user_msg_count WHERE user_id = ?",
+            (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            current_count = row[0] if row else 0
+
+        new_count = current_count + 1
+
+        if new_count >= 2:
+            await db.execute(
+                "INSERT OR REPLACE INTO user_msg_count (user_id, msg_count) VALUES (?, 0)",
+                (user_id,)
+            )
+            await db.commit()
+            return True
+        else:
+            await db.execute(
+                "INSERT OR REPLACE INTO user_msg_count (user_id, msg_count) VALUES (?, ?)",
+                (user_id, new_count)
+            )
+            await db.commit()
+            return False
+
+
 async def get_next_rotating_response(user_id: int, responses_list: list) -> str:
     if not responses_list:
         return ""
@@ -126,20 +184,14 @@ async def get_next_rotating_response(user_id: int, responses_list: list) -> str:
         return responses_list[next_index]
 
 
-async def save_voice_log(message_id: int, chat_id: int, user_id: int, file_id: str, is_bot: bool):
-    async with aiosqlite.connect("bot_data.db") as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO voice_logs (message_id, chat_id, user_id, file_id, is_bot) VALUES (?, ?, ?, ?, ?)",
-            (message_id, chat_id, user_id, file_id, is_bot)
-        )
-        await db.commit()
+def register_user_wait_task(user_id: int, task: asyncio.Task):
+    if user_id in USER_WAITING_TASKS:
+        previous_task = USER_WAITING_TASKS[user_id]
+        if not previous_task.done():
+            previous_task.cancel()
+    USER_WAITING_TASKS[user_id] = task
 
 
-async def get_voice_log(message_id: int, chat_id: int) -> str:
-    async with aiosqlite.connect("bot_data.db") as db:
-        async with db.execute(
-            "SELECT file_id FROM voice_logs WHERE message_id = ? AND chat_id = ?",
-            (message_id, chat_id)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else None
+def clear_user_wait_task(user_id: int):
+    if user_id in USER_WAITING_TASKS:
+        del USER_WAITING_TASKS[user_id]

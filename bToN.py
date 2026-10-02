@@ -27,11 +27,19 @@ def get_mode_keyboard(current_mode: str = "normal") -> InlineKeyboardMarkup:
                     callback_data="set_mode_normal",
                     style=normal_style
                 ),
-            ],
+            ]
+        ]
+    )
+    return keyboard
+
+
+def get_edit_help_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=Reply.EDIT_GUIDE_BUTTON_TEXT,
-                    callback_data="show_edit_guide",
+                    text=Reply.EDIT_HELP_BUTTON_TEXT,
+                    callback_data="show_edit_help",
                     style="primary"
                 )
             ]

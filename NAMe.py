@@ -5,22 +5,7 @@ import shutil
 from contextlib import contextmanager
 
 BASE_DIR = "downloads"
-
-
-class UserDownloadManager:
-    def __init__(self):
-        self.user_data = {}
-
-    def get_user_resources(self, user_id: int):
-        if user_id not in self.user_data:
-            self.user_data[user_id] = {
-                "semaphore": asyncio.Semaphore(2),
-                "queue": asyncio.Queue(maxsize=3),
-            }
-        return self.user_data[user_id]
-
-
-user_manager = UserDownloadManager()
+download_queue = asyncio.Queue()
 
 
 def apply_custom_case(text: str) -> str:
