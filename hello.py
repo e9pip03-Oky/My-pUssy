@@ -64,6 +64,7 @@ router = Router()
 
 STATES = {}
 CACHE_LOCKS = {}
+ROTATION_STATES = {}
 
 
 class ScopeState:
@@ -477,6 +478,9 @@ async def send_voice_item(
             message_thread_id=(
                 message.message_thread_id
             ),
+            reply_to_message_id=(
+                message.message_id
+            ),
         )
 
     return await message.bot.send_voice(
@@ -486,6 +490,9 @@ async def send_voice_item(
         ),
         message_thread_id=(
             message.message_thread_id
+        ),
+        reply_to_message_id=(
+            message.message_id
         ),
     )
 
@@ -501,6 +508,9 @@ async def send_document_item(
             message_thread_id=(
                 message.message_thread_id
             ),
+            reply_to_message_id=(
+                message.message_id
+            ),
         )
 
     return await message.bot.send_document(
@@ -510,6 +520,9 @@ async def send_document_item(
         ),
         message_thread_id=(
             message.message_thread_id
+        ),
+        reply_to_message_id=(
+            message.message_id
         ),
     )
 
@@ -696,6 +709,65 @@ async def download_task(
         )
 
 
+def next_rotating_response(user_id):
+    if not Reply.ROTATING_RESPONSES:
+        return None
+
+    index = ROTATION_STATES.get(
+        user_id,
+        0,
+    )
+
+    response = Reply.ROTATING_RESPONSES[
+        index
+    ]
+
+    ROTATION_STATES[user_id] = (
+        index + 1
+    ) % len(
+        Reply.ROTATING_RESPONSES
+    )
+
+    return response
+
+
+async def send_rotating_response(
+    message,
+):
+    response = next_rotating_response(
+        message.from_user.id
+    )
+
+    if response is None:
+        return
+
+    if not TAKEOFF_IDS:
+        await message.answer(
+            response
+        )
+        return
+
+    button = bToN.rotating_button(
+        InlineKeyboardButton,
+        Reply.BUTTON_NAMES,
+    )
+
+    if button is None:
+        await message.answer(
+            response
+        )
+        return
+
+    await message.answer(
+        response,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [button]
+            ]
+        ),
+    )
+
+
 @router.message(
     F.text == Reply.CMD_SETTINGS
 )
@@ -807,46 +879,28 @@ async def text_handler(
         return
 
     if message.chat.type == "private":
-        return
-
-    if (
-        text.strip()
-        != Reply.TRIGGER_WORD
-    ):
-        return
-
-    if not Reply.ROTATING_RESPONSES:
-        return
-
-    response = Reply.ROTATING_RESPONSES[
-        (
-            message.message_id
-            % len(
-                Reply.ROTATING_RESPONSES
-            )
+        await send_rotating_response(
+            message
         )
-    ]
-
-    if not TAKEOFF_IDS:
-        await message.answer(response)
         return
 
-    button = bToN.rotating_button(
-        InlineKeyboardButton,
-        Reply.BUTTON_NAMES,
+    if text != Reply.TRIGGER_WORD:
+        return
+
+    await send_rotating_response(
+        message
     )
 
-    if button is None:
-        await message.answer(response)
+
+@router.message()
+async def non_text_handler(
+    message: Message,
+):
+    if message.chat.type != "private":
         return
 
-    await message.answer(
-        response,
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [button]
-            ]
-        ),
+    await send_rotating_response(
+        message
     )
 
 
