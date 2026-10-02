@@ -283,16 +283,15 @@ async def private_messages_handler(message: types.Message):
 
     user_id = message.from_user.id
 
-    if await CAsh.should_respond_private(user_id):
-        response_text = await CAsh.get_next_rotating_response(
-            user_id, Reply.ROTATING_RESPONSES
-        )
-        owner_markup = bToN.get_owner_keyboard()
-        await message.answer(
-            text=response_text,
-            reply_markup=owner_markup,
-            reply_to_message_id=message.message_id
-        )
+    response_text = await CAsh.get_next_rotating_response(
+        user_id, Reply.ROTATING_RESPONSES
+    )
+    owner_markup = bToN.get_owner_keyboard()
+    await message.answer(
+        text=response_text,
+        reply_markup=owner_markup,
+        reply_to_message_id=message.message_id
+    )
 
 
 @dp.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))

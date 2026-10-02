@@ -75,14 +75,6 @@ def _sync_init_db():
             )
             """
         )
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_msg_count (
-                user_id INTEGER PRIMARY KEY,
-                msg_count INTEGER DEFAULT 0
-            )
-            """
-        )
         conn.commit()
 
 
@@ -162,38 +154,6 @@ def _sync_get_chat_mode(chat_id: int, thread_id: int) -> str:
 
 async def get_chat_mode(chat_id: int, thread_id: int) -> str:
     return await asyncio.to_thread(_sync_get_chat_mode, chat_id, thread_id)
-
-
-def _sync_should_respond_private(user_id: int) -> bool:
-    with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT msg_count FROM user_msg_count WHERE user_id = ?",
-            (user_id,)
-        )
-        row = cursor.fetchone()
-        current_count = row[0] if row else 0
-
-        new_count = current_count + 1
-
-        if new_count >= 2:
-            cursor.execute(
-                "INSERT OR REPLACE INTO user_msg_count (user_id, msg_count) VALUES (?, 0)",
-                (user_id,)
-            )
-            conn.commit()
-            return True
-        else:
-            cursor.execute(
-                "INSERT OR REPLACE INTO user_msg_count (user_id, msg_count) VALUES (?, ?)",
-                (user_id, new_count)
-            )
-            conn.commit()
-            return False
-
-
-async def should_respond_private(user_id: int) -> bool:
-    return await asyncio.to_thread(_sync_should_respond_private, user_id)
 
 
 def _sync_get_next_rotating_response(user_id: int, responses_list: list) -> str:
