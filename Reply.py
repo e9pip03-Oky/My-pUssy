@@ -8,9 +8,9 @@ SETTINGS_TEXT = "تستطيع تغيير وضع عمل البوت\nمن هنا"
 SETTINGS_UNAUTHORIZED = "ليس مسموح لك القيام\nبهذا التغيير"
 
 BUTTON_NAMES = (
+   "المنشئ",
     "المطور",
-    "المالك",
-    "المنشئ",
+     "المالك",
 )
 
 ROTATING_RESPONSES = [
@@ -25,4 +25,6 @@ DOWNLOAD_START =
     "تدلل دامص بعيرك مولاي\n"
     "اروح فدوا"
     
-DOWNLOAD_FAILED = ""
+DOWNLOAD_FAILED =
+    "الرابط غير مدعوم او الموقع مو راضي يتعاون\n"
+    "العق عيري يلا"
