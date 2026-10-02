@@ -7,16 +7,14 @@ import Reply
 
 def normalize_time_part(part_str):
     part_str = part_str.strip()
-
     if not part_str:
         return []
-
     return part_str.split(":")
 
 
 def calculate_seconds(parts):
     try:
-        parts = [int(part) for part in parts]
+        parts = [int(p) for p in parts]
     except ValueError:
         return None
 
@@ -32,20 +30,60 @@ def calculate_seconds(parts):
     return None
 
 
-def parse_asymmetric_times(start_raw, end_raw):
-    start_parts = normalize_time_part(start_raw)
-    end_parts = normalize_time_part(end_raw)
+def parse_time_part(time_str):
+    time_str = time_str.strip()
 
-    if not start_parts or not end_parts:
+    if not time_str:
+        return None
+
+    if "." in time_str:
+        dot_parts = time_str.split(".")
+
+        if len(dot_parts) != 2:
+            return None
+
+        try:
+            hours = int(dot_parts[0])
+        except ValueError:
+            return None
+
+        minute_second = dot_parts[1]
+
+        if ":" in minute_second:
+            parts = minute_second.split(":")
+
+            if len(parts) != 2:
+                return None
+
+            try:
+                minutes = int(parts[0])
+                seconds = int(parts[1])
+            except ValueError:
+                return None
+
+            return hours * 3600 + minutes * 60 + seconds
+
+        try:
+            minutes = int(minute_second)
+        except ValueError:
+            return None
+
+        return hours * 3600 + minutes * 60
+
+    parts = normalize_time_part(time_str)
+
+    return calculate_seconds(parts)
+
+
+def parse_asymmetric_times(start_raw, end_raw):
+    start_raw = start_raw.strip()
+    end_raw = end_raw.strip()
+
+    if not start_raw or not end_raw:
         return "invalid_format", None, None
 
-    if len(start_parts) == 1 and len(end_parts) > 1:
-        start_parts = ["0"] * (len(end_parts) - 1) + start_parts
-    elif len(end_parts) == 1 and len(start_parts) > 1:
-        end_parts = ["0"] * (len(start_parts) - 1) + end_parts
-
-    start_sec = calculate_seconds(start_parts)
-    end_sec = calculate_seconds(end_parts)
+    start_sec = parse_time_part(start_raw)
+    end_sec = parse_time_part(end_raw)
 
     if start_sec is None or end_sec is None:
         return "invalid_format", None, None

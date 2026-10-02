@@ -23,8 +23,17 @@ def apply_custom_case(text: str) -> str:
 
 
 def build_file_name(info_dict: dict) -> str:
-    uploader = info_dict.get("uploader") or info_dict.get("channel") or ""
-    title = info_dict.get("title") or info_dict.get("id") or ""
+    uploader = (
+        info_dict.get("uploader")
+        or info_dict.get("channel")
+        or ""
+    )
+
+    title = (
+        info_dict.get("title")
+        or info_dict.get("id")
+        or ""
+    )
 
     clean_uploader = re.sub(
         r"[^\w\s&\-]",
@@ -32,6 +41,7 @@ def build_file_name(info_dict: dict) -> str:
         uploader,
         flags=re.UNICODE,
     )
+
     clean_title = re.sub(
         r"[^\w\s&\-]",
         "",
@@ -44,6 +54,7 @@ def build_file_name(info_dict: dict) -> str:
         " ",
         clean_uploader,
     ).strip()
+
     clean_title = re.sub(
         r"\s+",
         " ",
@@ -51,9 +62,14 @@ def build_file_name(info_dict: dict) -> str:
     ).strip()
 
     if clean_uploader and clean_title:
-        combined_name = f"{clean_uploader} - {clean_title}"
+        combined_name = (
+            f"{clean_uploader} - {clean_title}"
+        )
     else:
-        combined_name = clean_uploader or clean_title
+        combined_name = (
+            clean_uploader
+            or clean_title
+        )
 
     return apply_custom_case(combined_name)
 
@@ -86,7 +102,10 @@ def get_user_download_path(
             clean_user_id,
         )
 
-    os.makedirs(target_dir, exist_ok=True)
+    os.makedirs(
+        target_dir,
+        exist_ok=True,
+    )
 
     return target_dir
 
@@ -95,7 +114,10 @@ def cleanup_directory_tree(target_dir: str):
     if not os.path.exists(target_dir):
         return
 
-    shutil.rmtree(target_dir, ignore_errors=True)
+    shutil.rmtree(
+        target_dir,
+        ignore_errors=True,
+    )
 
     parent = os.path.dirname(target_dir)
     base_abs = os.path.abspath(BASE_DIR)
@@ -132,13 +154,53 @@ def auto_managed_download_dir(
         cleanup_directory_tree(path)
 
 
-def get_downloaded_file_path(download_dir: str) -> str:
+def get_downloaded_file_path(
+    download_dir: str,
+) -> str:
     if not os.path.exists(download_dir):
         return None
 
     files = os.listdir(download_dir)
 
-    if files:
-        return os.path.join(download_dir, files[0])
+    if not files:
+        return None
 
-    return None
+    return os.path.join(
+        download_dir,
+        files[0],
+    )
+
+
+def get_downloaded_file_paths(
+    download_dir: str,
+) -> list[str]:
+    if not os.path.exists(download_dir):
+        return []
+
+    files = [
+        os.path.join(download_dir, name)
+        for name in os.listdir(download_dir)
+    ]
+
+    return sorted(
+        file_path
+        for file_path in files
+        if os.path.isfile(file_path)
+    )
+
+
+def is_telegram_url(url: str) -> bool:
+    pattern = (
+        r"^(?:https?://)?"
+        r"(?:www\.)?"
+        r"(?:t\.me|telegram\.me|telegram\.dog)"
+        r"(?:/|$)"
+    )
+
+    return bool(
+        re.match(
+            pattern,
+            url.strip(),
+            flags=re.IGNORECASE,
+        )
+    )

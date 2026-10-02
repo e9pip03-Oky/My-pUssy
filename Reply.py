@@ -4,12 +4,23 @@ EDIT_COMMAND_TEXT = "ادت"
 EDIT_TRIGGER_TEXT = "تعديل"
 START_AUDIO_TRIGGER_TEXT = "بدء"
 
-EDIT_MESSAGE_TEXT = "تستطيع تغيير وضع عمل البوت\nمن هنا"
+EDIT_MESSAGE_TEXT = (
+    "تستطيع تغيير وضع عمل البوت\n"
+    "من هنا"
+)
 
-EDIT_HELP_MESSAGE_TEXT = "تستطيع تعديل مدة البوت كما ادناه\nاضغط على الزر"
-EDIT_INVALID_TIME_TEXT = "مدة البدايه اللتي ارسلتها اكبر من مدة النهايه\nللفويس"
+EDIT_HELP_MESSAGE_TEXT = (
+    "تستطيع تعديل مدة البوت كما ادناه\n"
+    "اضغط على الزر"
+)
+
+EDIT_INVALID_TIME_TEXT = (
+    "مدة البدايه اللتي ارسلتها اكبر من مدة النهايه\n"
+    "للفويس"
+)
 
 EDIT_HELP_BUTTON_TEXT = "اطلاع"
+
 EDIT_HELP_POPUP_TEXT = (
     "فواصل التوقيتان بين البداية والنهاية\n"
     "هما - و / ويلزم ان يكون ماقبلهم وبعدهم مسافه "
@@ -25,15 +36,36 @@ EDIT_HELP_POPUP_TEXT = (
 BUTTON_VOICE_TEXT = "فويس"
 BUTTON_NORMAL_TEXT = "نورمال"
 
-NO_PERMISSION_ALERT = "ليس مسموح لك القيام\nبهذا التغيير"
+NO_PERMISSION_ALERT = (
+    "ليس مسموح لك القيام\n"
+    "بهذا التغيير"
+)
 
-DOWNLOAD_START_TEXT = "تدلل دامص بعيرك مولاي\nاروح فدوا"
-CONVERT_START_TEXT = "سيتم\nالان ارسال الفويس"
-DOWNLOAD_FAILED_TEXT = "الرابط غير مدعوم او الموقع مو راضي يتعاون\nالعق عيري يلا"
+DOWNLOAD_START_TEXT = (
+    "تدلل دامص بعيرك مولاي\n"
+    "اروح فدوا"
+)
 
-TAKEOFF_TEXT = "اشتغل البوت مرتلخ\nتع امص"
+CONVERT_START_TEXT = (
+    "سيتم\n"
+    "الان ارسال الفويس"
+)
 
-OWNER_BUTTON_NAMES = ["المالك", "المطور", "المنشئ"]
+DOWNLOAD_FAILED_TEXT = (
+    "الرابط غير مدعوم او الموقع مو راضي يتعاون\n"
+    "العق عيري يلا"
+)
+
+TAKEOFF_TEXT = (
+    "اشتغل البوت مرتلخ\n"
+    "تع امص"
+)
+
+OWNER_BUTTON_NAMES = [
+    "المالك",
+    "المطور",
+    "المنشئ",
+]
 
 ROTATING_RESPONSES = [
     "اهلين وسهلين\nاستاذ/ة",
