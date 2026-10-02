@@ -1,287 +1,97 @@
 import asyncio
-import shutil
+import gc
+import os
 import subprocess
-import tempfile
-from pathlib import Path
+from yt_dlp import YoutubeDL
 
 
-class DownloadError(RuntimeError):
-    pass
+def cleanup_memory():
+    gc.collect()
 
 
-def _run(command):
-    result = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    if result.returncode:
-        raise DownloadError(
-            result.stderr.strip()
-            or "ffmpeg failed"
-        )
-
-
-def _extract(
-    yt_dlp,
-    url,
-    options,
-):
+def cleanup_file(file_path: str):
     try:
-        with yt_dlp.YoutubeDL(options) as downloader:
-            return downloader.extract_info(
-                url,
-                download=True,
-            )
-    except Exception as exc:
-        raise DownloadError(
-            str(exc)
-        ) from exc
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception:
+        pass
+    finally:
+        cleanup_memory()
 
 
-def inspect(
-    yt_dlp,
-    url,
-):
+def convert_to_voice_ogg(input_path: str, output_path: str) -> bool:
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", input_path,
+        "-vn",
+        "-c:a", "libopus",
+        "-f", "ogg",
+        output_path
+    ]
     try:
-        with yt_dlp.YoutubeDL(
-            {
-                "quiet": True,
-                "no_warnings": True,
-            }
-        ) as downloader:
-            return downloader.extract_info(
-                url,
-                download=False,
-            )
-    except Exception as exc:
-        raise DownloadError(
-            str(exc)
-        ) from exc
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        return True
+    except Exception:
+        return False
 
 
-def entries(
-    yt_dlp,
-    url,
-):
-    info = inspect(
-        yt_dlp,
-        url,
+async def async_convert_to_voice_ogg(input_path: str, output_path: str) -> bool:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        convert_to_voice_ogg,
+        input_path,
+        output_path
     )
 
-    if info.get("_type") == "playlist":
-        return [
-            item
-            for item in info.get("entries", [])
-            if item
-        ]
 
-    return [info]
-
-
-def _download(
-    yt_dlp,
-    url,
-    directory,
-    stem,
-    selector,
-):
-    template = str(
-        directory / f"{stem}.%(ext)s"
-    )
-
-    info = _extract(
-        yt_dlp,
-        url,
-        {
+def _extract_and_download(url: str, out_template: str, mode: str = "normal") -> dict:
+    if mode == "voice":
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": out_template,
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "opus",
+                }
+            ],
+            "postprocessor_args": {
+                "ExtractAudio": [
+                    "-c:a", "libopus",
+                    "-f", "ogg",
+                ]
+            },
             "quiet": True,
             "no_warnings": True,
-            "noplaylist": True,
-            "format": selector,
-            "outtmpl": template,
-            "overwrites": True,
-        },
-    )
+        }
+    else:
+        ydl_opts = {
+            "format": "bestvideo+bestaudio/best",
+            "outtmpl": out_template,
+            "postprocessors": [
+                {
+                    "key": "FFmpegMerger",
+                }
+            ],
+            "postprocessor_args": {
+                "merger": [
+                    "-c", "copy",
+                ]
+            },
+            "quiet": True,
+            "no_warnings": True,
+        }
 
-    files = [
-        path
-        for path in directory.glob(
-            f"{stem}.*"
-        )
-        if path.is_file()
-    ]
-
-    if not files:
-        raise DownloadError(
-            "downloaded file was not found"
-        )
-
-    return files[0], info
-
-
-def merge_copy(
-    video,
-    audio,
-    output,
-):
-    _run([
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        str(video),
-        "-i",
-        str(audio),
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        "-c",
-        "copy",
-        str(output),
-    ])
-
-    return output
+    with YoutubeDL(ydl_opts) as ydl:
+        return ydl.extract_info(url, download=True)
 
 
-def opus_ogg(
-    audio,
-    output,
-):
-    _run([
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        str(audio),
-        "-c:a",
-        "libopus",
-        "-f",
-        "ogg",
-        str(output),
-    ])
-
-    return output
-
-
-def download_normal(
-    yt_dlp,
-    url,
-    directory,
-    name,
-):
-    separate_directory = Path(
-        tempfile.mkdtemp(
-            prefix="separate_",
-            dir=directory,
-        )
-    )
-
+async def process_media_download(url: str, out_template: str, mode: str = "normal") -> dict:
+    loop = asyncio.get_running_loop()
     try:
-        try:
-            video, video_info = _download(
-                yt_dlp,
-                url,
-                separate_directory,
-                "video",
-                "bestvideo",
-            )
-
-            audio, _ = _download(
-                yt_dlp,
-                url,
-                separate_directory,
-                "audio",
-                "bestaudio",
-            )
-
-            output = (
-                directory
-                / f"{name}{video.suffix}"
-            )
-
-            merge_copy(
-                video,
-                audio,
-                output,
-            )
-
-            return output, video_info
-
-        except DownloadError:
-            pass
-
-        combined, info = _download(
-            yt_dlp,
-            url,
-            directory,
-            "media",
-            "best",
-        )
-
-        output = (
-            directory
-            / f"{name}{combined.suffix}"
-        )
-
-        if combined != output:
-            if output.exists():
-                output.unlink()
-            combined.replace(output)
-
-        return output, info
-
+        info = await loop.run_in_executor(None, _extract_and_download, url, out_template, mode)
+        return info
     finally:
-        shutil.rmtree(
-            separate_directory,
-            ignore_errors=True,
-        )
-
-
-def download_voice(
-    yt_dlp,
-    url,
-    directory,
-    name,
-):
-    audio, info = _download(
-        yt_dlp,
-        url,
-        directory,
-        "audio",
-        "bestaudio",
-    )
-
-    output = directory / f"{name}.ogg"
-
-    try:
-        opus_ogg(
-            audio,
-            output,
-        )
-
-        return output, info
-    finally:
-        audio.unlink(
-            missing_ok=True
-        )
-
-
-async def download_normal_async(*args):
-    return await asyncio.to_thread(
-        download_normal,
-        *args,
-    )
-
-
-async def download_voice_async(*args):
-    return await asyncio.to_thread(
-        download_voice,
-        *args,
-    )
+        cleanup_memory()

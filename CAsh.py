@@ -1,128 +1,145 @@
-import sqlite3
-import threading
-from pathlib import Path
+import aiosqlite
 
 
-class Database:
-    def __init__(self, path):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(
-            path,
-            check_same_thread=False,
+async def init_db():
+    async with aiosqlite.connect("bot_data.db") as db:
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
         )
-        self.lock = threading.RLock()
-        self._create_tables()
-
-    def _create_tables(self):
-        with self.lock, self.connection:
-            self.connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS modes (
-                    scope TEXT PRIMARY KEY,
-                    mode TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS replies (
-                    user_id INTEGER PRIMARY KEY,
-                    position INTEGER NOT NULL DEFAULT 0
-                );
-
-                CREATE TABLE IF NOT EXISTS developer_rotation (
-                    dimension TEXT PRIMARY KEY,
-                    position INTEGER NOT NULL DEFAULT 0
-                );
-
-                CREATE TABLE IF NOT EXISTS normal_file_ids (
-                    cache_key TEXT PRIMARY KEY,
-                    file_id TEXT NOT NULL,
-                    file_name TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS voice_file_ids (
-                    cache_key TEXT PRIMARY KEY,
-                    file_id TEXT NOT NULL,
-                    file_name TEXT
-                );
-                """
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cached_files (
+                media_key TEXT,
+                mode TEXT,
+                file_id TEXT,
+                PRIMARY KEY (media_key, mode)
             )
-            self.connection.executemany(
-                "INSERT OR IGNORE INTO developer_rotation(dimension) VALUES (?)",
-                (("id",), ("name",), ("style",)),
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_modes (
+                chat_id INTEGER,
+                thread_id INTEGER,
+                mode TEXT DEFAULT 'normal',
+                PRIMARY KEY (chat_id, thread_id)
             )
-
-    def get_mode(self, scope, default):
-        with self.lock:
-            row = self.connection.execute(
-                "SELECT mode FROM modes WHERE scope = ?",
-                (scope,),
-            ).fetchone()
-        return row[0] if row else default
-
-    def set_mode(self, scope, mode):
-        with self.lock, self.connection:
-            self.connection.execute(
-                """
-                INSERT INTO modes(scope, mode) VALUES (?, ?)
-                ON CONFLICT(scope) DO UPDATE SET mode = excluded.mode
-                """,
-                (scope, mode),
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_rotation (
+                user_id INTEGER PRIMARY KEY,
+                last_index INTEGER DEFAULT -1
             )
-
-    def next_reply(self, user_id, total):
-        with self.lock, self.connection:
-            row = self.connection.execute(
-                "SELECT position FROM replies WHERE user_id = ?",
-                (user_id,),
-            ).fetchone()
-            position = row[0] if row else 0
-            self.connection.execute(
-                """
-                INSERT INTO replies(user_id, position) VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET position = excluded.position
-                """,
-                (user_id, (position + 1) % total),
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_logs (
+                message_id INTEGER,
+                chat_id INTEGER,
+                user_id INTEGER,
+                file_id TEXT,
+                is_bot BOOLEAN,
+                PRIMARY KEY (message_id, chat_id)
             )
-        return position
+            """
+        )
+        await db.commit()
 
-    def next_developer(self, totals):
-        values = {}
-        with self.lock, self.connection:
-            for dimension, total in totals.items():
-                row = self.connection.execute(
-                    "SELECT position FROM developer_rotation WHERE dimension = ?",
-                    (dimension,),
-                ).fetchone()
-                position = row[0] if row else 0
-                values[dimension] = position % total
-                self.connection.execute(
-                    "UPDATE developer_rotation SET position = ? WHERE dimension = ?",
-                    ((position + 1) % total, dimension),
-                )
-        return values
 
-    def get_file_id(self, mode, cache_key):
-        table = "normal_file_ids" if mode == "normal" else "voice_file_ids"
-        with self.lock:
-            row = self.connection.execute(
-                f"SELECT file_id FROM {table} WHERE cache_key = ?",
-                (cache_key,),
-            ).fetchone()
-        return row[0] if row else None
+async def add_user(user_id: int):
+    async with aiosqlite.connect("bot_data.db") as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
+            (user_id,)
+        )
+        await db.commit()
 
-    def save_file_id(self, mode, cache_key, file_id, file_name):
-        table = "normal_file_ids" if mode == "normal" else "voice_file_ids"
-        with self.lock, self.connection:
-            self.connection.execute(
-                f"""
-                INSERT INTO {table}(cache_key, file_id, file_name)
-                VALUES (?, ?, ?)
-                ON CONFLICT(cache_key) DO UPDATE SET
-                    file_id = excluded.file_id,
-                    file_name = excluded.file_name
-                """,
-                (cache_key, file_id, file_name),
-            )
 
-    def close(self):
-        with self.lock:
-            self.connection.close()
+async def get_cached_file(media_key: str, mode: str) -> str:
+    async with aiosqlite.connect("bot_data.db") as db:
+        async with db.execute(
+            "SELECT file_id FROM cached_files WHERE media_key = ? AND mode = ?",
+            (media_key, mode)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+
+async def save_cached_file(media_key: str, mode: str, file_id: str):
+    async with aiosqlite.connect("bot_data.db") as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO cached_files (media_key, mode, file_id) VALUES (?, ?, ?)",
+            (media_key, mode, file_id)
+        )
+        await db.commit()
+
+
+async def set_chat_mode(chat_id: int, thread_id: int, mode: str):
+    target_thread_id = thread_id if thread_id is not None else 0
+    async with aiosqlite.connect("bot_data.db") as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO chat_modes (chat_id, thread_id, mode) VALUES (?, ?, ?)",
+            (chat_id, target_thread_id, mode)
+        )
+        await db.commit()
+
+
+async def get_chat_mode(chat_id: int, thread_id: int) -> str:
+    target_thread_id = thread_id if thread_id is not None else 0
+    async with aiosqlite.connect("bot_data.db") as db:
+        async with db.execute(
+            "SELECT mode FROM chat_modes WHERE chat_id = ? AND thread_id = ?",
+            (chat_id, target_thread_id)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else "normal"
+
+
+async def get_next_rotating_response(user_id: int, responses_list: list) -> str:
+    if not responses_list:
+        return ""
+
+    async with aiosqlite.connect("bot_data.db") as db:
+        async with db.execute(
+            "SELECT last_index FROM user_rotation WHERE user_id = ?",
+            (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            last_index = row[0] if row else -1
+
+        next_index = (last_index + 1) % len(responses_list)
+
+        await db.execute(
+            "INSERT OR REPLACE INTO user_rotation (user_id, last_index) VALUES (?, ?)",
+            (user_id, next_index)
+        )
+        await db.commit()
+
+        return responses_list[next_index]
+
+
+async def save_voice_log(message_id: int, chat_id: int, user_id: int, file_id: str, is_bot: bool):
+    async with aiosqlite.connect("bot_data.db") as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO voice_logs (message_id, chat_id, user_id, file_id, is_bot) VALUES (?, ?, ?, ?, ?)",
+            (message_id, chat_id, user_id, file_id, is_bot)
+        )
+        await db.commit()
+
+
+async def get_voice_log(message_id: int, chat_id: int) -> str:
+    async with aiosqlite.connect("bot_data.db") as db:
+        async with db.execute(
+            "SELECT file_id FROM voice_logs WHERE message_id = ? AND chat_id = ?",
+            (message_id, chat_id)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None

@@ -1,120 +1,116 @@
 import asyncio
+import os
 import re
-from datetime import datetime
-from pathlib import Path
-from urllib.parse import urlparse
+import shutil
+from contextlib import contextmanager
 
-TELEGRAM_HOSTS = {
-    "t.me",
-    "telegram.me",
-    "www.telegram.me",
-}
+BASE_DIR = "downloads"
 
 
-class DownloadQueue:
-    def __init__(self, running_limit=3, waiting_limit=3):
-        self.running_limit = running_limit
-        self.waiting_limit = waiting_limit
-        self.running = 0
-        self.waiting = 0
-        self.condition = asyncio.Condition()
-
-    async def acquire(self):
-        async with self.condition:
-            if self.running < self.running_limit:
-                self.running += 1
-                return True
-
-            if self.waiting >= self.waiting_limit:
-                return False
-
-            self.waiting += 1
-            try:
-                while self.running >= self.running_limit:
-                    await self.condition.wait()
-                self.waiting -= 1
-                self.running += 1
-                return True
-            except BaseException:
-                self.waiting -= 1
-                self.condition.notify_all()
-                raise
-
-    async def release(self):
-        async with self.condition:
-            self.running = max(0, self.running - 1)
-            self.condition.notify()
-
-
-class QueueManager:
+class UserDownloadManager:
     def __init__(self):
-        self.queues = {}
-        self.lock = asyncio.Lock()
+        self.user_data = {}
 
-    async def acquire(self, scope):
-        async with self.lock:
-            queue = self.queues.setdefault(scope, DownloadQueue())
-        return queue if await queue.acquire() else None
-
-    async def release(self, scope, queue):
-        await queue.release()
-        async with self.lock:
-            if queue.running == 0 and queue.waiting == 0:
-                self.queues.pop(scope, None)
+    def get_user_resources(self, user_id: int):
+        if user_id not in self.user_data:
+            self.user_data[user_id] = {
+                "semaphore": asyncio.Semaphore(2),
+                "queue": asyncio.Queue(maxsize=3),
+            }
+        return self.user_data[user_id]
 
 
-def scope_key(chat_type, chat_id, user_id, thread_id):
-    if chat_type == "private":
-        return f"private:{user_id}"
-    if thread_id is not None:
-        return f"topic:{chat_id}:{thread_id}"
-    return f"chat:{chat_id}"
+user_manager = UserDownloadManager()
 
 
-def is_telegram_link(text):
-    parsed = urlparse(text.strip())
-    return parsed.netloc.lower() in TELEGRAM_HOSTS
-
-
-def _clean(value):
-    value = value or ""
+def apply_custom_case(text: str) -> str:
+    uppercase_targets = set("ATFGUJNML")
     result = []
-    uppercase = set("ATFGUJNML")
-
-    for char in value:
-        if char.isascii() and char.isalpha():
-            char = char.lower()
-            if char.upper() in uppercase:
-                char = char.upper()
-            result.append(char)
-        elif char.isalnum() or char.isspace() or char in "_&-":
-            result.append(char)
-
-    return re.sub(r"\s+", " ", "".join(result)).strip()
-
-
-def make_filename(info):
-    publisher = info.get("uploader") or info.get("channel") or ""
-    title = info.get("title")
-
-    if not title:
-        date = info.get("upload_date")
-        if date and len(date) == 8:
-            title = f"{int(date[:4])}/{int(date[4:6])}/{int(date[6:8])}"
+    for char in text:
+        if char.upper() in uppercase_targets:
+            result.append(char.upper())
         else:
-            timestamp = info.get("timestamp")
-            title = (
-                datetime.fromtimestamp(timestamp).strftime("%Y/%-m/%-d")
-                if timestamp
-                else "download"
+            result.append(char.lower())
+    return "".join(result)
+
+
+def build_file_name(info_dict: dict) -> str:
+    uploader = info_dict.get("uploader") or info_dict.get("channel") or ""
+    title = info_dict.get("title") or info_dict.get("id") or ""
+
+    clean_uploader = re.sub(r"[^\w\s&\-]", "", uploader, flags=re.UNICODE)
+    clean_title = re.sub(r"[^\w\s&\-]", "", title, flags=re.UNICODE)
+
+    clean_uploader = re.sub(r"\s+", " ", clean_uploader).strip()
+    clean_title = re.sub(r"\s+", " ", clean_title).strip()
+
+    if clean_uploader and clean_title:
+        combined_name = f"{clean_uploader} - {clean_title}"
+    else:
+        combined_name = clean_uploader or clean_title
+
+    return apply_custom_case(combined_name)
+
+
+def get_user_download_path(chat_id: int, user_id: int, topic_id: int = None) -> str:
+    clean_chat_id = str(abs(chat_id))
+    clean_user_id = str(user_id)
+
+    if chat_id == user_id:
+        target_dir = os.path.join(BASE_DIR, clean_user_id)
+    else:
+        if topic_id:
+            target_dir = os.path.join(
+                BASE_DIR,
+                clean_chat_id,
+                "topics",
+                str(topic_id),
+                clean_user_id
+            )
+        else:
+            target_dir = os.path.join(
+                BASE_DIR,
+                clean_chat_id,
+                clean_user_id
             )
 
-    publisher = _clean(publisher)
-    title = _clean(title)
-    return " - ".join(part for part in (publisher, title) if part) or "download"
+    os.makedirs(target_dir, exist_ok=True)
+    return target_dir
 
 
-def job_directory(base, scope):
-    path = Path(base) / re.sub(r"-", "", str(scope))
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+def cleanup_directory_tree(target_dir: str):
+    if not os.path.exists(target_dir):
+        return
+
+    shutil.rmtree(target_dir, ignore_errors=True)
+
+    parent = os.path.dirname(target_dir)
+    base_abs = os.path.abspath(BASE_DIR)
+
+    while os.path.abspath(parent) != base_abs and os.path.exists(parent):
+        try:
+            if not os.listdir(parent):
+                os.rmdir(parent)
+                parent = os.path.dirname(parent)
+            else:
+                break
+        except Exception:
+            break
+
+
+@contextmanager
+def auto_managed_download_dir(chat_id: int, user_id: int, topic_id: int = None):
+    path = get_user_download_path(chat_id, user_id, topic_id)
+    try:
+        yield path
+    finally:
+        cleanup_directory_tree(path)
+
+
+def get_downloaded_file_path(download_dir: str) -> str:
+    if not os.path.exists(download_dir):
+        return None
+    files = os.listdir(download_dir)
+    if files:
+        return os.path.join(download_dir, files[0])
+    return None
