@@ -7,22 +7,26 @@ import Reply
 
 def normalize_time_part(part_str):
     part_str = part_str.strip()
+
     if not part_str:
         return []
+
     return part_str.split(":")
 
 
 def calculate_seconds(parts):
     try:
-        parts = [int(p) for p in parts]
+        parts = [int(part) for part in parts]
     except ValueError:
         return None
 
     if len(parts) == 1:
         return parts[0]
-    elif len(parts) == 2:
+
+    if len(parts) == 2:
         return parts[0] * 60 + parts[1]
-    elif len(parts) == 3:
+
+    if len(parts) == 3:
         return parts[0] * 3600 + parts[1] * 60 + parts[2]
 
     return None
@@ -69,25 +73,37 @@ def parse_trim_input(user_text):
 
 def trim_audio_direct(input_path, start_sec, end_sec, output_path):
     duration_sec = end_sec - start_sec
+
     if duration_sec <= 0:
         return False
 
     command = [
         "ffmpeg",
         "-y",
-        "-ss", str(start_sec),
-        "-i", input_path,
-        "-t", str(duration_sec),
-        "-c", "copy",
-        output_path
+        "-ss",
+        str(start_sec),
+        "-i",
+        input_path,
+        "-t",
+        str(duration_sec),
+        "-c",
+        "copy",
+        output_path,
     ]
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
     return result.returncode == 0
 
 
 def is_edit_trigger(message_text):
     if not message_text:
         return False
+
     return Reply.EDIT_TRIGGER_TEXT in message_text.strip()
 
 
@@ -95,7 +111,13 @@ def process_audio_trim(input_path, start_sec, end_sec):
     base_name, ext = os.path.splitext(input_path)
     output_path = f"{base_name}_cut{ext}"
 
-    success = trim_audio_direct(input_path, start_sec, end_sec, output_path)
+    success = trim_audio_direct(
+        input_path,
+        start_sec,
+        end_sec,
+        output_path,
+    )
+
     if success and os.path.exists(output_path):
         return output_path
 

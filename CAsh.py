@@ -1,6 +1,7 @@
 import asyncio
 import sqlite3
 
+
 USER_WAITING_TASKS = {}
 
 
@@ -13,32 +14,45 @@ class UserQueueManager:
 
     def get_semaphore(self, user_id: int) -> asyncio.Semaphore:
         if user_id not in self.user_semaphores:
-            self.user_semaphores[user_id] = asyncio.Semaphore(self.max_concurrent)
+            self.user_semaphores[user_id] = asyncio.Semaphore(
+                self.max_concurrent
+            )
             self.user_active_counts[user_id] = 0
+
         return self.user_semaphores[user_id]
 
     def can_accept_request(self, user_id: int) -> bool:
         current_active = self.user_active_counts.get(user_id, 0)
-        return current_active < (self.max_concurrent + self.max_queue_size)
+        return current_active < (
+            self.max_concurrent + self.max_queue_size
+        )
 
     def increment_user_count(self, user_id: int):
-        self.user_active_counts[user_id] = self.user_active_counts.get(user_id, 0) + 1
+        self.user_active_counts[user_id] = (
+            self.user_active_counts.get(user_id, 0) + 1
+        )
 
     def decrement_user_count(self, user_id: int):
-        if user_id in self.user_active_counts:
-            self.user_active_counts[user_id] -= 1
-            if self.user_active_counts[user_id] <= 0:
-                del self.user_active_counts[user_id]
-                if user_id in self.user_semaphores:
-                    del self.user_semaphores[user_id]
+        if user_id not in self.user_active_counts:
+            return
+
+        self.user_active_counts[user_id] -= 1
+
+        if self.user_active_counts[user_id] <= 0:
+            del self.user_active_counts[user_id]
+            self.user_semaphores.pop(user_id, None)
 
 
-queue_manager = UserQueueManager(max_concurrent=2, max_queue_size=3)
+queue_manager = UserQueueManager(
+    max_concurrent=2,
+    max_queue_size=3
+)
 
 
 def _sync_init_db():
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
+
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -47,6 +61,7 @@ def _sync_init_db():
             )
             """
         )
+
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS cached_files (
@@ -57,6 +72,7 @@ def _sync_init_db():
             )
             """
         )
+
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_modes (
@@ -67,6 +83,7 @@ def _sync_init_db():
             )
             """
         )
+
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS user_rotation (
@@ -75,6 +92,7 @@ def _sync_init_db():
             )
             """
         )
+
         conn.commit()
 
 
@@ -84,8 +102,7 @@ async def init_db():
 
 def _sync_add_user(user_id: int):
     with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
+        conn.execute(
             "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
             (user_id,)
         )
@@ -100,70 +117,135 @@ def _sync_get_cached_file(media_key: str, mode: str) -> str:
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT file_id FROM cached_files WHERE media_key = ? AND mode = ?",
+            """
+            SELECT file_id
+            FROM cached_files
+            WHERE media_key = ? AND mode = ?
+            """,
             (media_key, mode)
         )
         row = cursor.fetchone()
-        return row[0] if row else None
+
+    return row[0] if row else None
 
 
 async def get_cached_file(media_key: str, mode: str) -> str:
-    return await asyncio.to_thread(_sync_get_cached_file, media_key, mode)
+    return await asyncio.to_thread(
+        _sync_get_cached_file,
+        media_key,
+        mode
+    )
 
 
-def _sync_save_cached_file(media_key: str, mode: str, file_id: str):
+def _sync_save_cached_file(
+    media_key: str,
+    mode: str,
+    file_id: str
+):
     with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT OR REPLACE INTO cached_files (media_key, mode, file_id) VALUES (?, ?, ?)",
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO cached_files
+            (media_key, mode, file_id)
+            VALUES (?, ?, ?)
+            """,
             (media_key, mode, file_id)
         )
         conn.commit()
 
 
-async def save_cached_file(media_key: str, mode: str, file_id: str):
-    await asyncio.to_thread(_sync_save_cached_file, media_key, mode, file_id)
+async def save_cached_file(
+    media_key: str,
+    mode: str,
+    file_id: str
+):
+    await asyncio.to_thread(
+        _sync_save_cached_file,
+        media_key,
+        mode,
+        file_id
+    )
 
 
-def _sync_set_chat_mode(chat_id: int, thread_id: int, mode: str):
+def _sync_set_chat_mode(
+    chat_id: int,
+    thread_id: int,
+    mode: str
+):
     target_thread_id = thread_id if thread_id is not None else 0
+
     with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT OR REPLACE INTO chat_modes (chat_id, thread_id, mode) VALUES (?, ?, ?)",
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO chat_modes
+            (chat_id, thread_id, mode)
+            VALUES (?, ?, ?)
+            """,
             (chat_id, target_thread_id, mode)
         )
         conn.commit()
 
 
-async def set_chat_mode(chat_id: int, thread_id: int, mode: str):
-    await asyncio.to_thread(_sync_set_chat_mode, chat_id, thread_id, mode)
+async def set_chat_mode(
+    chat_id: int,
+    thread_id: int,
+    mode: str
+):
+    await asyncio.to_thread(
+        _sync_set_chat_mode,
+        chat_id,
+        thread_id,
+        mode
+    )
 
 
-def _sync_get_chat_mode(chat_id: int, thread_id: int) -> str:
+def _sync_get_chat_mode(
+    chat_id: int,
+    thread_id: int
+) -> str:
     target_thread_id = thread_id if thread_id is not None else 0
+
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT mode FROM chat_modes WHERE chat_id = ? AND thread_id = ?",
+            """
+            SELECT mode
+            FROM chat_modes
+            WHERE chat_id = ? AND thread_id = ?
+            """,
             (chat_id, target_thread_id)
         )
         row = cursor.fetchone()
-        return row[0] if row else "normal"
+
+    return row[0] if row else "normal"
 
 
-async def get_chat_mode(chat_id: int, thread_id: int) -> str:
-    return await asyncio.to_thread(_sync_get_chat_mode, chat_id, thread_id)
+async def get_chat_mode(
+    chat_id: int,
+    thread_id: int
+) -> str:
+    return await asyncio.to_thread(
+        _sync_get_chat_mode,
+        chat_id,
+        thread_id
+    )
 
 
-def _sync_get_next_rotating_response(user_id: int, responses_list: list) -> str:
+def _sync_get_next_rotating_response(
+    user_id: int,
+    responses_list: list
+) -> str:
     if not responses_list:
         return ""
 
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT last_index FROM user_rotation WHERE user_id = ?",
+            """
+            SELECT last_index
+            FROM user_rotation
+            WHERE user_id = ?
+            """,
             (user_id,)
         )
         row = cursor.fetchone()
@@ -172,26 +254,41 @@ def _sync_get_next_rotating_response(user_id: int, responses_list: list) -> str:
         next_index = (last_index + 1) % len(responses_list)
 
         cursor.execute(
-            "INSERT OR REPLACE INTO user_rotation (user_id, last_index) VALUES (?, ?)",
+            """
+            INSERT OR REPLACE INTO user_rotation
+            (user_id, last_index)
+            VALUES (?, ?)
+            """,
             (user_id, next_index)
         )
         conn.commit()
 
-        return responses_list[next_index]
+    return responses_list[next_index]
 
 
-async def get_next_rotating_response(user_id: int, responses_list: list) -> str:
-    return await asyncio.to_thread(_sync_get_next_rotating_response, user_id, responses_list)
+async def get_next_rotating_response(
+    user_id: int,
+    responses_list: list
+) -> str:
+    return await asyncio.to_thread(
+        _sync_get_next_rotating_response,
+        user_id,
+        responses_list
+    )
 
 
-def register_user_wait_task(user_id: int, task: asyncio.Task):
+def register_user_wait_task(
+    user_id: int,
+    task: asyncio.Task
+):
     if user_id in USER_WAITING_TASKS:
         previous_task = USER_WAITING_TASKS[user_id]
+
         if not previous_task.done():
             previous_task.cancel()
+
     USER_WAITING_TASKS[user_id] = task
 
 
 def clear_user_wait_task(user_id: int):
-    if user_id in USER_WAITING_TASKS:
-        del USER_WAITING_TASKS[user_id]
+    USER_WAITING_TASKS.pop(user_id, None)

@@ -1,6 +1,6 @@
 import asyncio
 import gc
-import os
+
 from yt_dlp import YoutubeDL
 
 
@@ -8,17 +8,11 @@ def cleanup_memory():
     gc.collect()
 
 
-def cleanup_file(file_path: str):
-    try:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
-    except Exception:
-        pass
-    finally:
-        cleanup_memory()
-
-
-def _extract_and_download(url: str, out_template: str, mode: str = "normal") -> dict:
+def _extract_and_download(
+    url: str,
+    out_template: str,
+    mode: str = "normal"
+) -> dict:
     if mode == "voice":
         ydl_opts = {
             "format": "bestaudio/best",
@@ -31,8 +25,10 @@ def _extract_and_download(url: str, out_template: str, mode: str = "normal") -> 
             ],
             "postprocessor_args": {
                 "ExtractAudio": [
-                    "-c:a", "libopus",
-                    "-f", "ogg",
+                    "-c:a",
+                    "libopus",
+                    "-f",
+                    "ogg",
                 ]
             },
             "quiet": True,
@@ -49,7 +45,8 @@ def _extract_and_download(url: str, out_template: str, mode: str = "normal") -> 
             ],
             "postprocessor_args": {
                 "merger": [
-                    "-c", "copy",
+                    "-c",
+                    "copy",
                 ]
             },
             "quiet": True,
@@ -60,10 +57,21 @@ def _extract_and_download(url: str, out_template: str, mode: str = "normal") -> 
         return ydl.extract_info(url, download=True)
 
 
-async def process_media_download(url: str, out_template: str, mode: str = "normal") -> dict:
+async def process_media_download(
+    url: str,
+    out_template: str,
+    mode: str = "normal"
+) -> dict:
     loop = asyncio.get_running_loop()
+
     try:
-        info = await loop.run_in_executor(None, _extract_and_download, url, out_template, mode)
+        info = await loop.run_in_executor(
+            None,
+            _extract_and_download,
+            url,
+            out_template,
+            mode,
+        )
         return info
     finally:
         cleanup_memory()
