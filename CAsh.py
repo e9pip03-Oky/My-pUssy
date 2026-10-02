@@ -2,24 +2,17 @@ import asyncio
 import sqlite3
 
 
-USER_WAITING_TASKS = {}
+USER_WAITING_EDIT = {}
 
 
 class UserQueueManager:
-    def __init__(
-        self,
-        max_concurrent=2,
-        max_queue_size=3,
-    ):
+    def __init__(self, max_concurrent=2, max_queue_size=3):
         self.max_concurrent = max_concurrent
         self.max_queue_size = max_queue_size
         self.user_semaphores = {}
         self.user_active_counts = {}
 
-    def get_semaphore(
-        self,
-        user_id: int,
-    ) -> asyncio.Semaphore:
+    def get_semaphore(self, user_id: int) -> asyncio.Semaphore:
         if user_id not in self.user_semaphores:
             self.user_semaphores[user_id] = asyncio.Semaphore(
                 self.max_concurrent
@@ -28,15 +21,8 @@ class UserQueueManager:
 
         return self.user_semaphores[user_id]
 
-    def can_accept_request(
-        self,
-        user_id: int,
-    ) -> bool:
-        current_active = self.user_active_counts.get(
-            user_id,
-            0,
-        )
-
+    def can_accept_request(self, user_id: int) -> bool:
+        current_active = self.user_active_counts.get(user_id, 0)
         return current_active < (
             self.max_concurrent + self.max_queue_size
         )
@@ -119,29 +105,20 @@ async def init_db():
 def _sync_add_user(user_id: int):
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
-
         cursor.execute(
             "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
             (user_id,),
         )
-
         conn.commit()
 
 
 async def add_user(user_id: int):
-    await asyncio.to_thread(
-        _sync_add_user,
-        user_id,
-    )
+    await asyncio.to_thread(_sync_add_user, user_id)
 
 
-def _sync_get_cached_file(
-    media_key: str,
-    mode: str,
-) -> str:
+def _sync_get_cached_file(media_key: str, mode: str) -> str:
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
-
         cursor.execute(
             """
             SELECT file_id
@@ -150,16 +127,12 @@ def _sync_get_cached_file(
             """,
             (media_key, mode),
         )
-
         row = cursor.fetchone()
 
-        return row[0] if row else None
+    return row[0] if row else None
 
 
-async def get_cached_file(
-    media_key: str,
-    mode: str,
-) -> str:
+async def get_cached_file(media_key: str, mode: str) -> str:
     return await asyncio.to_thread(
         _sync_get_cached_file,
         media_key,
@@ -174,7 +147,6 @@ def _sync_save_cached_file(
 ):
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
-
         cursor.execute(
             """
             INSERT OR REPLACE INTO cached_files
@@ -183,7 +155,6 @@ def _sync_save_cached_file(
             """,
             (media_key, mode, file_id),
         )
-
         conn.commit()
 
 
@@ -206,14 +177,11 @@ def _sync_set_chat_mode(
     mode: str,
 ):
     target_thread_id = (
-        thread_id
-        if thread_id is not None
-        else 0
+        thread_id if thread_id is not None else 0
     )
 
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
-
         cursor.execute(
             """
             INSERT OR REPLACE INTO chat_modes
@@ -226,7 +194,6 @@ def _sync_set_chat_mode(
                 mode,
             ),
         )
-
         conn.commit()
 
 
@@ -248,14 +215,11 @@ def _sync_get_chat_mode(
     thread_id: int,
 ) -> str:
     target_thread_id = (
-        thread_id
-        if thread_id is not None
-        else 0
+        thread_id if thread_id is not None else 0
     )
 
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
-
         cursor.execute(
             """
             SELECT mode
@@ -267,10 +231,9 @@ def _sync_get_chat_mode(
                 target_thread_id,
             ),
         )
-
         row = cursor.fetchone()
 
-        return row[0] if row else "normal"
+    return row[0] if row else "normal"
 
 
 async def get_chat_mode(
@@ -293,7 +256,6 @@ def _sync_get_next_rotating_response(
 
     with sqlite3.connect("bot_data.db") as conn:
         cursor = conn.cursor()
-
         cursor.execute(
             """
             SELECT last_index
@@ -302,10 +264,9 @@ def _sync_get_next_rotating_response(
             """,
             (user_id,),
         )
-
         row = cursor.fetchone()
-        last_index = row[0] if row else -1
 
+        last_index = row[0] if row else -1
         next_index = (
             last_index + 1
         ) % len(responses_list)
@@ -321,10 +282,9 @@ def _sync_get_next_rotating_response(
                 next_index,
             ),
         )
-
         conn.commit()
 
-        return responses_list[next_index]
+    return responses_list[next_index]
 
 
 async def get_next_rotating_response(
@@ -338,20 +298,16 @@ async def get_next_rotating_response(
     )
 
 
-def register_user_wait_task(
+def set_user_edit_waiting(
     user_id: int,
-    task: asyncio.Task,
+    message,
 ):
-    previous_task = USER_WAITING_TASKS.get(user_id)
-
-    if previous_task and not previous_task.done():
-        previous_task.cancel()
-
-    USER_WAITING_TASKS[user_id] = task
+    USER_WAITING_EDIT[user_id] = message
 
 
-def clear_user_wait_task(user_id: int):
-    USER_WAITING_TASKS.pop(
-        user_id,
-        None,
-    )
+def get_user_edit_waiting(user_id: int):
+    return USER_WAITING_EDIT.get(user_id)
+
+
+def clear_user_edit_waiting(user_id: int):
+    USER_WAITING_EDIT.pop(user_id, None)
