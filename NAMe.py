@@ -28,7 +28,6 @@ def build_file_name(info_dict: dict) -> str:
         or info_dict.get("channel")
         or ""
     )
-
     title = (
         info_dict.get("title")
         or info_dict.get("id")
@@ -41,7 +40,6 @@ def build_file_name(info_dict: dict) -> str:
         uploader,
         flags=re.UNICODE,
     )
-
     clean_title = re.sub(
         r"[^\w\s&\-]",
         "",
@@ -67,8 +65,7 @@ def build_file_name(info_dict: dict) -> str:
         )
     else:
         combined_name = (
-            clean_uploader
-            or clean_title
+            clean_uploader or clean_title
         )
 
     return apply_custom_case(combined_name)
@@ -154,53 +151,90 @@ def auto_managed_download_dir(
         cleanup_directory_tree(path)
 
 
-def get_downloaded_file_path(
-    download_dir: str,
-) -> str:
-    if not os.path.exists(download_dir):
-        return None
-
-    files = os.listdir(download_dir)
-
-    if not files:
-        return None
-
-    return os.path.join(
-        download_dir,
-        files[0],
-    )
-
-
 def get_downloaded_file_paths(
     download_dir: str,
-) -> list[str]:
+) -> list:
     if not os.path.exists(download_dir):
         return []
 
-    files = [
-        os.path.join(download_dir, name)
-        for name in os.listdir(download_dir)
-    ]
+    files = []
 
-    return sorted(
-        file_path
-        for file_path in files
-        if os.path.isfile(file_path)
+    for filename in os.listdir(download_dir):
+        file_path = os.path.join(
+            download_dir,
+            filename,
+        )
+
+        if os.path.isfile(file_path):
+            files.append(file_path)
+
+    return files
+
+
+def get_downloaded_file_path(
+    download_dir: str,
+) -> str:
+    files = get_downloaded_file_paths(
+        download_dir
     )
+
+    if files:
+        return files[0]
+
+    return None
 
 
 def is_telegram_url(url: str) -> bool:
-    pattern = (
-        r"^(?:https?://)?"
-        r"(?:www\.)?"
-        r"(?:t\.me|telegram\.me|telegram\.dog)"
-        r"(?:/|$)"
+    if not url:
+        return False
+
+    telegram_patterns = (
+        r"^https?://t\.me/",
+        r"^https?://telegram\.me/",
+        r"^https?://telegram\.dog/",
     )
 
-    return bool(
-        re.match(
+    return any(
+        re.search(
             pattern,
-            url.strip(),
+            url,
             flags=re.IGNORECASE,
         )
+        for pattern in telegram_patterns
     )
+
+
+def split_album_batches(
+    file_paths: list,
+    batch_size: int = 8,
+) -> list:
+    return [
+        file_paths[index:index + batch_size]
+        for index in range(
+            0,
+            len(file_paths),
+            batch_size,
+        )
+    ]
+
+
+def is_album(file_paths: list) -> bool:
+    return len(file_paths) > 1
+
+
+def get_album_batches(
+    file_paths: list,
+) -> list:
+    return split_album_batches(
+        file_paths,
+        8,
+    )
+
+
+def get_single_file(
+    file_paths: list,
+) -> str:
+    if len(file_paths) == 1:
+        return file_paths[0]
+
+    return None

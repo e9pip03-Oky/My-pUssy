@@ -641,7 +641,7 @@ async def process_url_download(
             user_id,
             thread_id,
         ) as download_dir:
-            info = await yTFMe.process_media_download(
+            await yTFMe.process_media_download(
                 url,
                 os.path.join(
                     download_dir,
@@ -664,56 +664,40 @@ async def process_url_download(
 
             if current_mode == "voice":
                 for file_path in file_paths:
-                    media_file = FSInputFile(
-                        file_path
-                    )
-
                     await bot.send_voice(
                         chat_id=chat_id,
-                        voice=media_file,
+                        voice=FSInputFile(file_path),
                         reply_to_message_id=message.message_id,
                     )
-
             else:
-                media_group = []
-
-                for file_path in file_paths[:8]:
-                    media_group.append(
-                        types.InputMediaDocument(
-                            media=FSInputFile(
-                                file_path
-                            )
-                        )
+                if not NAMe.is_album(file_paths):
+                    file_path = NAMe.get_single_file(
+                        file_paths
                     )
 
-                if media_group:
-                    await bot.send_media_group(
+                    await bot.send_document(
                         chat_id=chat_id,
-                        media=media_group,
+                        document=FSInputFile(file_path),
                         reply_to_message_id=message.message_id,
                     )
-
-                remaining = file_paths[8:]
-
-                while remaining:
-                    media_group = []
-
-                    for file_path in remaining[:8]:
-                        media_group.append(
+                else:
+                    for batch in NAMe.get_album_batches(
+                        file_paths
+                    ):
+                        media_group = [
                             types.InputMediaDocument(
                                 media=FSInputFile(
                                     file_path
                                 )
                             )
+                            for file_path in batch
+                        ]
+
+                        await bot.send_media_group(
+                            chat_id=chat_id,
+                            media=media_group,
+                            reply_to_message_id=message.message_id,
                         )
-
-                    await bot.send_media_group(
-                        chat_id=chat_id,
-                        media=media_group,
-                        reply_to_message_id=message.message_id,
-                    )
-
-                    remaining = remaining[8:]
 
             await start_msg.delete()
 
@@ -802,4 +786,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main)
