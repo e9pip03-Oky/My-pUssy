@@ -3,4 +3,3 @@ yt-dlp
 aiofiles
 aiohttp
 aiodns
-aiosqlite
