@@ -1,227 +1,162 @@
-import asyncio
-import gc
-import os
-import subprocess
-
-from yt_dlp import YoutubeDL
+Path = None
+SUBPROCESS = None
+FFMPEG_PATH = ""
 
 
-def cleanup_memory():
-    gc.collect()
+def configure(
+    path_module,
+    subprocess_module,
+    ffmpeg_path,
+):
+    global Path
+    global SUBPROCESS
+    global FFMPEG_PATH
+
+    Path = path_module
+    SUBPROCESS = subprocess_module
+    FFMPEG_PATH = ffmpeg_path
 
 
-def _extract_and_download(
-    url: str,
-    out_template: str,
-    mode: str = "normal",
-) -> dict:
-    if mode == "voice":
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": out_template,
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "opus",
-                }
-            ],
-            "postprocessor_args": {
-                "ExtractAudio": [
-                    "-c:a",
-                    "libopus",
-                    "-f",
-                    "ogg",
-                ]
-            },
-            "quiet": True,
-            "no_warnings": True,
-        }
-    else:
-        ydl_opts = {
-            "format": "bestvideo+bestaudio/best",
-            "outtmpl": out_template,
-            "postprocessors": [
-                {
-                    "key": "FFmpegMerger",
-                }
-            ],
-            "postprocessor_args": {
-                "merger": [
-                    "-c",
-                    "copy",
-                ]
-            },
-            "quiet": True,
-            "no_warnings": True,
-        }
+def base_options(workdir):
+    options = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": False,
+        "outtmpl": str(
+            Path(workdir) / "%(id)s.%(ext)s"
+        ),
+    }
 
-    with YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(
+    if FFMPEG_PATH:
+        options["ffmpeg_location"] = FFMPEG_PATH
+
+    return options
+
+
+def extract_entries(yt_dlp, url):
+    options = base_options(".")
+
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(
             url,
-            download=True,
+            download=False,
         )
-
-
-async def extract_media_info(url: str) -> dict:
-    def extract():
-        options = {
-            "quiet": True,
-            "no_warnings": True,
-            "extract_flat": True,
-        }
-
-        with YoutubeDL(options) as ydl:
-            return ydl.extract_info(
-                url,
-                download=False,
-            )
-
-    loop = asyncio.get_running_loop()
-
-    try:
-        return await loop.run_in_executor(
-            None,
-            extract,
-        )
-    finally:
-        cleanup_memory()
-
-
-async def process_media_download(
-    url: str,
-    out_template: str,
-    mode: str = "normal",
-) -> dict:
-    loop = asyncio.get_running_loop()
-
-    try:
-        info = await loop.run_in_executor(
-            None,
-            _extract_and_download,
-            url,
-            out_template,
-            mode,
-        )
-
-        return info
-    finally:
-        cleanup_memory()
-
-
-def get_entries(info: dict) -> list:
-    if not info:
-        return []
 
     entries = info.get("entries")
 
     if not entries:
-        return []
+        return {
+            "is_album": False,
+            "album_identity": None,
+            "entries": [info],
+        }
 
-    return [
-        entry
-        for entry in entries
-        if entry
-    ]
+    identity = (
+        info.get("extractor_key")
+        or info.get("extractor")
+        or ""
+    )
+
+    playlist_id = (
+        info.get("playlist_id")
+        or info.get("id")
+        or info.get("webpage_url")
+        or url
+    )
+
+    return {
+        "is_album": True,
+        "album_identity": (
+            f"{identity}:{playlist_id}"
+        ),
+        "entries": [
+            entry
+            for entry in entries
+            if entry
+        ],
+    }
 
 
-def get_entry_url(
-    entry: dict,
-    fallback_url: str,
-) -> str:
+def entry_url(entry):
     return (
         entry.get("webpage_url")
         or entry.get("original_url")
         or entry.get("url")
-        or fallback_url
     )
 
 
-def get_media_key(info: dict) -> str:
-    if not info:
-        return ""
+def download_one(
+    yt_dlp,
+    url,
+    workdir,
+    voice,
+):
+    options = base_options(workdir)
 
-    return (
-        info.get("webpage_url")
-        or info.get("original_url")
-        or info.get("id")
-        or info.get("url")
-        or ""
+    options["noplaylist"] = True
+    options["format"] = (
+        "bestaudio"
+        if voice
+        else "bv+ba/b"
+    )
+
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(
+            url,
+            download=True,
+        )
+
+    file_path = info.get("filepath")
+
+    if file_path:
+        path = Path(file_path)
+
+        if path.exists():
+            return info, path
+
+    for item in info.get(
+        "requested_downloads",
+        [],
+    ):
+        file_path = item.get("filepath")
+
+        if file_path:
+            path = Path(file_path)
+
+            if path.exists():
+                return info, path
+
+    raise FileNotFoundError(
+        "Downloaded file was not found"
     )
 
 
-def convert_audio_to_voice_sync(
-    input_path: str,
-    output_path: str,
-) -> str:
+def prepare_voice(source):
+    source = Path(source)
+
+    target = source.with_name(
+        f"{source.stem}.voice.ogg"
+    )
+
     command = [
-        "ffmpeg",
+        FFMPEG_PATH or "ffmpeg",
         "-y",
         "-i",
-        input_path,
-        "-vn",
+        str(source),
         "-c:a",
         "libopus",
         "-f",
         "ogg",
-        output_path,
+        str(target),
     ]
 
-    result = subprocess.run(
+    SUBPROCESS.run(
         command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        check=True,
+        stdout=SUBPROCESS.DEVNULL,
+        stderr=SUBPROCESS.DEVNULL,
     )
 
-    if result.returncode == 0 and os.path.exists(output_path):
-        return output_path
+    source.unlink()
 
-    return None
-
-
-async def convert_audio_to_voice(
-    input_path: str,
-    target_dir: str,
-) -> str:
-    output_path = os.path.join(
-        target_dir,
-        "converted_voice.ogg",
-    )
-
-    loop = asyncio.get_running_loop()
-
-    try:
-        return await loop.run_in_executor(
-            None,
-            convert_audio_to_voice_sync,
-            input_path,
-            output_path,
-        )
-    finally:
-        cleanup_memory()
-
-
-def has_audio_stream(file_path: str) -> bool:
-    command = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "a:0",
-        "-show_entries",
-        "stream=index",
-        "-of",
-        "csv=p=0",
-        file_path,
-    ]
-
-    try:
-        result = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        return bool(result.stdout.strip())
-    except Exception:
-        return False
+    return target

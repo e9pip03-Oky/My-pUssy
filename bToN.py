@@ -1,132 +1,99 @@
-import os
+STYLES = ()
+SETTINGS_CALLBACK = ""
+VOICE_TEXT = ""
+NORMAL_TEXT = ""
 
-from aiogram.types import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
-
-import Reply
-
-
-OWNER_BUTTON_STYLES = [
-    "danger",
-    "success",
-    "primary",
-]
-
-_owner_index = 0
-_name_index = 0
-_style_index = 0
+ROTATING_IDS = ()
+ROTATING_INDEX = 0
+COLOR_INDEX = 0
 
 
-def get_mode_keyboard(
-    current_mode: str = "normal",
-) -> InlineKeyboardMarkup:
+def configure(
+    styles,
+    callback_prefix,
+    voice_text,
+    normal_text,
+    rotating_ids,
+):
+    global STYLES
+    global SETTINGS_CALLBACK
+    global VOICE_TEXT
+    global NORMAL_TEXT
+    global ROTATING_IDS
+
+    STYLES = styles
+    SETTINGS_CALLBACK = callback_prefix
+    VOICE_TEXT = voice_text
+    NORMAL_TEXT = normal_text
+    ROTATING_IDS = tuple(rotating_ids)
+
+
+def settings_keyboard(
+    inline_keyboard_button,
+    inline_keyboard_markup,
+    mode,
+):
     voice_style = (
-        "success"
-        if current_mode == "voice"
-        else "danger"
+        STYLES[1]
+        if mode == "voice"
+        else STYLES[0]
     )
 
     normal_style = (
-        "success"
-        if current_mode == "normal"
-        else "danger"
+        STYLES[1]
+        if mode == "normal"
+        else STYLES[0]
     )
 
-    keyboard = InlineKeyboardMarkup(
+    return inline_keyboard_markup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
-                    text=Reply.BUTTON_VOICE_TEXT,
-                    callback_data="set_mode_voice",
+                inline_keyboard_button(
+                    text=VOICE_TEXT,
+                    callback_data=(
+                        f"{SETTINGS_CALLBACK}:voice"
+                    ),
                     style=voice_style,
                 ),
-                InlineKeyboardButton(
-                    text=Reply.BUTTON_NORMAL_TEXT,
-                    callback_data="set_mode_normal",
+                inline_keyboard_button(
+                    text=NORMAL_TEXT,
+                    callback_data=(
+                        f"{SETTINGS_CALLBACK}:normal"
+                    ),
                     style=normal_style,
                 ),
             ]
         ]
     )
 
-    return keyboard
 
+def rotating_button(
+    inline_keyboard_button,
+    names,
+):
+    global ROTATING_INDEX
+    global COLOR_INDEX
 
-def get_edit_help_keyboard() -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=Reply.EDIT_HELP_BUTTON_TEXT,
-                    callback_data="show_edit_help",
-                    style="primary",
-                )
-            ]
-        ]
-    )
-
-    return keyboard
-
-
-def get_owner_keyboard() -> InlineKeyboardMarkup:
-    global _owner_index
-    global _name_index
-    global _style_index
-
-    takeoff_env = os.getenv(
-        "boT_TAkeoFF",
-        "",
-    )
-
-    owner_ids = [
-        chat_id.strip()
-        for chat_id in takeoff_env.split("/")
-        if chat_id.strip()
-    ]
-
-    if not owner_ids:
+    if not ROTATING_IDS or not names:
         return None
 
-    current_id = owner_ids[
-        _owner_index % len(owner_ids)
+    user_id = ROTATING_IDS[
+        ROTATING_INDEX % len(ROTATING_IDS)
     ]
 
-    current_name = Reply.OWNER_BUTTON_NAMES[
-        _name_index % len(Reply.OWNER_BUTTON_NAMES)
+    name = names[
+        ROTATING_INDEX % len(names)
     ]
 
-    current_style = OWNER_BUTTON_STYLES[
-        _style_index % len(OWNER_BUTTON_STYLES)
+    style = STYLES[
+        COLOR_INDEX % len(STYLES)
     ]
 
-    _owner_index = (
-        _owner_index + 1
-    ) % len(owner_ids)
+    ROTATING_INDEX += 1
+    COLOR_INDEX += 1
 
-    _name_index = (
-        _name_index + 1
-    ) % len(Reply.OWNER_BUTTON_NAMES)
-
-    _style_index = (
-        _style_index + 1
-    ) % len(OWNER_BUTTON_STYLES)
-
-    button_url = (
-        f"tg://user?id={current_id}"
+    return inline_keyboard_button(
+        text=name,
+        url=f"tg://user?id={user_id}",
+        style=style,
     )
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=current_name,
-                    url=button_url,
-                    style=current_style,
-                )
-            ]
-        ]
-    )
-
-    return keyboard

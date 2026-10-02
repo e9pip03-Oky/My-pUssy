@@ -1,313 +1,140 @@
-import asyncio
-import sqlite3
+DB = None
 
 
-USER_WAITING_EDIT = {}
+def configure(sqlite3_module, db_path):
+    global DB
 
+    DB = sqlite3_module.connect(
+        db_path,
+        check_same_thread=False,
+    )
 
-class UserQueueManager:
-    def __init__(self, max_concurrent=2, max_queue_size=3):
-        self.max_concurrent = max_concurrent
-        self.max_queue_size = max_queue_size
-        self.user_semaphores = {}
-        self.user_active_counts = {}
+    DB.execute("PRAGMA journal_mode=WAL")
 
-    def get_semaphore(self, user_id: int) -> asyncio.Semaphore:
-        if user_id not in self.user_semaphores:
-            self.user_semaphores[user_id] = asyncio.Semaphore(
-                self.max_concurrent
-            )
-            self.user_active_counts[user_id] = 0
-
-        return self.user_semaphores[user_id]
-
-    def can_accept_request(self, user_id: int) -> bool:
-        current_active = self.user_active_counts.get(user_id, 0)
-        return current_active < (
-            self.max_concurrent + self.max_queue_size
+    DB.execute(
+        """
+        CREATE TABLE IF NOT EXISTS file_cache (
+            cache_key TEXT PRIMARY KEY,
+            file_id TEXT NOT NULL
         )
+        """
+    )
 
-    def increment_user_count(self, user_id: int):
-        self.user_active_counts[user_id] = (
-            self.user_active_counts.get(user_id, 0) + 1
+    DB.execute(
+        """
+        CREATE TABLE IF NOT EXISTS album_cache (
+            album_key TEXT PRIMARY KEY,
+            items TEXT NOT NULL
         )
+        """
+    )
 
-    def decrement_user_count(self, user_id: int):
-        if user_id not in self.user_active_counts:
-            return
-
-        self.user_active_counts[user_id] -= 1
-
-        if self.user_active_counts[user_id] <= 0:
-            del self.user_active_counts[user_id]
-
-            if user_id in self.user_semaphores:
-                del self.user_semaphores[user_id]
-
-
-queue_manager = UserQueueManager(
-    max_concurrent=2,
-    max_queue_size=3,
-)
-
-
-def _sync_init_db():
-    with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
+    DB.execute(
+        """
+        CREATE TABLE IF NOT EXISTS settings (
+            settings_key TEXT PRIMARY KEY,
+            mode TEXT NOT NULL DEFAULT 'normal'
         )
+        """
+    )
 
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS cached_files (
-                media_key TEXT,
-                mode TEXT,
-                file_id TEXT,
-                PRIMARY KEY (media_key, mode)
-            )
-            """
-        )
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chat_modes (
-                chat_id INTEGER,
-                thread_id INTEGER,
-                mode TEXT DEFAULT 'normal',
-                PRIMARY KEY (chat_id, thread_id)
-            )
-            """
-        )
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_rotation (
-                user_id INTEGER PRIMARY KEY,
-                last_index INTEGER DEFAULT -1
-            )
-            """
-        )
-
-        conn.commit()
+    DB.commit()
 
 
-async def init_db():
-    await asyncio.to_thread(_sync_init_db)
-
-
-def _sync_add_user(user_id: int):
-    with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
-            (user_id,),
-        )
-        conn.commit()
-
-
-async def add_user(user_id: int):
-    await asyncio.to_thread(_sync_add_user, user_id)
-
-
-def _sync_get_cached_file(media_key: str, mode: str) -> str:
-    with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT file_id
-            FROM cached_files
-            WHERE media_key = ? AND mode = ?
-            """,
-            (media_key, mode),
-        )
-        row = cursor.fetchone()
+def get_file_id(cache_key):
+    row = DB.execute(
+        """
+        SELECT file_id
+        FROM file_cache
+        WHERE cache_key = ?
+        """,
+        (cache_key,),
+    ).fetchone()
 
     return row[0] if row else None
 
 
-async def get_cached_file(media_key: str, mode: str) -> str:
-    return await asyncio.to_thread(
-        _sync_get_cached_file,
-        media_key,
-        mode,
-    )
-
-
-def _sync_save_cached_file(
-    media_key: str,
-    mode: str,
-    file_id: str,
-):
-    with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO cached_files
-            (media_key, mode, file_id)
-            VALUES (?, ?, ?)
-            """,
-            (media_key, mode, file_id),
+def save_file_id(cache_key, file_id):
+    DB.execute(
+        """
+        INSERT INTO file_cache (
+            cache_key,
+            file_id
         )
-        conn.commit()
-
-
-async def save_cached_file(
-    media_key: str,
-    mode: str,
-    file_id: str,
-):
-    await asyncio.to_thread(
-        _sync_save_cached_file,
-        media_key,
-        mode,
-        file_id,
+        VALUES (?, ?)
+        ON CONFLICT(cache_key)
+        DO UPDATE SET file_id = excluded.file_id
+        """,
+        (cache_key, file_id),
     )
 
+    DB.commit()
 
-def _sync_set_chat_mode(
-    chat_id: int,
-    thread_id: int,
-    mode: str,
-):
-    target_thread_id = (
-        thread_id if thread_id is not None else 0
-    )
 
-    with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO chat_modes
-            (chat_id, thread_id, mode)
-            VALUES (?, ?, ?)
-            """,
-            (
-                chat_id,
-                target_thread_id,
-                mode,
+def get_album(album_key, json_module):
+    row = DB.execute(
+        """
+        SELECT items
+        FROM album_cache
+        WHERE album_key = ?
+        """,
+        (album_key,),
+    ).fetchone()
+
+    if not row:
+        return None
+
+    return json_module.loads(row[0])
+
+
+def save_album(album_key, items, json_module):
+    DB.execute(
+        """
+        INSERT INTO album_cache (
+            album_key,
+            items
+        )
+        VALUES (?, ?)
+        ON CONFLICT(album_key)
+        DO UPDATE SET items = excluded.items
+        """,
+        (
+            album_key,
+            json_module.dumps(
+                items,
+                ensure_ascii=False,
             ),
-        )
-        conn.commit()
-
-
-async def set_chat_mode(
-    chat_id: int,
-    thread_id: int,
-    mode: str,
-):
-    await asyncio.to_thread(
-        _sync_set_chat_mode,
-        chat_id,
-        thread_id,
-        mode,
+        ),
     )
 
+    DB.commit()
 
-def _sync_get_chat_mode(
-    chat_id: int,
-    thread_id: int,
-) -> str:
-    target_thread_id = (
-        thread_id if thread_id is not None else 0
-    )
 
-    with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT mode
-            FROM chat_modes
-            WHERE chat_id = ? AND thread_id = ?
-            """,
-            (
-                chat_id,
-                target_thread_id,
-            ),
-        )
-        row = cursor.fetchone()
+def get_mode(settings_key):
+    row = DB.execute(
+        """
+        SELECT mode
+        FROM settings
+        WHERE settings_key = ?
+        """,
+        (settings_key,),
+    ).fetchone()
 
     return row[0] if row else "normal"
 
 
-async def get_chat_mode(
-    chat_id: int,
-    thread_id: int,
-) -> str:
-    return await asyncio.to_thread(
-        _sync_get_chat_mode,
-        chat_id,
-        thread_id,
+def save_mode(settings_key, mode):
+    DB.execute(
+        """
+        INSERT INTO settings (
+            settings_key,
+            mode
+        )
+        VALUES (?, ?)
+        ON CONFLICT(settings_key)
+        DO UPDATE SET mode = excluded.mode
+        """,
+        (settings_key, mode),
     )
 
-
-def _sync_get_next_rotating_response(
-    user_id: int,
-    responses_list: list,
-) -> str:
-    if not responses_list:
-        return ""
-
-    with sqlite3.connect("bot_data.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT last_index
-            FROM user_rotation
-            WHERE user_id = ?
-            """,
-            (user_id,),
-        )
-        row = cursor.fetchone()
-
-        last_index = row[0] if row else -1
-        next_index = (
-            last_index + 1
-        ) % len(responses_list)
-
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO user_rotation
-            (user_id, last_index)
-            VALUES (?, ?)
-            """,
-            (
-                user_id,
-                next_index,
-            ),
-        )
-        conn.commit()
-
-    return responses_list[next_index]
-
-
-async def get_next_rotating_response(
-    user_id: int,
-    responses_list: list,
-) -> str:
-    return await asyncio.to_thread(
-        _sync_get_next_rotating_response,
-        user_id,
-        responses_list,
-    )
-
-
-def set_user_edit_waiting(
-    user_id: int,
-    message,
-):
-    USER_WAITING_EDIT[user_id] = message
-
-
-def get_user_edit_waiting(user_id: int):
-    return USER_WAITING_EDIT.get(user_id)
-
-
-def clear_user_edit_waiting(user_id: int):
-    USER_WAITING_EDIT.pop(user_id, None)
+    DB.commit()

@@ -1,240 +1,153 @@
-import asyncio
-import os
-import re
-import shutil
-from contextlib import contextmanager
+Path = None
+RE = None
+URLPARSE = None
 
 
-BASE_DIR = "downloads"
-download_queue = asyncio.Queue()
+def configure(path_module, regex_module, urlparse):
+    global Path
+    global RE
+    global URLPARSE
+
+    Path = path_module
+    RE = regex_module
+    URLPARSE = urlparse
 
 
-def apply_custom_case(text: str) -> str:
-    uppercase_targets = set("ATFGUJNML")
-    result = []
+def is_telegram_link(url):
+    host = (
+        URLPARSE(url).hostname or ""
+    ).lower()
 
-    for char in text:
-        if char.upper() in uppercase_targets:
-            result.append(char.upper())
-        else:
-            result.append(char.lower())
-
-    return "".join(result)
-
-
-def build_file_name(info_dict: dict) -> str:
-    uploader = (
-        info_dict.get("uploader")
-        or info_dict.get("channel")
-        or ""
-    )
-    title = (
-        info_dict.get("title")
-        or info_dict.get("id")
-        or ""
+    return (
+        host == "t.me"
+        or host.endswith(".t.me")
+        or host == "telegram.me"
+        or host.endswith(".telegram.me")
+        or host == "telegram.dog"
+        or host.endswith(".telegram.dog")
     )
 
-    clean_uploader = re.sub(
-        r"[^\w\s&\-]",
-        "",
-        uploader,
-        flags=re.UNICODE,
-    )
-    clean_title = re.sub(
-        r"[^\w\s&\-]",
-        "",
-        title,
-        flags=re.UNICODE,
-    )
 
-    clean_uploader = re.sub(
-        r"\s+",
-        " ",
-        clean_uploader,
-    ).strip()
-
-    clean_title = re.sub(
-        r"\s+",
-        " ",
-        clean_title,
-    ).strip()
-
-    if clean_uploader and clean_title:
-        combined_name = (
-            f"{clean_uploader} - {clean_title}"
-        )
-    else:
-        combined_name = (
-            clean_uploader or clean_title
-        )
-
-    return apply_custom_case(combined_name)
-
-
-def get_user_download_path(
-    chat_id: int,
-    user_id: int,
-    topic_id: int = None,
-) -> str:
-    clean_chat_id = str(abs(chat_id))
-    clean_user_id = str(user_id)
-
-    if chat_id == user_id:
-        target_dir = os.path.join(
-            BASE_DIR,
-            clean_user_id,
-        )
-    elif topic_id:
-        target_dir = os.path.join(
-            BASE_DIR,
-            clean_chat_id,
-            "topics",
-            str(topic_id),
-            clean_user_id,
-        )
-    else:
-        target_dir = os.path.join(
-            BASE_DIR,
-            clean_chat_id,
-            clean_user_id,
-        )
-
-    os.makedirs(
-        target_dir,
+def get_download_dir(root, scope_id):
+    path = Path(root) / str(scope_id)
+    path.mkdir(
+        parents=True,
         exist_ok=True,
     )
+    return path
 
-    return target_dir
+
+def clean_name(value):
+    value = value or ""
+
+    value = RE.sub(
+        r"[^\w\s]",
+        "",
+        value,
+        flags=RE.UNICODE,
+    )
+
+    value = RE.sub(
+        r"\s+",
+        " ",
+        value,
+    ).strip()
+
+    exceptions = set("ATFGUJNML")
+    result = []
+
+    for char in value:
+        if "A" <= char <= "Z":
+            if char in exceptions:
+                result.append(char)
+            else:
+                result.append(char.lower())
+        elif "a" <= char <= "z":
+            result.append(char.lower())
+        else:
+            result.append(char)
+
+    return "".join(result).strip()
 
 
-def cleanup_directory_tree(target_dir: str):
-    if not os.path.exists(target_dir):
+def get_publisher(info):
+    return clean_name(
+        info.get("uploader")
+        or info.get("channel")
+        or info.get("playlist_uploader")
+        or info.get("playlist_channel")
+        or ""
+    )
+
+
+def build_filename(info, file_path):
+    path = Path(file_path)
+
+    publisher = get_publisher(info)
+    title = clean_name(
+        info.get("title")
+        or info.get("fulltitle")
+        or ""
+    )
+
+    if publisher and title:
+        name = f"{publisher} - {title}"
+    elif publisher:
+        name = publisher
+    elif title:
+        name = title
+    else:
+        name = "media"
+
+    return f"{name}{path.suffix}"
+
+
+def rename_downloaded_file(info, file_path):
+    path = Path(file_path)
+
+    target = path.with_name(
+        build_filename(
+            info,
+            path,
+        )
+    )
+
+    if target == path:
+        return target
+
+    counter = 2
+
+    while target.exists():
+        target = path.with_name(
+            f"{path.stem} {counter}{path.suffix}"
+        )
+        counter += 1
+
+    path.rename(target)
+
+    return target
+
+
+def cleanup(path):
+    if not path:
         return
 
-    shutil.rmtree(
-        target_dir,
-        ignore_errors=True,
-    )
+    path = Path(path)
 
-    parent = os.path.dirname(target_dir)
-    base_abs = os.path.abspath(BASE_DIR)
+    if not path.exists():
+        return
 
-    while (
-        os.path.abspath(parent) != base_abs
-        and os.path.exists(parent)
-    ):
+    if path.is_file():
         try:
-            if not os.listdir(parent):
-                os.rmdir(parent)
-                parent = os.path.dirname(parent)
-            else:
-                break
-        except Exception:
-            break
+            path.unlink()
+        except OSError:
+            pass
+        return
 
-
-@contextmanager
-def auto_managed_download_dir(
-    chat_id: int,
-    user_id: int,
-    topic_id: int = None,
-):
-    path = get_user_download_path(
-        chat_id,
-        user_id,
-        topic_id,
-    )
+    for child in list(path.iterdir()):
+        cleanup(child)
 
     try:
-        yield path
-    finally:
-        cleanup_directory_tree(path)
-
-
-def get_downloaded_file_paths(
-    download_dir: str,
-) -> list:
-    if not os.path.exists(download_dir):
-        return []
-
-    files = []
-
-    for filename in os.listdir(download_dir):
-        file_path = os.path.join(
-            download_dir,
-            filename,
-        )
-
-        if os.path.isfile(file_path):
-            files.append(file_path)
-
-    return files
-
-
-def get_downloaded_file_path(
-    download_dir: str,
-) -> str:
-    files = get_downloaded_file_paths(
-        download_dir
-    )
-
-    if files:
-        return files[0]
-
-    return None
-
-
-def is_telegram_url(url: str) -> bool:
-    if not url:
-        return False
-
-    telegram_patterns = (
-        r"^https?://t\.me/",
-        r"^https?://telegram\.me/",
-        r"^https?://telegram\.dog/",
-    )
-
-    return any(
-        re.search(
-            pattern,
-            url,
-            flags=re.IGNORECASE,
-        )
-        for pattern in telegram_patterns
-    )
-
-
-def split_album_batches(
-    file_paths: list,
-    batch_size: int = 8,
-) -> list:
-    return [
-        file_paths[index:index + batch_size]
-        for index in range(
-            0,
-            len(file_paths),
-            batch_size,
-        )
-    ]
-
-
-def is_album(file_paths: list) -> bool:
-    return len(file_paths) > 1
-
-
-def get_album_batches(
-    file_paths: list,
-) -> list:
-    return split_album_batches(
-        file_paths,
-        8,
-    )
-
-
-def get_single_file(
-    file_paths: list,
-) -> str:
-    if len(file_paths) == 1:
-        return file_paths[0]
-
-    return None
+        path.rmdir()
+    except OSError:
+        pass
