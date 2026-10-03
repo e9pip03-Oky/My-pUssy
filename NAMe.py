@@ -1,80 +1,82 @@
 import re
 import asyncio
+from typing import Dict, Optional, Set
 
-UPPER_ALLOWED = set("ATFGUJNML")
 
-class QueueManager:
+class UserQueueManager:
     def __init__(self):
-        self.active_downloads = {}
-        self.user_queues = {}
-        self.locks = {}
+        self.user_semaphores: Dict[int, asyncio.Semaphore] = {}
+        self.user_active_count: Dict[int, int] = {}
+        self.user_queues: Dict[int, asyncio.Queue] = {}
 
-    def _get_lock(self, key: str):
-        if key not in self.locks:
-            self.locks[key] = asyncio.Lock()
-        return self.locks[key]
+    def is_user_blocked(self, user_id: int) -> bool:
+        active = self.user_active_count.get(user_id, 0)
+        queue_size = self.user_queues[user_id].qsize() if user_id in self.user_queues else 0
+        return (active + queue_size) >= 6
 
-    async def can_accept_task(self, key: str) -> bool:
-        async with self._get_lock(key):
-            active = self.active_downloads.get(key, 0)
-            queue = self.user_queues.get(key, [])
-            if active < 3:
-                return True
-            if len(queue) < 3:
-                return True
+    def get_semaphore(self, user_id: int) -> asyncio.Semaphore:
+        if user_id not in self.user_semaphores:
+            self.user_semaphores[user_id] = asyncio.Semaphore(3)
+        return self.user_semaphores[user_id]
+
+    async def acquire_slot(self, user_id: int) -> bool:
+        if self.is_user_blocked(user_id):
             return False
 
-    async def register_task(self, key: str, url: str) -> bool:
-        async with self._get_lock(key):
-            active = self.active_downloads.get(key, 0)
-            if active < 3:
-                self.active_downloads[key] = active + 1
-                return True
-            queue = self.user_queues.setdefault(key, [])
-            if len(queue) < 3:
-                queue.append(url)
-                return False
-            return False
+        if user_id not in self.user_queues:
+            self.user_queues[user_id] = asyncio.Queue(maxsize=3)
 
-    async def release_task(self, key: str):
-        async with self._get_lock(key):
-            active = self.active_downloads.get(key, 0)
-            queue = self.user_queues.get(key, [])
-            if queue:
-                queue.pop(0)
+        self.user_active_count[user_id] = self.user_active_count.get(user_id, 0) + 1
+        return True
+
+    def release_slot(self, user_id: int):
+        if user_id in self.user_active_count:
+            self.user_active_count[user_id] -= 1
+            if self.user_active_count[user_id] <= 0:
+                del self.user_active_count[user_id]
+                if user_id in self.user_semaphores:
+                    del self.user_semaphores[user_id]
+                if user_id in self.user_queues:
+                    del self.user_queues[user_id]
+
+
+queue_manager = UserQueueManager()
+
+
+def is_telegram_link(text: str) -> bool:
+    pattern = r"(https?://)?(www\.)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_]+"
+    return bool(re.search(pattern, text))
+
+
+def extract_url(text: str) -> Optional[str]:
+    if is_telegram_link(text):
+        return None
+    url_pattern = r"https?://[^\s]+"
+    match = re.search(url_pattern, text)
+    if match:
+        return match.group(0)
+    return None
+
+
+def format_custom_filename(uploader: str, title: str) -> str:
+    raw_name = f"{uploader} - {title}" if uploader else title
+    allowed_uppercase: Set[str] = {"A", "T", "F", "G", "U", "J", "N", "M", "L"}
+
+    formatted_chars = []
+    for char in raw_name:
+        if char == "_" or char == " " or char == "-":
+            formatted_chars.append(char)
+        elif char.isalpha():
+            if char.isupper():
+                if char in allowed_uppercase:
+                    formatted_chars.append(char)
+                else:
+                    formatted_chars.append(char.lower())
             else:
-                if active > 0:
-                    self.active_downloads[key] = active - 1
+                formatted_chars.append(char)
+        elif char.isdigit():
+            formatted_chars.append(char)
 
-def is_telegram_link(url: str) -> bool:
-    pattern = r'https?://(t\.me|telegram\.me|telegram\.dog)/'
-    return bool(re.search(pattern, url, re.IGNORECASE))
-
-def format_title_case(text: str) -> str:
-    result = []
-    for char in text:
-        if 'a' <= char <= 'z' or 'A' <= char <= 'Z':
-            upper_char = char.upper()
-            if upper_char in UPPER_ALLOWED:
-                result.append(upper_char)
-            else:
-                result.append(char.lower())
-        else:
-            result.append(char)
-    return "".join(result)
-
-def sanitize_component(text: str) -> str:
-    text = re.sub(r'[^\w\s]', '', text)
-    text = text.replace('_', '___TEMP___')
-    text = text.replace('_', '')
-    text = text.replace('___TEMP___', '_')
-    return text.strip()
-
-def build_filename(uploader_or_channel: str, title: str) -> str:
-    clean_uploader = sanitize_component(uploader_or_channel)
-    clean_title = sanitize_component(title)
-
-    raw_name = f"{clean_uploader} - {clean_title}"
-    return format_title_case(raw_name)
-
-queue_mgr = QueueManager()
+    result = "".join(formatted_chars)
+    result = re.sub(r"\s+", " ", result).strip()
+    return result if result else "file"

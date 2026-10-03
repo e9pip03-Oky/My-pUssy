@@ -1,95 +1,109 @@
-import os
-import sqlite3
-import json
+import aiosqlite
 
-DB_PATH = os.path.join(os.getcwd(), "bot_database.db")
 
-class Database:
-    def __init__(self, db_path=DB_PATH):
-        self.db_path = db_path
-        self._init_db()
+async def init_db():
+    async with aiosqlite.connect("bot_database.db") as db:
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_modes (
+                chat_id INTEGER,
+                thread_id INTEGER,
+                mode TEXT DEFAULT 'normal',
+                PRIMARY KEY (chat_id, thread_id)
+            )
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_rotation (
+                user_id INTEGER PRIMARY KEY,
+                last_index INTEGER DEFAULT 0
+            )
+            """
+        )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS file_cache (
+                item_id TEXT,
+                mode TEXT,
+                file_id TEXT,
+                PRIMARY KEY (item_id, mode)
+            )
+            """
+        )
+        await db.commit()
 
-    def _get_connection(self):
-        return sqlite3.connect(self.db_path)
 
-    def _init_db(self):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    mode TEXT NOT NULL
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS file_cache (
-                    url TEXT NOT NULL,
-                    mode TEXT NOT NULL,
-                    file_data TEXT NOT NULL,
-                    PRIMARY KEY (url, mode)
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS user_reply_index (
-                    user_id INTEGER PRIMARY KEY,
-                    idx INTEGER NOT NULL DEFAULT 0
-                )
-            """)
-            conn.commit()
-
-    def get_mode(self, key: str) -> str:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT mode FROM settings WHERE key = ?", (key,))
-            row = cursor.fetchone()
-            return row[0] if row else "normal"
-
-    def set_mode(self, key: str, mode: str):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO settings (key, mode) VALUES (?, ?)
-                ON CONFLICT(key) DO UPDATE SET mode = excluded.mode
-            """, (key, mode))
-            conn.commit()
-
-    def get_cached_map(self, url: str, mode: str) -> dict:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT file_data FROM file_cache WHERE url = ? AND mode = ?", (url, mode))
-            row = cursor.fetchone()
-            if row and row[0]:
-                try:
-                    return json.loads(row[0])
-                except Exception:
-                    return {}
-            return {}
-
-    def update_cached_map(self, url: str, mode: str, new_entries: dict):
-        current_map = self.get_cached_map(url, mode)
-        current_map.update(new_entries)
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO file_cache (url, mode, file_data) VALUES (?, ?, ?)
-                ON CONFLICT(url, mode) DO UPDATE SET file_data = excluded.file_data
-            """, (url, mode, json.dumps(current_map)))
-            conn.commit()
-
-    def get_next_reply_index(self, user_id: int, total_replies: int) -> int:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT idx FROM user_reply_index WHERE user_id = ?", (user_id,))
-            row = cursor.fetchone()
+async def get_chat_mode(chat_id: int, thread_id: int) -> str:
+    tid = thread_id if thread_id is not None else 0
+    async with aiosqlite.connect("bot_database.db") as db:
+        async with db.execute(
+            "SELECT mode FROM chat_modes WHERE chat_id = ? AND thread_id = ?",
+            (chat_id, tid),
+        ) as cursor:
+            row = await cursor.fetchone()
             if row:
-                current_idx = row[0]
-                next_idx = (current_idx + 1) % total_replies
-                cursor.execute("UPDATE user_reply_index SET idx = ? WHERE user_id = ?", (next_idx, user_id))
-            else:
-                current_idx = 0
-                next_idx = 1 % total_replies
-                cursor.execute("INSERT INTO user_reply_index (user_id, idx) VALUES (?, ?)", (user_id, next_idx))
-            conn.commit()
-            return current_idx
+                return row[0]
+            return "normal"
 
-db = Database()
+
+async def toggle_chat_mode(chat_id: int, thread_id: int) -> str:
+    tid = thread_id if thread_id is not None else 0
+    current_mode = await get_chat_mode(chat_id, tid)
+    new_mode = "voice" if current_mode == "normal" else "normal"
+    async with aiosqlite.connect("bot_database.db") as db:
+        await db.execute(
+            """
+            INSERT INTO chat_modes (chat_id, thread_id, mode)
+            VALUES (?, ?, ?)
+            ON CONFLICT(chat_id, thread_id) DO UPDATE SET mode = excluded.mode
+            """,
+            (chat_id, tid, new_mode),
+        )
+        await db.commit()
+    return new_mode
+
+
+async def get_next_user_index(user_id: int, total_items: int) -> int:
+    async with aiosqlite.connect("bot_database.db") as db:
+        async with db.execute(
+            "SELECT last_index FROM user_rotation WHERE user_id = ?",
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            current_index = row[0] if row else 0
+
+        next_index = (current_index + 1) % total_items
+        await db.execute(
+            """
+            INSERT INTO user_rotation (user_id, last_index)
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET last_index = excluded.last_index
+            """,
+            (user_id, next_index),
+        )
+        await db.commit()
+        return current_index
+
+
+async def get_cached_file_id(item_id: str, mode: str):
+    async with aiosqlite.connect("bot_database.db") as db:
+        async with db.execute(
+            "SELECT file_id FROM file_cache WHERE item_id = ? AND mode = ?",
+            (item_id, mode),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+
+async def save_cached_file_id(item_id: str, mode: str, file_id: str):
+    async with aiosqlite.connect("bot_database.db") as db:
+        await db.execute(
+            """
+            INSERT INTO file_cache (item_id, mode, file_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(item_id, mode) DO UPDATE SET file_id = excluded.file_id
+            """,
+            (item_id, mode, file_id),
+        )
+        await db.commit()

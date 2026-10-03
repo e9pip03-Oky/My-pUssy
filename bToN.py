@@ -1,61 +1,99 @@
 import os
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from Reply import BTN_VOICE, BTN_NORMAL, BTN_NAMES
+from typing import Optional
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
+from aiogram.enums import ButtonStyle
 
-class ButtonManager:
-    def __init__(self):
-        self.btn_name_idx = 0
-        self.btn_style_idx = 0
-        self.takeoff_id_idx = 0
-        self.styles = ["danger", "success", "primary"]
+import Reply
+import CAsh
 
-    def _get_takeoff_ids(self) -> list:
-        raw_env = os.getenv("boT_TAkeoFF", "")
-        if not raw_env:
-            return []
-        return [id_str.strip() for id_str in raw_env.split("/") if id_str.strip()]
+_btn_rotation_index = 0
 
-    def get_edit_keyboard(self, current_mode: str) -> InlineKeyboardMarkup:
-        if current_mode == "voice":
-            voice_style = "success"
-            normal_style = "danger"
-        else:
-            voice_style = "danger"
-            normal_style = "success"
+BTN_COLORS = [
+    ButtonStyle.SUCCESS,
+    ButtonStyle.DANGER,
+    ButtonStyle.PRIMARY
+]
 
-        btn_voice = InlineKeyboardButton(
-            text=BTN_VOICE,
-            callback_data="mode_voice",
-            style=voice_style
-        )
-        btn_normal = InlineKeyboardButton(
-            text=BTN_NORMAL,
-            callback_data="mode_normal",
-            style=normal_style
-        )
 
-        return InlineKeyboardMarkup(inline_keyboard=[[btn_voice, btn_normal]])
+def _parse_takeoff_env() -> list[tuple[str, str]]:
+    raw_env = os.getenv("boT_TAkeoFF", "")
+    if not raw_env:
+        return []
+    items = []
+    pairs = raw_env.split(",")
+    for pair in pairs:
+        pair = pair.strip()
+        if not pair:
+            continue
+        parts = pair.split(":", 1)
+        if len(parts) == 2:
+            url = parts[0].strip()
+            user_id = parts[1].strip()
+            if url and user_id:
+                items.append((url, user_id))
+    return items
 
-    def get_rotating_button(self) -> InlineKeyboardMarkup:
-        takeoff_ids = self._get_takeoff_ids()
-        if not takeoff_ids:
-            return None
 
-        target_id = takeoff_ids[self.takeoff_id_idx % len(takeoff_ids)]
-        btn_name = BTN_NAMES[self.btn_name_idx % len(BTN_NAMES)]
-        btn_style = self.styles[self.btn_style_idx % len(self.styles)]
+def get_next_takeoff_button() -> Optional[InlineKeyboardMarkup]:
+    global _btn_rotation_index
+    items = _parse_takeoff_env()
+    if not items:
+        return None
 
-        self.takeoff_id_idx = (self.takeoff_id_idx + 1) % len(takeoff_ids)
-        self.btn_name_idx = (self.btn_name_idx + 1) % len(BTN_NAMES)
-        self.btn_style_idx = (self.btn_style_idx + 1) % len(self.styles)
+    count = len(items)
+    idx = _btn_rotation_index % count
+    _btn_rotation_index += 1
 
-        user_url = f"tg://user?id={target_id}"
-        btn = InlineKeyboardButton(
-            text=btn_name,
-            url=user_url,
-            style=btn_style
-        )
+    url, user_id = items[idx]
+    label = Reply.BTN_NAMES[idx % len(Reply.BTN_NAMES)]
+    color = BTN_COLORS[idx % len(BTN_COLORS)]
 
-        return InlineKeyboardMarkup(inline_keyboard=[[btn]])
+    button = InlineKeyboardButton(
+        text=label,
+        url=url,
+        style=color
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
-btn_mgr = ButtonManager()
+
+async def get_edit_keyboard(chat_id: int, thread_id: int) -> InlineKeyboardMarkup:
+    current_mode = await CAsh.get_chat_mode(chat_id, thread_id)
+    
+    if current_mode == "voice":
+        voice_style = ButtonStyle.SUCCESS
+        normal_style = ButtonStyle.DANGER
+    else:
+        voice_style = ButtonStyle.DANGER
+        normal_style = ButtonStyle.SUCCESS
+
+    btn_voice = InlineKeyboardButton(
+        text=Reply.BTN_VOICE,
+        callback_data="set_mode:voice",
+        style=voice_style
+    )
+    btn_normal = InlineKeyboardButton(
+        text=Reply.BTN_NORMAL,
+        callback_data="set_mode:normal",
+        style=normal_style
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=[[btn_voice, btn_normal]])
+
+
+async def is_user_allowed_to_edit(message: Message) -> bool:
+    if message.chat.type == "private":
+        return True
+
+    member = await message.chat.get_member(message.from_user.id)
+    return member.status in ("creator", "administrator")
+
+
+async def is_user_admin(callback_query: CallbackQuery) -> bool:
+    if callback_query.message.chat.type == "private":
+        return True
+
+    user_id = callback_query.from_user.id
+    chat = callback_query.message.chat
+
+    member = await chat.get_member(user_id)
+    return member.status in ("creator", "administrator")
