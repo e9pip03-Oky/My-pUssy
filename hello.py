@@ -199,7 +199,6 @@ async def handle_download(message: Message):
                 for i in range(0, len(final_items), chunk_size):
                     chunk = final_items[i:i + chunk_size]
                     media_group = [InputMediaDocument(media=FSInputFile(c_item['val'])) for c_item in chunk]
-
                     sent_msgs = await message.reply_media_group(media=media_group)
                     for idx_3, s_msg in enumerate(sent_msgs):
                         c_item = chunk[idx_3]

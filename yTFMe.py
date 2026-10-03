@@ -3,6 +3,7 @@ import shutil
 import gc
 import asyncio
 import yt_dlp
+from NAMe import format_title_case
 
 BASE_DOWNLOAD_DIR = "downloads"
 
@@ -39,10 +40,10 @@ async def download_specific_items(url: str, mode: str, key: str, task_id: str, i
     target_dir = get_target_dir(key, task_id)
     loop = asyncio.get_event_loop()
 
-    out_template = os.path.join(target_dir, "%(autonumber)s_%(title)s.%(ext)s")
     items_str = ",".join(str(i) for i in items)
 
     if mode == "voice":
+        out_template = os.path.join(target_dir, "%(id)s.%(ext)s")
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': out_template,
@@ -52,13 +53,14 @@ async def download_specific_items(url: str, mode: str, key: str, task_id: str, i
             'playlist_items': items_str,
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'libopus',
+                'preferredcodec': 'opus',
             }],
             'postprocessor_args': {
-                'ffmpeg': ['-f', 'ogg']
+                'ffmpeg': ['-c:a', 'copy', '-f', 'ogg']
             }
         }
     else:
+        out_template = os.path.join(target_dir, "%(uploader)s - %(title)s.%(ext)s")
         ydl_opts = {
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': out_template,
@@ -66,8 +68,6 @@ async def download_specific_items(url: str, mode: str, key: str, task_id: str, i
             'no_warnings': True,
             'ignoreerrors': True,
             'playlist_items': items_str,
-            'writethumbnail': False,
-            'writeimages': True,
             'merge_output_format': None,
             'postprocessor_args': {
                 'ffmpeg': ['-c', 'copy']
@@ -87,10 +87,32 @@ async def download_specific_items(url: str, mode: str, key: str, task_id: str, i
     if not os.path.exists(target_dir):
         return []
 
-    files = [
+    downloaded_files = [
         os.path.join(target_dir, f)
         for f in os.listdir(target_dir)
         if os.path.isfile(os.path.join(target_dir, f))
     ]
-    files.sort()
-    return files
+
+    processed_files = []
+
+    if mode == "voice":
+        for file_path in downloaded_files:
+            if file_path.endswith(('.opus', '.ogg')):
+                processed_files.append(file_path)
+    else:
+        for file_path in downloaded_files:
+            dir_name, file_name = os.path.split(file_path)
+            name_part, ext_part = os.path.splitext(file_name)
+            formatted_name = format_title_case(name_part) + ext_part
+            if formatted_name != file_name:
+                new_path = os.path.join(dir_name, formatted_name)
+                try:
+                    os.rename(file_path, new_path)
+                    processed_files.append(new_path)
+                except Exception:
+                    processed_files.append(file_path)
+            else:
+                processed_files.append(file_path)
+
+    processed_files.sort()
+    return processed_files
