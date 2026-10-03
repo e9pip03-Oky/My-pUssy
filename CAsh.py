@@ -1,8 +1,11 @@
+import os
 import sqlite3
 import json
 
+DB_PATH = os.path.join(os.getcwd(), "bot_database.db")
+
 class Database:
-    def __init__(self, db_path="bot_database.db"):
+    def __init__(self, db_path=DB_PATH):
         self.db_path = db_path
         self._init_db()
 

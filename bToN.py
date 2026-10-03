@@ -34,7 +34,7 @@ class ButtonManager:
             style=normal_style
         )
 
-        return InlineKeyboardMarkup(inline_keyboard=[[btn_voice, btn_normal]])
+        return InlineKeyboardMarkup(inline_keyboard=[[btn_voice], [btn_normal]])
 
     def get_rotating_button(self) -> InlineKeyboardMarkup:
         takeoff_ids = self._get_takeoff_ids()

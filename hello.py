@@ -134,6 +134,24 @@ async def handle_download(message: Message):
     final_items = None
 
     try:
+        if cached_map:
+            cached_indices = sorted([int(k) for k in cached_map.keys()])
+            final_items = [{'type': 'id', 'val': cached_map[str(idx)]} for idx in cached_indices]
+
+            if mode == "voice":
+                for item in final_items:
+                    await message.reply_voice(item['val'])
+            else:
+                if len(final_items) == 1:
+                    await message.reply_document(final_items[0]['val'])
+                else:
+                    chunk_size = 10
+                    for i in range(0, len(final_items), chunk_size):
+                        chunk = final_items[i:i + chunk_size]
+                        media_group = [InputMediaDocument(media=c_item['val']) for c_item in chunk]
+                        await message.reply_media_group(media=media_group)
+            return
+
         start_msg = await message.reply(TEXT_START_DOWNLOAD)
 
         info = await extract_info(url)
@@ -144,11 +162,7 @@ async def handle_download(message: Message):
             return
 
         total_count = len(entries)
-        missing_indices = []
-
-        for idx_0 in range(total_count):
-            if str(idx_0) not in cached_map:
-                missing_indices.append(idx_0 + 1)
+        missing_indices = list(range(1, total_count + 1))
 
         downloaded_files_map = {}
         if missing_indices:
@@ -160,9 +174,7 @@ async def handle_download(message: Message):
         final_items = []
         for idx_2 in range(total_count):
             s_idx = str(idx_2)
-            if s_idx in cached_map:
-                final_items.append({'type': 'id', 'val': cached_map[s_idx]})
-            elif s_idx in downloaded_files_map:
+            if s_idx in downloaded_files_map:
                 final_items.append({'type': 'file', 'val': downloaded_files_map[s_idx], 'index': s_idx})
 
         if not final_items:
@@ -173,13 +185,10 @@ async def handle_download(message: Message):
 
         if mode == "voice":
             for item in final_items:
-                if item['type'] == 'id':
-                    await message.reply_voice(item['val'])
-                else:
-                    input_file = FSInputFile(item['val'])
-                    msg = await message.reply_voice(input_file)
-                    if msg and msg.voice:
-                        new_cached_entries[item['index']] = msg.voice.file_id
+                input_file = FSInputFile(item['val'])
+                msg = await message.reply_voice(input_file)
+                if msg and msg.voice:
+                    new_cached_entries[item['index']] = msg.voice.file_id
         else:
             if len(final_items) == 1:
                 f_id = await send_single_item_normal(message, final_items[0])
@@ -189,12 +198,7 @@ async def handle_download(message: Message):
                 chunk_size = 10
                 for i in range(0, len(final_items), chunk_size):
                     chunk = final_items[i:i + chunk_size]
-                    media_group = []
-                    for c_item in chunk:
-                        if c_item['type'] == 'id':
-                            media_group.append(InputMediaDocument(media=c_item['val']))
-                        else:
-                            media_group.append(InputMediaDocument(media=FSInputFile(c_item['val'])))
+                    media_group = [InputMediaDocument(media=FSInputFile(c_item['val'])) for c_item in chunk]
 
                     sent_msgs = await message.reply_media_group(media=media_group)
                     for idx_3, s_msg in enumerate(sent_msgs):
