@@ -1,140 +1,92 @@
-DB = None
+import sqlite3
+import json
 
+class Database:
+    def __init__(self, db_path="bot_database.db"):
+        self.db_path = db_path
+        self._init_db()
 
-def configure(sqlite3_module, db_path):
-    global DB
+    def _get_connection(self):
+        return sqlite3.connect(self.db_path)
 
-    DB = sqlite3_module.connect(
-        db_path,
-        check_same_thread=False,
-    )
+    def _init_db(self):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    mode TEXT NOT NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS file_cache (
+                    url TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    file_data TEXT NOT NULL,
+                    PRIMARY KEY (url, mode)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_reply_index (
+                    user_id INTEGER PRIMARY KEY,
+                    idx INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            conn.commit()
 
-    DB.execute("PRAGMA journal_mode=WAL")
+    def get_mode(self, key: str) -> str:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT mode FROM settings WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            return row[0] if row else "normal"
 
-    DB.execute(
-        """
-        CREATE TABLE IF NOT EXISTS file_cache (
-            cache_key TEXT PRIMARY KEY,
-            file_id TEXT NOT NULL
-        )
-        """
-    )
+    def set_mode(self, key: str, mode: str):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO settings (key, mode) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET mode = excluded.mode
+            """, (key, mode))
+            conn.commit()
 
-    DB.execute(
-        """
-        CREATE TABLE IF NOT EXISTS album_cache (
-            album_key TEXT PRIMARY KEY,
-            items TEXT NOT NULL
-        )
-        """
-    )
+    def get_cached_map(self, url: str, mode: str) -> dict:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT file_data FROM file_cache WHERE url = ? AND mode = ?", (url, mode))
+            row = cursor.fetchone()
+            if row and row[0]:
+                try:
+                    return json.loads(row[0])
+                except Exception:
+                    return {}
+            return {}
 
-    DB.execute(
-        """
-        CREATE TABLE IF NOT EXISTS settings (
-            settings_key TEXT PRIMARY KEY,
-            mode TEXT NOT NULL DEFAULT 'normal'
-        )
-        """
-    )
+    def update_cached_map(self, url: str, mode: str, new_entries: dict):
+        current_map = self.get_cached_map(url, mode)
+        current_map.update(new_entries)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO file_cache (url, mode, file_data) VALUES (?, ?, ?)
+                ON CONFLICT(url, mode) DO UPDATE SET file_data = excluded.file_data
+            """, (url, mode, json.dumps(current_map)))
+            conn.commit()
 
-    DB.commit()
+    def get_next_reply_index(self, user_id: int, total_replies: int) -> int:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT idx FROM user_reply_index WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            if row:
+                current_idx = row[0]
+                next_idx = (current_idx + 1) % total_replies
+                cursor.execute("UPDATE user_reply_index SET idx = ? WHERE user_id = ?", (next_idx, user_id))
+            else:
+                current_idx = 0
+                next_idx = 1 % total_replies
+                cursor.execute("INSERT INTO user_reply_index (user_id, idx) VALUES (?, ?)", (user_id, next_idx))
+            conn.commit()
+            return current_idx
 
-
-def get_file_id(cache_key):
-    row = DB.execute(
-        """
-        SELECT file_id
-        FROM file_cache
-        WHERE cache_key = ?
-        """,
-        (cache_key,),
-    ).fetchone()
-
-    return row[0] if row else None
-
-
-def save_file_id(cache_key, file_id):
-    DB.execute(
-        """
-        INSERT INTO file_cache (
-            cache_key,
-            file_id
-        )
-        VALUES (?, ?)
-        ON CONFLICT(cache_key)
-        DO UPDATE SET file_id = excluded.file_id
-        """,
-        (cache_key, file_id),
-    )
-
-    DB.commit()
-
-
-def get_album(album_key, json_module):
-    row = DB.execute(
-        """
-        SELECT items
-        FROM album_cache
-        WHERE album_key = ?
-        """,
-        (album_key,),
-    ).fetchone()
-
-    if not row:
-        return None
-
-    return json_module.loads(row[0])
-
-
-def save_album(album_key, items, json_module):
-    DB.execute(
-        """
-        INSERT INTO album_cache (
-            album_key,
-            items
-        )
-        VALUES (?, ?)
-        ON CONFLICT(album_key)
-        DO UPDATE SET items = excluded.items
-        """,
-        (
-            album_key,
-            json_module.dumps(
-                items,
-                ensure_ascii=False,
-            ),
-        ),
-    )
-
-    DB.commit()
-
-
-def get_mode(settings_key):
-    row = DB.execute(
-        """
-        SELECT mode
-        FROM settings
-        WHERE settings_key = ?
-        """,
-        (settings_key,),
-    ).fetchone()
-
-    return row[0] if row else "normal"
-
-
-def save_mode(settings_key, mode):
-    DB.execute(
-        """
-        INSERT INTO settings (
-            settings_key,
-            mode
-        )
-        VALUES (?, ?)
-        ON CONFLICT(settings_key)
-        DO UPDATE SET mode = excluded.mode
-        """,
-        (settings_key, mode),
-    )
-
-    DB.commit()
+db = Database()

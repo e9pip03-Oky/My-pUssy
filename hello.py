@@ -1,924 +1,252 @@
-import asyncio
-import json
 import os
-import re
-import sqlite3
-import subprocess
-from pathlib import Path
-from urllib.parse import urlparse
+import gc
+import uuid
+import asyncio
 
-import yt_dlp
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.enums import (
-    ButtonStyle,
-    ChatMemberStatus,
-)
+from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
-    CallbackQuery,
-    FSInputFile,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    InputMediaDocument,
-    Message,
+    Message, CallbackQuery, FSInputFile, InputMediaDocument
 )
+from aiogram.enums import ChatType
 
-import CAsh
-import NAMe
-import Reply
-import bToN
-import yTFMe
-
-
-BOT_TOKEN = os.getenv(
-    "BOT_TOKEN",
-    ""
+from Reply import (
+    EDIT_COMMAND, BOT_COMMAND, TEXT_EDIT_RESPONSE, TEXT_START_DOWNLOAD,
+    TEXT_FAIL_DOWNLOAD, TEXT_ALERT_UNAUTHORIZED, TEXT_TAKEOFF, ROTATING_REPLIES
 )
-
-DB_PATH = os.getenv(
-    "DB_PATH",
-    "cache.db",
-)
-
-FFMPEG_PATH = os.getenv(
-    "FFMPEG_PATH",
-    ""
-)
-
-TAKEOFF_IDS = tuple(
-    value.strip()
-    for value in os.getenv(
-        "boT_TAkeoFF",
-        "",
-    ).split("/")
-    if value.strip()
-)
-
-DOWNLOAD_ROOT = Path("downloads")
-
-MAX_ACTIVE_PER_SCOPE = 3
-MAX_QUEUED_PER_SCOPE = 3
-
-CALLBACK_PREFIX = "mode"
-
-router = Router()
-
-STATES = {}
-CACHE_LOCKS = {}
-ROTATION_STATES = {}
-
-
-class ScopeState:
-    def __init__(self):
-        self.semaphore = asyncio.Semaphore(
-            MAX_ACTIVE_PER_SCOPE
-        )
-        self.lock = asyncio.Lock()
-        self.pending = 0
-
-
-def configure():
-    CAsh.configure(
-        sqlite3,
-        DB_PATH,
-    )
-
-    NAMe.configure(
-        Path,
-        re,
-        urlparse,
-    )
-
-    yTFMe.configure(
-        Path,
-        subprocess,
-        FFMPEG_PATH,
-    )
-
-    bToN.configure(
-        (
-            ButtonStyle.DANGER,
-            ButtonStyle.SUCCESS,
-            ButtonStyle.PRIMARY,
-        ),
-        CALLBACK_PREFIX,
-        Reply.MODE_VOICE,
-        Reply.MODE_NORMAL,
-        TAKEOFF_IDS,
-    )
-
-
-def settings_key(message):
-    if message.chat.type == "private":
-        return (
-            f"user:{message.from_user.id}"
-        )
-
-    thread_id = message.message_thread_id
-
-    if thread_id:
-        return (
-            f"chat:{message.chat.id}:"
-            f"topic:{thread_id}"
-        )
-
-    return f"chat:{message.chat.id}"
-
-
-def scope_key(message):
-    if message.chat.type == "private":
-        return (
-            f"user:{message.from_user.id}"
-        )
-
-    thread_id = message.message_thread_id
-
-    if thread_id:
-        return (
-            f"chat:{message.chat.id}:"
-            f"topic:{thread_id}"
-        )
-
-    return f"chat:{message.chat.id}"
-
-
-def get_state(key):
-    state = STATES.get(key)
-
-    if state is None:
-        state = ScopeState()
-        STATES[key] = state
-
-    return state
-
-
-async def reserve(state):
-    async with state.lock:
-        limit = (
-            MAX_ACTIVE_PER_SCOPE
-            + MAX_QUEUED_PER_SCOPE
-        )
-
-        if state.pending >= limit:
-            return False
-
-        state.pending += 1
-        return True
-
-
-async def release(
-    key,
-    state,
-):
-    async with state.lock:
-        state.pending -= 1
-
-        if state.pending <= 0:
-            STATES.pop(
-                key,
-                None,
-            )
-
-
-async def is_authorized(message):
-    if message.chat.type == "private":
-        return True
-
-    member = await message.bot.get_chat_member(
-        message.chat.id,
-        message.from_user.id,
-    )
-
-    return member.status in {
-        ChatMemberStatus.ADMINISTRATOR,
-        ChatMemberStatus.CREATOR,
-    }
-
-
-def settings_keyboard(mode):
-    return bToN.settings_keyboard(
-        InlineKeyboardButton,
-        InlineKeyboardMarkup,
-        mode,
-    )
-
-
-def extract_urls(text):
-    return re.findall(
-        r"https?://[^\s<>]+",
-        text or "",
-    )
-
-
-def cache_identity(info, url):
-    extractor = (
-        info.get("extractor_key")
-        or info.get("extractor")
-    )
-
-    content_id = info.get("id")
-
-    if extractor and content_id:
-        return (
-            f"{extractor}:{content_id}"
-        )
-
-    return (
-        info.get("webpage_url")
-        or info.get("original_url")
-        or url
-    )
-
-
-def media_cache_key(
-    mode,
-    info,
-    url,
-):
-    return (
-        f"{mode}:"
-        f"{cache_identity(info, url)}"
-    )
-
-
-def album_cache_key(
-    mode,
-    identity,
-):
-    return (
-        f"{mode}:album:{identity}"
-    )
-
-
-def get_file_id(sent):
-    if sent.document:
-        return sent.document.file_id
-
-    if sent.audio:
-        return sent.audio.file_id
-
-    if sent.video:
-        return sent.video.file_id
-
-    if sent.photo:
-        return sent.photo[-1].file_id
-
-    if sent.voice:
-        return sent.voice.file_id
-
-    return None
-
-
-async def upload_for_cache(
-    bot,
-    chat_id,
-    file_path,
-):
-    sent = await bot.send_document(
-        chat_id,
-        FSInputFile(file_path),
-    )
-
-    file_id = get_file_id(sent)
-
+from CAsh import db
+from bToN import btn_mgr
+from NAMe import queue_mgr, is_telegram_link
+from yTFMe import extract_info, download_specific_items, cleanup_dir, get_target_dir
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+def get_chat_key(message: Message) -> str:
+    chat = message.chat
+    if chat.type == ChatType.PRIVATE:
+        return f"user_{message.from_user.id}"
+    elif message.is_topic_message and message.message_thread_id:
+        return f"chat_{chat.id}_topic_{message.message_thread_id}"
+    else:
+        return f"chat_{chat.id}"
+
+def get_chat_key_from_callback(callback: CallbackQuery) -> str:
+    message = callback.message
+    chat = message.chat
+    if chat.type == ChatType.PRIVATE:
+        return f"user_{callback.from_user.id}"
+    elif message.is_topic_message and message.message_thread_id:
+        return f"chat_{chat.id}_topic_{message.message_thread_id}"
+    else:
+        return f"chat_{chat.id}"
+
+async def is_admin(chat_id: int, user_id: int) -> bool:
     try:
-        await bot.delete_message(
-            chat_id,
-            sent.message_id,
-        )
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in ["administrator", "creator"]
+    except Exception:
+        return False
+
+async def send_single_item_normal(message: Message, item) -> str:
+    if item['type'] == 'id':
+        msg = await message.reply_document(item['val'])
+        return msg.document.file_id if msg and msg.document else None
+
+    file_path = item['val']
+    input_file = FSInputFile(file_path)
+    msg = await message.reply_document(input_file)
+    return msg.document.file_id if msg and msg.document else None
+
+@dp.message(F.text == EDIT_COMMAND)
+async def handle_edit(message: Message):
+    if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        if not await is_admin(message.chat.id, message.from_user.id):
+            return
+
+    key = get_chat_key(message)
+    current_mode = db.get_mode(key)
+    keyboard = btn_mgr.get_edit_keyboard(current_mode)
+    await message.reply(TEXT_EDIT_RESPONSE, reply_markup=keyboard)
+
+@dp.callback_query(F.data.in_(["mode_voice", "mode_normal"]))
+async def handle_mode_callback(callback: CallbackQuery):
+    message = callback.message
+    if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        if not await is_admin(message.chat.id, callback.from_user.id):
+            await callback.answer(TEXT_ALERT_UNAUTHORIZED, show_alert=True)
+            return
+
+    key = get_chat_key_from_callback(callback)
+    current_mode = db.get_mode(key)
+    target_mode = callback.data.split("_")[1]
+
+    if current_mode == target_mode:
+        new_mode = "normal" if current_mode == "voice" else "voice"
+    else:
+        new_mode = target_mode
+
+    db.set_mode(key, new_mode)
+    new_keyboard = btn_mgr.get_edit_keyboard(new_mode)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=new_keyboard)
     except Exception:
         pass
-
-    return file_id
-
-
-async def prepare_item(
-    mode,
-    url,
-    entry,
-    workdir,
-):
-    identity = media_cache_key(
-        mode,
-        entry,
-        url,
-    )
-
-    lock = CACHE_LOCKS.setdefault(
-        identity,
-        asyncio.Lock(),
-    )
-
-    async with lock:
-        cached = CAsh.get_file_id(
-            identity
-        )
-
-        if cached:
-            return {
-                "file_id": cached,
-                "file_path": None,
-                "cache_key": identity,
-            }
-
-        item_url = yTFMe.entry_url(
-            entry
-        )
-
-        if not item_url:
-            return None
-
-        info, file_path = (
-            await asyncio.to_thread(
-                yTFMe.download_one,
-                yt_dlp,
-                item_url,
-                workdir,
-                mode == "voice",
-            )
-        )
-
-        if mode == "voice":
-            file_path = (
-                await asyncio.to_thread(
-                    yTFMe.prepare_voice,
-                    file_path,
-                )
-            )
-
-        file_path = (
-            await asyncio.to_thread(
-                NAMe.rename_downloaded_file,
-                info,
-                file_path,
-            )
-        )
-
-        return {
-            "file_id": None,
-            "file_path": file_path,
-            "cache_key": media_cache_key(
-                mode,
-                info,
-                item_url,
-            ),
-        }
-
-
-def cached_album_items(
-    album_items,
-):
-    if not album_items:
-        return None
-
-    result = []
-
-    for item in album_items:
-        cache_key = item["cache_key"]
-
-        file_id = CAsh.get_file_id(
-            cache_key
-        )
-
-        if not file_id:
-            return None
-
-        result.append(
-            {
-                "cache_key": cache_key,
-                "file_id": file_id,
-            }
-        )
-
-    return result
-
-
-async def prepare_collection(
-    mode,
-    collection,
-    workdir,
-):
-    if not collection["is_album"]:
-        entry = collection["entries"][0]
-        url = yTFMe.entry_url(entry)
-
-        if not url:
-            return []
-
-        item = await prepare_item(
-            mode,
-            url,
-            entry,
-            workdir,
-        )
-
-        return [item] if item else []
-
-    album_key = album_cache_key(
-        mode,
-        collection["album_identity"],
-    )
-
-    cached = CAsh.get_album(
-        album_key,
-        json,
-    )
-
-    if cached:
-        complete = cached_album_items(
-            cached
-        )
-
-        if complete:
-            return complete
-
-    result = []
-
-    for entry in collection["entries"]:
-        url = yTFMe.entry_url(entry)
-
-        if not url:
-            continue
-
-        item = await prepare_item(
-            mode,
-            url,
-            entry,
-            workdir,
-        )
-
-        if item:
-            result.append(item)
-
-    album_items = [
-        {
-            "cache_key": item["cache_key"],
-        }
-        for item in result
-        if item["cache_key"]
-    ]
-
-    if album_items:
-        CAsh.save_album(
-            album_key,
-            album_items,
-            json,
-        )
-
-    return result
-
-
-async def send_voice_item(
-    message,
-    item,
-):
-    if item["file_id"]:
-        return await message.bot.send_voice(
-            message.chat.id,
-            item["file_id"],
-            message_thread_id=(
-                message.message_thread_id
-            ),
-            reply_to_message_id=(
-                message.message_id
-            ),
-        )
-
-    return await message.bot.send_voice(
-        message.chat.id,
-        FSInputFile(
-            item["file_path"]
-        ),
-        message_thread_id=(
-            message.message_thread_id
-        ),
-        reply_to_message_id=(
-            message.message_id
-        ),
-    )
-
-
-async def send_document_item(
-    message,
-    item,
-):
-    if item["file_id"]:
-        return await message.bot.send_document(
-            message.chat.id,
-            item["file_id"],
-            message_thread_id=(
-                message.message_thread_id
-            ),
-            reply_to_message_id=(
-                message.message_id
-            ),
-        )
-
-    return await message.bot.send_document(
-        message.chat.id,
-        FSInputFile(
-            item["file_path"]
-        ),
-        message_thread_id=(
-            message.message_thread_id
-        ),
-        reply_to_message_id=(
-            message.message_id
-        ),
-    )
-
-
-async def send_normal_album(
-    message,
-    items,
-):
-    for start in range(
-        0,
-        len(items),
-        8,
-    ):
-        chunk = items[
-            start:start + 8
-        ]
-
-        if len(chunk) == 1:
-            item = chunk[0]
-
-            sent = await send_document_item(
-                message,
-                item,
-            )
-
-            if not item["file_id"]:
-                file_id = get_file_id(
-                    sent
-                )
-
-                if file_id:
-                    CAsh.save_file_id(
-                        item["cache_key"],
-                        file_id,
-                    )
-
-            continue
-
-        media = []
-
-        for item in chunk:
-            file_id = item["file_id"]
-
-            if not file_id:
-                file_id = (
-                    await upload_for_cache(
-                        message.bot,
-                        message.chat.id,
-                        item["file_path"],
-                    )
-                )
-
-                if file_id:
-                    CAsh.save_file_id(
-                        item["cache_key"],
-                        file_id,
-                    )
-
-            if file_id:
-                media.append(
-                    InputMediaDocument(
-                        media=file_id
-                    )
-                )
-
-        if len(media) >= 2:
-            await message.bot.send_media_group(
-                message.chat.id,
-                media,
-                message_thread_id=(
-                    message.message_thread_id
-                ),
-            )
-
-
-async def process(
-    message,
-    urls,
-    mode,
-):
-    workdir = NAMe.get_download_dir(
-        DOWNLOAD_ROOT,
-        message.from_user.id,
-    )
-
-    try:
-        if Reply.DOWNLOAD_START:
-            await message.answer(
-                Reply.DOWNLOAD_START
-            )
-
-        collections = []
-
-        for url in urls:
-            collection = (
-                await asyncio.to_thread(
-                    yTFMe.extract_entries,
-                    yt_dlp,
-                    url,
-                )
-            )
-
-            collections.append(
-                collection
-            )
-
-        if mode == "voice":
-            for collection in collections:
-                items = (
-                    await prepare_collection(
-                        mode,
-                        collection,
-                        workdir,
-                    )
-                )
-
-                for item in items:
-                    sent = (
-                        await send_voice_item(
-                            message,
-                            item,
-                        )
-                    )
-
-                    if not item["file_id"]:
-                        file_id = get_file_id(
-                            sent
-                        )
-
-                        if file_id:
-                            CAsh.save_file_id(
-                                item["cache_key"],
-                                file_id,
-                            )
-
-            return
-
-        for collection in collections:
-            items = (
-                await prepare_collection(
-                    mode,
-                    collection,
-                    workdir,
-                )
-            )
-
-            if items:
-                await send_normal_album(
-                    message,
-                    items,
-                )
-
-    except Exception:
-        if Reply.DOWNLOAD_FAILED:
-            await message.answer(
-                Reply.DOWNLOAD_FAILED
-            )
-
-    finally:
-        await asyncio.to_thread(
-            NAMe.cleanup,
-            workdir,
-        )
-
-
-async def download_task(
-    message,
-    urls,
-    mode,
-    key,
-    state,
-):
-    try:
-        async with state.semaphore:
-            await process(
-                message,
-                urls,
-                mode,
-            )
-    finally:
-        await release(
-            key,
-            state,
-        )
-
-
-def next_rotating_response(user_id):
-    if not Reply.ROTATING_RESPONSES:
-        return None
-
-    index = ROTATION_STATES.get(
-        user_id,
-        0,
-    )
-
-    response = Reply.ROTATING_RESPONSES[
-        index
-    ]
-
-    ROTATION_STATES[user_id] = (
-        index + 1
-    ) % len(
-        Reply.ROTATING_RESPONSES
-    )
-
-    return response
-
-
-async def send_rotating_response(
-    message,
-):
-    response = next_rotating_response(
-        message.from_user.id
-    )
-
-    if response is None:
-        return
-
-    if not TAKEOFF_IDS:
-        await message.answer(
-            response
-        )
-        return
-
-    button = bToN.rotating_button(
-        InlineKeyboardButton,
-        Reply.BUTTON_NAMES,
-    )
-
-    if button is None:
-        await message.answer(
-            response
-        )
-        return
-
-    await message.answer(
-        response,
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [button]
-            ]
-        ),
-    )
-
-
-@router.message(
-    F.text == Reply.CMD_SETTINGS
-)
-async def settings_handler(
-    message: Message,
-):
-    if not await is_authorized(message):
-        await message.answer(
-            Reply.SETTINGS_UNAUTHORIZED
-        )
-        return
-
-    mode = CAsh.get_mode(
-        settings_key(message)
-    )
-
-    await message.answer(
-        Reply.SETTINGS_TEXT,
-        reply_markup=settings_keyboard(
-            mode
-        ),
-    )
-
-
-@router.callback_query(
-    F.data.startswith(
-        f"{CALLBACK_PREFIX}:"
-    )
-)
-async def mode_callback(
-    callback: CallbackQuery,
-):
-    message = callback.message
-
-    if not message:
-        await callback.answer(
-            Reply.SETTINGS_UNAUTHORIZED,
-            show_alert=True,
-        )
-        return
-
-    if not await is_authorized(message):
-        await callback.answer(
-            Reply.SETTINGS_UNAUTHORIZED,
-            show_alert=True,
-        )
-        return
-
-    mode = callback.data.split(
-        ":",
-        1,
-    )[1]
-
-    if mode not in {
-        "voice",
-        "normal",
-    }:
-        await callback.answer()
-        return
-
-    CAsh.save_mode(
-        settings_key(message),
-        mode,
-    )
-
-    await callback.message.edit_reply_markup(
-        reply_markup=settings_keyboard(
-            mode
-        )
-    )
-
     await callback.answer()
 
+@dp.message(F.text == BOT_COMMAND)
+async def handle_bot_keyword(message: Message):
+    if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        idx = db.get_next_reply_index(message.from_user.id, len(ROTATING_REPLIES))
+        reply_text = ROTATING_REPLIES[idx]
+        keyboard = btn_mgr.get_rotating_button()
+        await message.reply(reply_text, reply_markup=keyboard)
 
-@router.message(F.text)
-async def text_handler(
-    message: Message,
-):
-    text = message.text or ""
-    urls = extract_urls(text)
+@dp.message(F.text.startswith("http://") | F.text.startswith("https://"))
+async def handle_download(message: Message):
+    url = message.text.strip()
 
-    if urls:
-        if any(
-            NAMe.is_telegram_link(url)
-            for url in urls
-        ):
+    if is_telegram_link(url):
+        idx = db.get_next_reply_index(message.from_user.id, len(ROTATING_REPLIES))
+        reply_text = ROTATING_REPLIES[idx]
+        keyboard = btn_mgr.get_rotating_button()
+        await message.reply(reply_text, reply_markup=keyboard)
+        return
+
+    key = get_chat_key(message)
+
+    if not await queue_mgr.can_accept_task(key):
+        return
+
+    accepted = await queue_mgr.register_task(key, url)
+    if not accepted:
+        return
+
+    mode = db.get_mode(key)
+    cached_map = db.get_cached_map(url, mode)
+
+    task_id = str(uuid.uuid4())[:8]
+    target_dir = get_target_dir(key, task_id)
+    start_msg = None
+    info = None
+    entries = None
+    new_files = None
+    final_items = None
+
+    try:
+        start_msg = await message.reply(TEXT_START_DOWNLOAD)
+
+        info = await extract_info(url)
+        entries = info.get('entries') if info and 'entries' in info and info['entries'] else [info] if info else []
+
+        if not entries:
+            await message.reply(TEXT_FAIL_DOWNLOAD)
             return
 
-        key = scope_key(message)
-        state = get_state(key)
+        total_count = len(entries)
+        missing_indices = []
 
-        if not await reserve(state):
+        for idx_0 in range(total_count):
+            if str(idx_0) not in cached_map:
+                missing_indices.append(idx_0 + 1)
+
+        downloaded_files_map = {}
+        if missing_indices:
+            new_files = await download_specific_items(url, mode, key, task_id, missing_indices)
+            for idx_1, item_index in enumerate(missing_indices):
+                if idx_1 < len(new_files):
+                    downloaded_files_map[str(item_index - 1)] = new_files[idx_1]
+
+        final_items = []
+        for idx_2 in range(total_count):
+            s_idx = str(idx_2)
+            if s_idx in cached_map:
+                final_items.append({'type': 'id', 'val': cached_map[s_idx]})
+            elif s_idx in downloaded_files_map:
+                final_items.append({'type': 'file', 'val': downloaded_files_map[s_idx], 'index': s_idx})
+
+        if not final_items:
+            await message.reply(TEXT_FAIL_DOWNLOAD)
             return
 
-        mode = CAsh.get_mode(
-            settings_key(message)
-        )
+        new_cached_entries = {}
 
-        asyncio.create_task(
-            download_task(
-                message,
-                urls,
-                mode,
-                key,
-                state,
-            )
-        )
+        if mode == "voice":
+            for item in final_items:
+                if item['type'] == 'id':
+                    await message.reply_voice(item['val'])
+                else:
+                    input_file = FSInputFile(item['val'])
+                    msg = await message.reply_voice(input_file)
+                    if msg and msg.voice:
+                        new_cached_entries[item['index']] = msg.voice.file_id
+        else:
+            if len(final_items) == 1:
+                f_id = await send_single_item_normal(message, final_items[0])
+                if f_id and final_items[0]['type'] == 'file':
+                    new_cached_entries[final_items[0]['index']] = f_id
+            else:
+                chunk_size = 10
+                for i in range(0, len(final_items), chunk_size):
+                    chunk = final_items[i:i + chunk_size]
+                    media_group = []
+                    for c_item in chunk:
+                        if c_item['type'] == 'id':
+                            media_group.append(InputMediaDocument(media=c_item['val']))
+                        else:
+                            media_group.append(InputMediaDocument(media=FSInputFile(c_item['val'])))
 
+                    sent_msgs = await message.reply_media_group(media=media_group)
+                    for idx_3, s_msg in enumerate(sent_msgs):
+                        c_item = chunk[idx_3]
+                        if c_item['type'] == 'file' and s_msg and s_msg.document:
+                            new_cached_entries[c_item['index']] = s_msg.document.file_id
+
+        if new_cached_entries:
+            db.update_cached_map(url, mode, new_cached_entries)
+
+    except Exception:
+        try:
+            await message.reply(TEXT_FAIL_DOWNLOAD)
+        except Exception:
+            pass
+    finally:
+        if start_msg:
+            try:
+                await start_msg.delete()
+            except Exception:
+                pass
+        await queue_mgr.release_task(key)
+        cleanup_dir(target_dir)
+
+        info = None
+        entries = None
+        new_files = None
+        final_items = None
+        gc.collect()
+
+@dp.message(F.chat.type == ChatType.PRIVATE)
+async def handle_private_rotating(message: Message):
+    idx = db.get_next_reply_index(message.from_user.id, len(ROTATING_REPLIES))
+    reply_text = ROTATING_REPLIES[idx]
+    keyboard = btn_mgr.get_rotating_button()
+    await message.reply(reply_text, reply_markup=keyboard)
+
+async def send_takeoff_messages():
+    raw_env = os.getenv("boT_TAkeoFF", "")
+    if not raw_env:
         return
-
-    if message.chat.type == "private":
-        await send_rotating_response(
-            message
-        )
-        return
-
-    if text != Reply.TRIGGER_WORD:
-        return
-
-    await send_rotating_response(
-        message
-    )
-
-
-@router.message()
-async def non_text_handler(
-    message: Message,
-):
-    if message.chat.type != "private":
-        return
-
-    await send_rotating_response(
-        message
-    )
-
+    target_ids = [id_str.strip() for id_str in raw_env.split("/") if id_str.strip()]
+    for target_id in target_ids:
+        try:
+            keyboard = btn_mgr.get_rotating_button()
+            await bot.send_message(int(target_id), TEXT_TAKEOFF, reply_markup=keyboard)
+        except Exception:
+            pass
 
 async def main():
-    configure()
-
-    if not BOT_TOKEN:
-        raise RuntimeError(
-            "BOT_TOKEN is not set"
-        )
-
-    bot = Bot(BOT_TOKEN)
-    dispatcher = Dispatcher()
-
-    dispatcher.include_router(router)
-
-    await dispatcher.start_polling(bot)
-
+    await send_takeoff_messages()
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())

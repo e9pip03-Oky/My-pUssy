@@ -1,162 +1,96 @@
-Path = None
-SUBPROCESS = None
-FFMPEG_PATH = ""
+import os
+import shutil
+import gc
+import asyncio
+import yt_dlp
 
+BASE_DOWNLOAD_DIR = "downloads"
 
-def configure(
-    path_module,
-    subprocess_module,
-    ffmpeg_path,
-):
-    global Path
-    global SUBPROCESS
-    global FFMPEG_PATH
+def get_target_dir(key: str, task_id: str) -> str:
+    target_dir = os.path.join(BASE_DOWNLOAD_DIR, f"{key}_{task_id}")
+    os.makedirs(target_dir, exist_ok=True)
+    return target_dir
 
-    Path = path_module
-    SUBPROCESS = subprocess_module
-    FFMPEG_PATH = ffmpeg_path
+def cleanup_dir(target_dir: str):
+    if target_dir and os.path.exists(target_dir):
+        try:
+            shutil.rmtree(target_dir, ignore_errors=True)
+        except Exception:
+            pass
+    gc.collect()
 
-
-def base_options(workdir):
-    options = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": False,
-        "outtmpl": str(
-            Path(workdir) / "%(id)s.%(ext)s"
-        ),
+async def extract_info(url: str) -> dict:
+    loop = asyncio.get_event_loop()
+    ydl_opts = {
+        'extract_flat': 'in_playlist',
+        'quiet': True,
+        'no_warnings': True,
+        'ignoreerrors': True
     }
+    def _extract():
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(url, download=False)
+    try:
+        return await loop.run_in_executor(None, _extract)
+    except Exception:
+        return {}
 
-    if FFMPEG_PATH:
-        options["ffmpeg_location"] = FFMPEG_PATH
+async def download_specific_items(url: str, mode: str, key: str, task_id: str, items: list) -> list:
+    target_dir = get_target_dir(key, task_id)
+    loop = asyncio.get_event_loop()
 
-    return options
+    out_template = os.path.join(target_dir, "%(autonumber)s_%(title)s.%(ext)s")
+    items_str = ",".join(str(i) for i in items)
 
-
-def extract_entries(yt_dlp, url):
-    options = base_options(".")
-
-    with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(
-            url,
-            download=False,
-        )
-
-    entries = info.get("entries")
-
-    if not entries:
-        return {
-            "is_album": False,
-            "album_identity": None,
-            "entries": [info],
+    if mode == "voice":
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': out_template,
+            'quiet': True,
+            'no_warnings': True,
+            'ignoreerrors': True,
+            'playlist_items': items_str,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'libopus',
+            }],
+            'postprocessor_args': {
+                'ffmpeg': ['-f', 'ogg']
+            }
+        }
+    else:
+        ydl_opts = {
+            'format': 'bestvideo+bestaudio/best',
+            'outtmpl': out_template,
+            'quiet': True,
+            'no_warnings': True,
+            'ignoreerrors': True,
+            'playlist_items': items_str,
+            'writethumbnail': False,
+            'writeimages': True,
+            'merge_output_format': None,
+            'postprocessor_args': {
+                'ffmpeg': ['-c', 'copy']
+            }
         }
 
-    identity = (
-        info.get("extractor_key")
-        or info.get("extractor")
-        or ""
-    )
+    def run_download():
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
 
-    playlist_id = (
-        info.get("playlist_id")
-        or info.get("id")
-        or info.get("webpage_url")
-        or url
-    )
+    try:
+        await loop.run_in_executor(None, run_download)
+    except Exception:
+        cleanup_dir(target_dir)
+        return []
 
-    return {
-        "is_album": True,
-        "album_identity": (
-            f"{identity}:{playlist_id}"
-        ),
-        "entries": [
-            entry
-            for entry in entries
-            if entry
-        ],
-    }
+    if not os.path.exists(target_dir):
+        return []
 
-
-def entry_url(entry):
-    return (
-        entry.get("webpage_url")
-        or entry.get("original_url")
-        or entry.get("url")
-    )
-
-
-def download_one(
-    yt_dlp,
-    url,
-    workdir,
-    voice,
-):
-    options = base_options(workdir)
-
-    options["noplaylist"] = True
-    options["format"] = (
-        "bestaudio"
-        if voice
-        else "bv+ba/b"
-    )
-
-    with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(
-            url,
-            download=True,
-        )
-
-    file_path = info.get("filepath")
-
-    if file_path:
-        path = Path(file_path)
-
-        if path.exists():
-            return info, path
-
-    for item in info.get(
-        "requested_downloads",
-        [],
-    ):
-        file_path = item.get("filepath")
-
-        if file_path:
-            path = Path(file_path)
-
-            if path.exists():
-                return info, path
-
-    raise FileNotFoundError(
-        "Downloaded file was not found"
-    )
-
-
-def prepare_voice(source):
-    source = Path(source)
-
-    target = source.with_name(
-        f"{source.stem}.voice.ogg"
-    )
-
-    command = [
-        FFMPEG_PATH or "ffmpeg",
-        "-y",
-        "-i",
-        str(source),
-        "-c:a",
-        "libopus",
-        "-f",
-        "ogg",
-        str(target),
+    files = [
+        os.path.join(target_dir, f)
+        for f in os.listdir(target_dir)
+        if os.path.isfile(os.path.join(target_dir, f))
     ]
-
-    SUBPROCESS.run(
-        command,
-        check=True,
-        stdout=SUBPROCESS.DEVNULL,
-        stderr=SUBPROCESS.DEVNULL,
-    )
-
-    source.unlink()
-
-    return target
+    files.sort()
+    return files
