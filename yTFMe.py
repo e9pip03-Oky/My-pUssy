@@ -56,7 +56,7 @@ async def download_specific_items(url: str, mode: str, key: str, task_id: str, i
                 'preferredcodec': 'opus',
             }],
             'postprocessor_args': {
-                'ffmpeg': ['-c:a', 'copy', '-f', 'ogg']
+                'ffmpeg': ['-c:a', 'libopus', '-f', 'ogg']
             }
         }
     else:
