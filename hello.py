@@ -19,6 +19,7 @@ import CAsh
 import Reply
 import SeTTiNGS
 import bToN
+import ediT
 
 
 router = Router()
@@ -275,6 +276,15 @@ async def mode_handler(
     await callback.answer()
 
 
+@router.callback_query(
+    F.data == ediT.EDIT_INFO_CALLBACK
+)
+async def edit_info_callback_handler(
+    callback: CallbackQuery,
+):
+    await ediT.handle_info_callback(callback)
+
+
 @router.message(
     F.text == Reply.COMMAND_BOT
 )
@@ -289,6 +299,28 @@ async def bot_command_handler(
         await _send_rotating_response(
             message
         )
+
+
+@router.message(
+    F.text == Reply.COMMAND_EDIT
+)
+async def edit_command_handler(
+    message: Message,
+):
+    replied = message.reply_to_message
+
+    if replied is None:
+        return
+
+    if replied.voice is None:
+        return
+
+    ediT.start(
+        message.from_user.id,
+        replied,
+    )
+
+    await ediT.send_edit_prompt(message)
 
 
 async def _send_rotating_response(
@@ -312,11 +344,22 @@ async def text_handler(
     message: Message,
     bot: Bot,
 ):
+    if ediT.is_active(
+        message.from_user.id
+    ):
+        if message.text.strip() != Reply.COMMAND_EDIT:
+            await ediT.process(
+                bot,
+                message,
+            )
+            return
+
     text = message.text.strip()
 
     if text in {
         Reply.COMMAND_SETTINGS,
         Reply.COMMAND_BOT,
+        Reply.COMMAND_EDIT,
     }:
         return
 
@@ -341,23 +384,12 @@ async def text_handler(
         bToN.MODE_NORMAL,
     )
 
-    status_message = None
-
-    if Reply.DOWNLOAD_STARTED:
-        status_message = await message.reply(
-            Reply.DOWNLOAD_STARTED
-        )
-
-    accepted = await SeTTiNGS.submit(
+    await SeTTiNGS.submit(
         bot,
         message,
         text,
         mode,
-        status_message,
     )
-
-    if not accepted and status_message:
-        await status_message.delete()
 
 
 async def _startup(bot):

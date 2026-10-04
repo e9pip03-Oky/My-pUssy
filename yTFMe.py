@@ -226,3 +226,60 @@ async def download_one(
         )
 
     return result
+
+
+def _cut_voice_sync(
+    source,
+    output,
+    start,
+    duration,
+):
+    ffmpeg_path = (
+        bToN.get_ffmpeg_path()
+        or "ffmpeg"
+    )
+
+    command = [
+        ffmpeg_path,
+        "-y",
+        "-ss",
+        str(start),
+        "-i",
+        str(source),
+        "-t",
+        str(duration),
+        "-c",
+        "copy",
+        str(output),
+    ]
+
+    subprocess.run(
+        command,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    return output
+
+
+async def cut_voice(
+    source,
+    start,
+    end,
+):
+    source = Path(source)
+
+    output = source.with_name(
+        f"{source.stem}.edited.ogg"
+    )
+
+    duration = end - start
+
+    return await asyncio.to_thread(
+        _cut_voice_sync,
+        source,
+        output,
+        start,
+        duration,
+    )

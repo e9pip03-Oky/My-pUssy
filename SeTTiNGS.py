@@ -89,7 +89,6 @@ async def submit(
     message: Message,
     url,
     mode,
-    status_message=None,
 ):
     user_id = message.from_user.id
     state = _get_user_queue(user_id)
@@ -103,7 +102,6 @@ async def submit(
             message,
             url,
             mode,
-            status_message,
         )
     )
 
@@ -117,7 +115,6 @@ async def _worker(state):
             message,
             url,
             mode,
-            status_message,
         ) = await state.queue.get()
 
         try:
@@ -127,7 +124,6 @@ async def _worker(state):
                 url,
                 mode,
                 state,
-                status_message,
             )
         finally:
             state.queue.task_done()
@@ -139,8 +135,9 @@ async def _process(
     url,
     mode,
     state,
-    status_message,
 ):
+    status_message = None
+
     try:
         entries = await get_entries(url)
 
@@ -152,6 +149,17 @@ async def _process(
         if not items:
             raise ValueError(
                 "No downloadable items"
+            )
+
+        await _load_cached_file_ids(
+            items
+        )
+
+        if not _all_cached(items):
+            status_message = (
+                await NAMe.send_status_message(
+                    message
+                )
             )
 
         await _prepare_items(
@@ -210,6 +218,28 @@ def _build_items(entries, mode):
     return items
 
 
+async def _load_cached_file_ids(items):
+    tasks = [
+        _load_cached_file_id(item)
+        for item in items
+    ]
+
+    await asyncio.gather(*tasks)
+
+
+async def _load_cached_file_id(item):
+    item.file_id = await CAsh.get_file_id(
+        item.cache_key
+    )
+
+
+def _all_cached(items):
+    return all(
+        item.file_id
+        for item in items
+    )
+
+
 async def _prepare_items(
     message,
     items,
@@ -224,9 +254,11 @@ async def _prepare_items(
             )
         )
         for item in items
+        if not item.file_id
     ]
 
-    await asyncio.gather(*tasks)
+    if tasks:
+        await asyncio.gather(*tasks)
 
 
 async def _prepare_item(
