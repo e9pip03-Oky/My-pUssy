@@ -7,8 +7,18 @@ UPPER_EXCEPTIONS = set("ATFGUJNML")
 
 def clean_name(value):
     value = value or ""
-    value = re.sub(r"[^\w\s]", "", value)
-    value = re.sub(r"\s+", " ", value).strip()
+
+    value = re.sub(
+        r"[^\w\s]",
+        "",
+        value,
+    )
+
+    value = re.sub(
+        r"\s+",
+        " ",
+        value,
+    ).strip()
 
     result = []
 

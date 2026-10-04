@@ -7,9 +7,7 @@ from aiogram import (
     F,
     Router,
 )
-from aiogram.enums import (
-    ButtonStyle,
-)
+from aiogram.enums import ButtonStyle
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -50,15 +48,18 @@ def _dynamic_button():
     )
 
     name = names[
-        button_name_index % len(names)
+        button_name_index
+        % len(names)
     ]
 
     style = styles[
-        button_style_index % len(styles)
+        button_style_index
+        % len(styles)
     ]
 
     user_id = ids[
-        button_id_index % len(ids)
+        button_id_index
+        % len(ids)
     ]
 
     button_name_index += 1
@@ -80,7 +81,7 @@ def _dynamic_markup():
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [button],
+            [button]
         ]
     )
 
@@ -205,7 +206,9 @@ async def settings_handler(
 
 
 @router.callback_query(
-    F.data.startswith(bToN.CALLBACK_PREFIX)
+    F.data.startswith(
+        bToN.CALLBACK_PREFIX
+    )
 )
 async def mode_handler(
     callback: CallbackQuery,
@@ -228,8 +231,10 @@ async def mode_handler(
         )
         return
 
-    selected_mode = bToN.parse_mode_callback(
-        callback.data
+    selected_mode = (
+        bToN.parse_mode_callback(
+            callback.data
+        )
     )
 
     if selected_mode not in {

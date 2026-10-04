@@ -54,7 +54,13 @@ class UserQueue:
 
 
 user_queues: dict[int, UserQueue] = {}
+
 cache_locks: dict[str, asyncio.Lock] = {}
+
+download_tasks: dict[
+    str,
+    asyncio.Task,
+] = {}
 
 
 def _get_cache_lock(key):
@@ -100,7 +106,12 @@ async def submit(
         return False
 
     await state.queue.put(
-        (bot, message, url, mode)
+        (
+            bot,
+            message,
+            url,
+            mode,
+        )
     )
 
     return True
@@ -108,9 +119,12 @@ async def submit(
 
 async def _worker(state):
     while True:
-        bot, message, url, mode = (
-            await state.queue.get()
-        )
+        (
+            bot,
+            message,
+            url,
+            mode,
+        ) = await state.queue.get()
 
         try:
             await _process(
@@ -225,6 +239,72 @@ async def _prepare_item(
         item.file_id = cached_file_id
         return
 
+    task = download_tasks.get(
+        item.cache_key
+    )
+
+    if task is None:
+        task = asyncio.create_task(
+            _download_item(
+                message,
+                item,
+                state,
+            )
+        )
+
+        download_tasks[item.cache_key] = task
+
+    try:
+        result = await task
+    finally:
+        if (
+            download_tasks.get(
+                item.cache_key
+            )
+            is task
+        ):
+            download_tasks.pop(
+                item.cache_key,
+                None,
+            )
+
+    if result is None:
+        cached_file_id = await CAsh.get_file_id(
+            item.cache_key
+        )
+
+        if cached_file_id:
+            item.file_id = cached_file_id
+            return
+
+        raise RuntimeError(
+            "Cached file was not found"
+        )
+
+    item.file_path = result.path
+
+    extension = (
+        "ogg"
+        if item.mode == bToN.MODE_VOICE
+        else result.path.suffix.lstrip(".")
+    )
+
+    filename = build_filename(
+        result.info,
+        extension,
+    )
+
+    item.filename = unique_filename(
+        result.path.parent,
+        filename,
+    ).name
+
+
+async def _download_item(
+    message,
+    item,
+    state,
+):
     lock = _get_cache_lock(
         item.cache_key
     )
@@ -235,11 +315,10 @@ async def _prepare_item(
         )
 
         if cached_file_id:
-            item.file_id = cached_file_id
-            return
+            return None
 
         async with state.semaphore:
-            result = await download_one(
+            return await download_one(
                 item.url,
                 item.mode,
                 bToN.download_directory(
@@ -247,28 +326,10 @@ async def _prepare_item(
                 ),
             )
 
-        item.file_path = result.path
-
-        extension = (
-            "ogg"
-            if item.mode == bToN.MODE_VOICE
-            else result.path.suffix.lstrip(".")
-        )
-
-        filename = build_filename(
-            result.info,
-            extension,
-        )
-
-        item.filename = unique_filename(
-            result.path.parent,
-            filename,
-        ).name
-
 
 def _reply_parameters(message):
     return ReplyParameters(
-        message_id=message.message_id,
+        message_id=message.message_id
     )
 
 
@@ -290,7 +351,8 @@ async def _send_documents(
         bToN.ALBUM_BATCH_SIZE,
     ):
         batch = items[
-            start:start + bToN.ALBUM_BATCH_SIZE
+            start:start
+            + bToN.ALBUM_BATCH_SIZE
         ]
 
         if len(batch) == 1:
@@ -318,7 +380,7 @@ async def _send_document_album(
         if item.file_id:
             media.append(
                 InputMediaDocument(
-                    media=item.file_id,
+                    media=item.file_id
                 )
             )
         else:
@@ -339,9 +401,14 @@ async def _send_document_album(
         ),
     )
 
-    for sent, item in zip(result, items):
+    for sent, item in zip(
+        result,
+        items,
+    ):
         if sent.document:
-            item.file_id = sent.document.file_id
+            item.file_id = (
+                sent.document.file_id
+            )
 
             await CAsh.save_file_id(
                 item.cache_key,
@@ -375,7 +442,9 @@ async def _send_document(
         )
 
     if result.document:
-        item.file_id = result.document.file_id
+        item.file_id = (
+            result.document.file_id
+        )
 
         await CAsh.save_file_id(
             item.cache_key,
@@ -422,7 +491,9 @@ async def _send_voice(
         )
 
     if result.voice:
-        item.file_id = result.voice.file_id
+        item.file_id = (
+            result.voice.file_id
+        )
 
         await CAsh.save_file_id(
             item.cache_key,

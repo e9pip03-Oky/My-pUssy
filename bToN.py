@@ -51,7 +51,6 @@ def get_ffmpeg_path():
 
 def get_takeoff_ids():
     value = os.getenv(TAKEOFF_ENV, "")
-
     return tuple(
         item
         for item in value.split("/")
@@ -114,6 +113,7 @@ def is_telegram_url(url):
     host = host.lower().rstrip(".")
 
     return any(
-        host == item or host.endswith(f".{item}")
+        host == item
+        or host.endswith(f".{item}")
         for item in TELEGRAM_HOSTS
     )

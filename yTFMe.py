@@ -69,21 +69,23 @@ def entry_url(entry):
 def entry_identity(entry):
     extractor = (
         entry.get("extractor_key")
+        or entry.get("ie_key")
         or entry.get("extractor")
         or ""
     )
 
-    identifier = (
-        entry.get("id")
-        or entry.get("url")
-        or ""
-    )
+    identifier = entry.get("id")
 
-    return f"{extractor}:{identifier}"
+    if identifier:
+        return f"{extractor}:{identifier}"
+
+    return entry_url(entry) or ""
 
 
 def _find_downloaded_file(directory, info):
-    requested = info.get("requested_downloads") or []
+    requested = info.get(
+        "requested_downloads"
+    ) or []
 
     for item in requested:
         filepath = item.get("filepath")
@@ -94,11 +96,12 @@ def _find_downloaded_file(directory, info):
             if path.exists():
                 return path
 
-    prepared = Path(
-        yt_dlp.YoutubeDL(
-            _base_options()
-        ).prepare_filename(info)
-    )
+    with yt_dlp.YoutubeDL(
+        _base_options()
+    ) as ydl:
+        prepared = Path(
+            ydl.prepare_filename(info)
+        )
 
     if prepared.exists():
         return prepared
@@ -120,11 +123,16 @@ def _find_downloaded_file(directory, info):
     )
 
 
-def _download_sync(url, mode, directory):
+def _download_sync(
+    url,
+    mode,
+    directory,
+):
     options = _base_options()
 
     options["outtmpl"] = str(
-        Path(directory) / "%(id)s.%(ext)s"
+        Path(directory)
+        / "%(id)s.%(ext)s"
     )
 
     if mode == bToN.MODE_VOICE:
@@ -181,6 +189,7 @@ def _prepare_voice_sync(path):
     path.unlink()
 
     final_path = path.with_suffix(".ogg")
+
     output.rename(final_path)
 
     return final_path
