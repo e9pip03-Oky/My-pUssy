@@ -3,20 +3,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from aiogram import Bot
-from aiogram.types import (
-    FSInputFile,
-    InputMediaDocument,
-    Message,
-    ReplyParameters,
-)
+from aiogram.types import Message
 
 import CAsh
-import Reply
+import NAMe
 import bToN
-from NAMe import (
-    build_filename,
-    unique_filename,
-)
 from yTFMe import (
     download_one,
     entry_identity,
@@ -98,6 +89,7 @@ async def submit(
     message: Message,
     url,
     mode,
+    status_message=None,
 ):
     user_id = message.from_user.id
     state = _get_user_queue(user_id)
@@ -111,6 +103,7 @@ async def submit(
             message,
             url,
             mode,
+            status_message,
         )
     )
 
@@ -124,6 +117,7 @@ async def _worker(state):
             message,
             url,
             mode,
+            status_message,
         ) = await state.queue.get()
 
         try:
@@ -133,6 +127,7 @@ async def _worker(state):
                 url,
                 mode,
                 state,
+                status_message,
             )
         finally:
             state.queue.task_done()
@@ -144,6 +139,7 @@ async def _process(
     url,
     mode,
     state,
+    status_message,
 ):
     try:
         entries = await get_entries(url)
@@ -165,20 +161,27 @@ async def _process(
         )
 
         if mode == bToN.MODE_VOICE:
-            await _send_voices(
+            await NAMe.send_voices(
                 bot,
                 message,
                 items,
             )
         else:
-            await _send_documents(
+            await NAMe.send_documents(
                 bot,
                 message,
                 items,
             )
 
+        await NAMe.delete_status_message(
+            status_message
+        )
+
     except Exception:
-        await _send_failure(message)
+        await NAMe.show_failure(
+            status_message,
+            message,
+        )
 
 
 def _build_items(entries, mode):
@@ -289,14 +292,12 @@ async def _prepare_item(
         else result.path.suffix.lstrip(".")
     )
 
-    filename = build_filename(
-        result.info,
-        extension,
-    )
-
-    item.filename = unique_filename(
+    item.filename = NAMe.unique_filename(
         result.path.parent,
-        filename,
+        NAMe.build_filename(
+            result.info,
+            extension,
+        ),
     ).name
 
 
@@ -325,177 +326,3 @@ async def _download_item(
                     message.from_user.id
                 ),
             )
-
-
-def _reply_parameters(message):
-    return ReplyParameters(
-        message_id=message.message_id
-    )
-
-
-async def _send_failure(message):
-    if Reply.DOWNLOAD_FAILED:
-        await message.reply(
-            Reply.DOWNLOAD_FAILED
-        )
-
-
-async def _send_documents(
-    bot,
-    message,
-    items,
-):
-    for start in range(
-        0,
-        len(items),
-        bToN.ALBUM_BATCH_SIZE,
-    ):
-        batch = items[
-            start:start
-            + bToN.ALBUM_BATCH_SIZE
-        ]
-
-        if len(batch) == 1:
-            await _send_document(
-                bot,
-                message,
-                batch[0],
-            )
-        else:
-            await _send_document_album(
-                bot,
-                message,
-                batch,
-            )
-
-
-async def _send_document_album(
-    bot,
-    message,
-    items,
-):
-    media = []
-
-    for item in items:
-        if item.file_id:
-            media.append(
-                InputMediaDocument(
-                    media=item.file_id
-                )
-            )
-        else:
-            media.append(
-                InputMediaDocument(
-                    media=FSInputFile(
-                        item.file_path,
-                        filename=item.filename,
-                    )
-                )
-            )
-
-    result = await bot.send_media_group(
-        chat_id=message.chat.id,
-        media=media,
-        reply_parameters=_reply_parameters(
-            message
-        ),
-    )
-
-    for sent, item in zip(
-        result,
-        items,
-    ):
-        if sent.document:
-            item.file_id = (
-                sent.document.file_id
-            )
-
-            await CAsh.save_file_id(
-                item.cache_key,
-                item.file_id,
-            )
-
-
-async def _send_document(
-    bot,
-    message,
-    item,
-):
-    if item.file_id:
-        result = await bot.send_document(
-            chat_id=message.chat.id,
-            document=item.file_id,
-            reply_parameters=_reply_parameters(
-                message
-            ),
-        )
-    else:
-        result = await bot.send_document(
-            chat_id=message.chat.id,
-            document=FSInputFile(
-                item.file_path,
-                filename=item.filename,
-            ),
-            reply_parameters=_reply_parameters(
-                message
-            ),
-        )
-
-    if result.document:
-        item.file_id = (
-            result.document.file_id
-        )
-
-        await CAsh.save_file_id(
-            item.cache_key,
-            item.file_id,
-        )
-
-
-async def _send_voices(
-    bot,
-    message,
-    items,
-):
-    for item in items:
-        await _send_voice(
-            bot,
-            message,
-            item,
-        )
-
-
-async def _send_voice(
-    bot,
-    message,
-    item,
-):
-    if item.file_id:
-        result = await bot.send_voice(
-            chat_id=message.chat.id,
-            voice=item.file_id,
-            reply_parameters=_reply_parameters(
-                message
-            ),
-        )
-    else:
-        result = await bot.send_voice(
-            chat_id=message.chat.id,
-            voice=FSInputFile(
-                item.file_path,
-                filename=item.filename,
-            ),
-            reply_parameters=_reply_parameters(
-                message
-            ),
-        )
-
-    if result.voice:
-        item.file_id = (
-            result.voice.file_id
-        )
-
-        await CAsh.save_file_id(
-            item.cache_key,
-            item.file_id,
-        )

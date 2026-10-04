@@ -341,20 +341,23 @@ async def text_handler(
         bToN.MODE_NORMAL,
     )
 
+    status_message = None
+
+    if Reply.DOWNLOAD_STARTED:
+        status_message = await message.reply(
+            Reply.DOWNLOAD_STARTED
+        )
+
     accepted = await SeTTiNGS.submit(
         bot,
         message,
         text,
         mode,
+        status_message,
     )
 
-    if (
-        accepted
-        and Reply.DOWNLOAD_STARTED
-    ):
-        await message.reply(
-            Reply.DOWNLOAD_STARTED
-        )
+    if not accepted and status_message:
+        await status_message.delete()
 
 
 async def _startup(bot):
