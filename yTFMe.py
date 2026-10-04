@@ -172,6 +172,7 @@ def _prepare_voice_sync(path):
         "-y",
         "-i",
         str(path),
+        "-vn",
         "-c:a",
         "libopus",
         "-f",
