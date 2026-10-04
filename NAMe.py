@@ -156,7 +156,7 @@ async def send_documents(
     ):
         batch = items[
             start:start
-            + bToN.ALBUM_BATCH_SIZE,
+            + bToN.ALBUM_BATCH_SIZE
         ]
 
         if len(batch) == 1:
@@ -303,17 +303,3 @@ async def _send_voice(
             item.cache_key,
             item.file_id,
         )
-
-
-async def send_edited_voice(
-    bot: Bot,
-    voice_message: Message,
-    file_path,
-):
-    await bot.send_voice(
-        chat_id=voice_message.chat.id,
-        voice=FSInputFile(file_path),
-        reply_parameters=reply_parameters(
-            voice_message
-        ),
-    )
