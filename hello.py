@@ -1,123 +1,391 @@
-import os
 import asyncio
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from collections import defaultdict
 
-import Reply
+from aiogram import (
+    Bot,
+    Dispatcher,
+    F,
+    Router,
+)
+from aiogram.enums import (
+    ButtonStyle,
+)
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
+
 import CAsh
+import Reply
+import SeTTiNGS
 import bToN
-import NAMe
-import yTFMe
-
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
 
 
-@dp.message(CommandStart())
-async def handle_start(message: Message):
-    thread_id = message.message_thread_id if message.is_topic_message else 0
-    btn_markup = bToN.get_next_takeoff_button()
-    await message.answer(
-        Reply.STARTUP_MESSAGE,
-        reply_markup=btn_markup,
-        message_thread_id=thread_id
+router = Router()
+
+response_indexes = defaultdict(int)
+
+button_name_index = 0
+button_style_index = 0
+button_id_index = 0
+
+
+def _dynamic_button():
+    global button_name_index
+    global button_style_index
+    global button_id_index
+
+    names = Reply.DYNAMIC_BUTTON_NAMES
+    ids = bToN.get_takeoff_ids()
+
+    if not ids:
+        return None
+
+    styles = (
+        ButtonStyle.PRIMARY,
+        ButtonStyle.DANGER,
+        ButtonStyle.SUCCESS,
+    )
+
+    name = names[
+        button_name_index % len(names)
+    ]
+
+    style = styles[
+        button_style_index % len(styles)
+    ]
+
+    user_id = ids[
+        button_id_index % len(ids)
+    ]
+
+    button_name_index += 1
+    button_style_index += 1
+    button_id_index += 1
+
+    return InlineKeyboardButton(
+        text=name,
+        url=f"tg://user?id={user_id}",
+        style=style,
     )
 
 
-@dp.message(Command("edit"))
-@dp.message(F.text.lower() == Reply.CMD_EDIT)
-async def handle_edit_command(message: Message):
-    if not await bToN.is_user_allowed_to_edit(message):
-        return
+def _dynamic_markup():
+    button = _dynamic_button()
 
-    thread_id = message.message_thread_id if message.is_topic_message else 0
-    keyboard = await bToN.get_edit_keyboard(message.chat.id, thread_id)
-    await message.answer(
-        Reply.EDIT_TEXT,
-        reply_markup=keyboard,
-        message_thread_id=thread_id
+    if button is None:
+        return None
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [button],
+        ]
     )
 
 
-@dp.callback_query(F.data.startswith("set_mode:"))
-async def handle_mode_callback(callback: CallbackQuery):
-    if not await bToN.is_user_admin(callback):
-        await callback.answer(Reply.ADMIN_ALERT_TEXT, show_alert=True)
+def _next_response(user_id):
+    responses = Reply.ROTATING_RESPONSES
+
+    if not responses:
+        return ""
+
+    index = response_indexes[user_id]
+
+    response_indexes[user_id] = (
+        index + 1
+    ) % len(responses)
+
+    return responses[index]
+
+
+def _settings_key(message):
+    return bToN.settings_key(
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        thread_id=message.message_thread_id,
+        chat_type=message.chat.type,
+    )
+
+
+async def _authorized(
+    bot,
+    chat_id,
+    user_id,
+    chat_type,
+):
+    if chat_type == "private":
+        return True
+
+    member = await bot.get_chat_member(
+        chat_id,
+        user_id,
+    )
+
+    return (
+        member.status.value
+        in bToN.ADMIN_STATUSES
+    )
+
+
+def _settings_keyboard(mode):
+    voice_style = (
+        ButtonStyle.PRIMARY
+        if mode == bToN.MODE_VOICE
+        else ButtonStyle.DANGER
+    )
+
+    normal_style = (
+        ButtonStyle.PRIMARY
+        if mode == bToN.MODE_NORMAL
+        else ButtonStyle.DANGER
+    )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=Reply.MODE_VOICE,
+                    callback_data=bToN.mode_callback(
+                        bToN.MODE_VOICE
+                    ),
+                    style=voice_style,
+                ),
+                InlineKeyboardButton(
+                    text=Reply.MODE_NORMAL,
+                    callback_data=bToN.mode_callback(
+                        bToN.MODE_NORMAL
+                    ),
+                    style=normal_style,
+                ),
+            ]
+        ]
+    )
+
+
+async def _show_settings(
+    message,
+    mode,
+):
+    await message.reply(
+        Reply.SETTINGS_TEXT,
+        reply_markup=_settings_keyboard(
+            mode
+        ),
+    )
+
+
+@router.message(
+    F.text == Reply.COMMAND_SETTINGS
+)
+async def settings_handler(
+    message: Message,
+    bot: Bot,
+):
+    if not await _authorized(
+        bot,
+        message.chat.id,
+        message.from_user.id,
+        message.chat.type,
+    ):
         return
 
-    thread_id = callback.message.message_thread_id if callback.message.is_topic_message else 0
-    await CAsh.toggle_chat_mode(callback.message.chat.id, thread_id)
+    key = _settings_key(message)
 
-    updated_keyboard = await bToN.get_edit_keyboard(callback.message.chat.id, thread_id)
-    await callback.message.edit_reply_markup(reply_markup=updated_keyboard)
+    mode = await CAsh.get_mode(
+        key,
+        bToN.MODE_NORMAL,
+    )
+
+    await _show_settings(
+        message,
+        mode,
+    )
+
+
+@router.callback_query(
+    F.data.startswith(bToN.CALLBACK_PREFIX)
+)
+async def mode_handler(
+    callback: CallbackQuery,
+    bot: Bot,
+):
+    message = callback.message
+
+    if message is None:
+        return
+
+    if not await _authorized(
+        bot,
+        message.chat.id,
+        callback.from_user.id,
+        message.chat.type,
+    ):
+        await callback.answer(
+            Reply.SETTINGS_UNAUTHORIZED,
+            show_alert=True,
+        )
+        return
+
+    selected_mode = bToN.parse_mode_callback(
+        callback.data
+    )
+
+    if selected_mode not in {
+        bToN.MODE_NORMAL,
+        bToN.MODE_VOICE,
+    }:
+        await callback.answer()
+        return
+
+    key = bToN.settings_key(
+        chat_id=message.chat.id,
+        user_id=callback.from_user.id,
+        thread_id=message.message_thread_id,
+        chat_type=message.chat.type,
+    )
+
+    current_mode = await CAsh.get_mode(
+        key,
+        bToN.MODE_NORMAL,
+    )
+
+    if selected_mode == current_mode:
+        selected_mode = bToN.next_mode(
+            current_mode
+        )
+
+    await CAsh.save_mode(
+        key,
+        selected_mode,
+    )
+
+    await message.edit_reply_markup(
+        reply_markup=_settings_keyboard(
+            selected_mode
+        )
+    )
+
     await callback.answer()
 
 
-@dp.message()
-async def handle_all_messages(message: Message):
-    if not message.text:
+@router.message(
+    F.text == Reply.COMMAND_BOT
+)
+async def bot_command_handler(
+    message: Message,
+):
+    if message.chat.type in {
+        "private",
+        "group",
+        "supergroup",
+    }:
+        await _send_rotating_response(
+            message
+        )
+
+
+async def _send_rotating_response(
+    message,
+):
+    text = _next_response(
+        message.from_user.id
+    )
+
+    if not text:
         return
 
+    await message.reply(
+        text,
+        reply_markup=_dynamic_markup(),
+    )
+
+
+@router.message(F.text)
+async def text_handler(
+    message: Message,
+    bot: Bot,
+):
     text = message.text.strip()
-    thread_id = message.message_thread_id if message.is_topic_message else 0
-    chat_type = message.chat.type
 
-    if NAMe.is_telegram_link(text):
-        if chat_type == "private":
-            idx = await CAsh.get_next_user_index(
-                message.from_user.id,
-                len(Reply.ROTATING_REPLIES)
-            )
-            await message.answer(
-                Reply.ROTATING_REPLIES[idx],
-                message_thread_id=thread_id
-            )
+    if text in {
+        Reply.COMMAND_SETTINGS,
+        Reply.COMMAND_BOT,
+    }:
         return
 
-    extracted_url = NAMe.extract_url(text)
-
-    if extracted_url:
-        mode = await CAsh.get_chat_mode(message.chat.id, thread_id)
-        asyncio.create_task(
-            yTFMe.process_and_send_media(
-                bot=bot,
-                chat_id=message.chat.id,
-                thread_id=thread_id,
-                user_id=message.from_user.id,
-                url=extracted_url,
-                mode=mode,
-                start_reply_text=Reply.DOWNLOAD_START_REPLY,
-                fail_reply_text=Reply.DOWNLOAD_FAIL_REPLY
-            )
-        )
+    if bToN.is_telegram_url(text):
         return
 
-    if chat_type == "private":
-        idx = await CAsh.get_next_user_index(
-            message.from_user.id,
-            len(Reply.ROTATING_REPLIES)
+    if not (
+        text.startswith("http://")
+        or text.startswith("https://")
+    ):
+        if message.chat.type == "private":
+            await _send_rotating_response(
+                message
+            )
+
+        return
+
+    key = _settings_key(message)
+
+    mode = await CAsh.get_mode(
+        key,
+        bToN.MODE_NORMAL,
+    )
+
+    accepted = await SeTTiNGS.submit(
+        bot,
+        message,
+        text,
+        mode,
+    )
+
+    if (
+        accepted
+        and Reply.DOWNLOAD_STARTED
+    ):
+        await message.reply(
+            Reply.DOWNLOAD_STARTED
         )
-        await message.answer(
-            Reply.ROTATING_REPLIES[idx],
-            message_thread_id=thread_id
-        )
-    elif text.lower() == Reply.CMD_BOT:
-        idx = await CAsh.get_next_user_index(
-            message.from_user.id,
-            len(Reply.ROTATING_REPLIES)
-        )
-        await message.answer(
-            Reply.ROTATING_REPLIES[idx],
-            message_thread_id=thread_id
+
+
+async def _startup(bot):
+    for user_id in bToN.get_takeoff_ids():
+        await bot.send_message(
+            chat_id=user_id,
+            text=Reply.STARTUP_TEXT,
+            reply_markup=_dynamic_markup(),
         )
 
 
 async def main():
-    await CAsh.init_db()
-    await dp.start_polling(bot)
+    token = bToN.get_bot_token()
+
+    if not token:
+        raise RuntimeError(
+            "BOT_TOKEN is not set"
+        )
+
+    await CAsh.configure(
+        bToN.get_db_path()
+    )
+
+    bot = Bot(token)
+
+    dispatcher = Dispatcher()
+    dispatcher.include_router(router)
+
+    await _startup(bot)
+
+    try:
+        await dispatcher.start_polling(
+            bot
+        )
+    finally:
+        await bot.session.close()
 
 
 if __name__ == "__main__":
