@@ -136,7 +136,7 @@ def _download_sync(
     )
 
     if mode == bToN.MODE_VOICE:
-        options["format"] = "bestaudio"
+        options["format"] = "bestaudio/best"
     else:
         options["format"] = "bv+ba/b"
 
