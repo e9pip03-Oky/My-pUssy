@@ -19,6 +19,7 @@ import CAsh
 import Reply
 import SeTTiNGS
 import bToN
+import ediT
 
 
 router = Router()
@@ -312,6 +313,12 @@ async def text_handler(
     message: Message,
     bot: Bot,
 ):
+    if await ediT.handle(
+        bot,
+        message,
+    ):
+        return
+
     text = message.text.strip()
 
     if text in {
@@ -386,4 +393,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main)
