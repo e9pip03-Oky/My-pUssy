@@ -1,4 +1,3 @@
-import asyncio
 import re
 from pathlib import Path
 
@@ -78,18 +77,15 @@ def _parse_time(value):
         return int(parts[0])
 
     if len(parts) == 2:
-        first, second = map(
+        minutes, seconds = map(
             int,
             parts,
         )
 
-        if second >= 60:
+        if seconds >= 60:
             return None
 
-        if first == 0:
-            return second
-
-        return first * 60 + second
+        return minutes * 60 + seconds
 
     if len(parts) == 3:
         hours, minutes, seconds = map(
@@ -114,7 +110,7 @@ def _parse_time(value):
 
 def _split_duration(text):
     match = re.fullmatch(
-        r"\s*(\S+)\s+/\s+(\S+)\s*",
+        r"(\S+)\s+/\s+(\S+)",
         text,
     )
 
@@ -125,18 +121,7 @@ def _split_duration(text):
         )
 
     match = re.fullmatch(
-        r"\s*(\S+)\s+-\s+(\S+)\s*",
-        text,
-    )
-
-    if match:
-        return (
-            match.group(1),
-            match.group(2),
-        )
-
-    match = re.fullmatch(
-        r"\s*(\S+)\s+(\S+)\s*",
+        r"(\S+)\s+-\s+(\S+)",
         text,
     )
 
@@ -243,8 +228,9 @@ async def handle_duration(
 
     if duration is None:
         await message.reply(
-            Reply.EDIT_WAITING
+            Reply.EDIT_FORMAT
         )
+        _clear_state(message)
         return True
 
     start, end = duration
@@ -253,6 +239,7 @@ async def handle_duration(
         await message.reply(
             Reply.EDIT_REJECTED
         )
+        _clear_state(message)
         return True
 
     voice_message, status_message = state
