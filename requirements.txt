@@ -1,6 +1,6 @@
 aiogram
-yt-dlp
-aiofiles
 aiohttp
+aiofiles
 aiodns
 aiosqlite
+yt-dlp
