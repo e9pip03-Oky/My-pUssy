@@ -1,7 +1,5 @@
 import asyncio
 import re
-import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 
 from aiogram import Bot
@@ -11,42 +9,29 @@ import Reply
 import bToN
 
 
-TIME_PATTERN = (
-    r"(?:\d+|\d+:\d{1,2}|\d+:\d{1,2}:\d{1,2})"
-)
-
-RANGE_PATTERN = re.compile(
-    rf"^\s*({TIME_PATTERN})\s+(?:/|-)\s+"
-    rf"({TIME_PATTERN})\s*$|"
-    rf"^\s*({TIME_PATTERN})\s+"
-    rf"({TIME_PATTERN})\s*$"
-)
-
-
-@dataclass
-class EditState:
-    voice_message: Message
-    status_message: Message
-
-
-edit_states: dict[
-    tuple[int, int, int | None],
-    EditState,
-] = {}
+EDIT_STATES = {}
 
 
 def _state_key(message):
-    return (
-        message.chat.id,
-        message.from_user.id,
-        message.message_thread_id,
+    return message.chat.id, message.from_user.id
+
+
+def _set_state(message, voice_message, status_message):
+    EDIT_STATES[_state_key(message)] = (
+        voice_message,
+        status_message,
     )
 
 
-async def _bot_is_admin(
-    bot: Bot,
-    message: Message,
-):
+def _get_state(message):
+    return EDIT_STATES.get(_state_key(message))
+
+
+def _clear_state(message):
+    EDIT_STATES.pop(_state_key(message), None)
+
+
+async def _bot_is_admin(bot, message):
     if message.chat.type == "private":
         return True
 
@@ -56,36 +41,40 @@ async def _bot_is_admin(
     }:
         return False
 
+    bot_user = await bot.get_me()
     member = await bot.get_chat_member(
         message.chat.id,
-        bot.id,
+        bot_user.id,
     )
 
-    return member.status.value in {
-        "administrator",
-        "creator",
-    }
+    return member.status.value in bToN.ADMIN_STATUSES
 
 
 def _parse_time(value):
+    if not value.isdigit():
+        return None
+
     parts = value.split(":")
 
     if len(parts) == 1:
         return int(parts[0])
 
     if len(parts) == 2:
-        minutes, seconds = map(int, parts)
+        first, second = map(int, parts)
 
-        if seconds >= 60:
-            raise ValueError
+        if second >= 60:
+            return None
 
-        return minutes * 60 + seconds
+        if first == 0:
+            return second
+
+        return first * 60 + second
 
     if len(parts) == 3:
         hours, minutes, seconds = map(int, parts)
 
         if minutes >= 60 or seconds >= 60:
-            raise ValueError
+            return None
 
         return (
             hours * 3600
@@ -93,134 +82,73 @@ def _parse_time(value):
             + seconds
         )
 
-    raise ValueError
+    return None
 
 
-def parse_range(text):
-    match = RANGE_PATTERN.fullmatch(text)
+def _split_duration(text):
+    match = re.fullmatch(
+        r"\s*(\S+)\s+/\s+(\S+)\s*",
+        text,
+    )
 
-    if match is None:
+    if match:
+        return match.group(1), match.group(2)
+
+    match = re.fullmatch(
+        r"\s*(\S+)\s+-\s+(\S+)\s*",
+        text,
+    )
+
+    if match:
+        return match.group(1), match.group(2)
+
+    match = re.fullmatch(
+        r"\s*(\S+)\s+(\S+)\s*",
+        text,
+    )
+
+    if match:
+        return match.group(1), match.group(2)
+
+    return None
+
+
+def _parse_duration(text):
+    values = _split_duration(text)
+
+    if values is None:
         return None
 
-    first = match.group(1) or match.group(3)
-    second = match.group(2) or match.group(4)
+    start = _parse_time(values[0])
+    end = _parse_time(values[1])
 
-    try:
-        start = _parse_time(first)
-        end = _parse_time(second)
-    except ValueError:
+    if start is None or end is None:
         return None
 
     return start, end
 
 
-def _state(message):
-    return edit_states.get(
-        _state_key(message)
-    )
-
-
-async def _send_edit_prompt(message):
-    return await message.reply(
-        Reply.EDIT_PROMPT
-    )
-
-
-async def _enter_edit_mode(
-    bot: Bot,
-    message: Message,
-):
-    if not await _bot_is_admin(bot, message):
-        return False
-
-    replied_message = message.reply_to_message
-
-    if replied_message is None:
-        return True
-
-    if replied_message.voice is None:
-        return True
-
-    key = _state_key(message)
-
-    previous = edit_states.pop(key, None)
-
-    if previous is not None:
-        try:
-            await previous.status_message.delete()
-        except Exception:
-            pass
-
-    status_message = await _send_edit_prompt(
-        message
-    )
-
-    edit_states[key] = EditState(
-        voice_message=replied_message,
-        status_message=status_message,
-    )
-
-    return True
-
-
 async def _download_voice(
-    bot: Bot,
-    voice_message: Message,
-    directory: Path,
+    bot,
+    voice_message,
+    directory,
 ):
+    directory = Path(directory)
     directory.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    input_path = (
-        directory
-        / f"edit_{voice_message.message_id}.ogg"
+    path = directory / (
+        f"{voice_message.message_id}.ogg"
     )
 
     await bot.download(
         voice_message.voice.file_id,
-        destination=input_path,
+        destination=path,
     )
 
-    return input_path
-
-
-def _cut_voice_sync(
-    input_path,
-    output_path,
-    start,
-    end,
-):
-    duration = end - start
-
-    ffmpeg_path = (
-        bToN.get_ffmpeg_path()
-        or "ffmpeg"
-    )
-
-    command = [
-        ffmpeg_path,
-        "-y",
-        "-ss",
-        str(start),
-        "-i",
-        str(input_path),
-        "-t",
-        str(duration),
-        "-c",
-        "copy",
-        str(output_path),
-    ]
-
-    subprocess.run(
-        command,
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    return output_path
+    return path
 
 
 async def _cut_voice(
@@ -229,59 +157,128 @@ async def _cut_voice(
     start,
     end,
 ):
-    return await asyncio.to_thread(
-        _cut_voice_sync,
-        input_path,
-        output_path,
-        start,
-        end,
+    ffmpeg_path = (
+        bToN.get_ffmpeg_path()
+        or "ffmpeg"
     )
 
+    process = await asyncio.create_subprocess_exec(
+        ffmpeg_path,
+        "-y",
+        "-ss",
+        str(start),
+        "-to",
+        str(end),
+        "-i",
+        str(input_path),
+        "-c",
+        "copy",
+        str(output_path),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
 
-async def _remove_file(path):
+    await process.communicate()
+
+    if process.returncode != 0:
+        raise RuntimeError("FFmpeg failed")
+
+
+async def _delete_status(status_message):
     try:
-        path.unlink()
-    except FileNotFoundError:
+        await status_message.delete()
+    except Exception:
         pass
 
 
-async def _send_cut_voice(
-    message,
-    output_path,
-):
-    await message.reply_voice(
-        voice=FSInputFile(output_path)
-    )
-
-
-async def _process_edit(
-    bot: Bot,
-    message: Message,
-    state: EditState,
-    start: int,
-    end: int,
-):
-    if start > end:
-        await message.reply(
-            Reply.EDIT_START_AFTER_END
-        )
+async def start_edit(bot, message):
+    if not await _bot_is_admin(
+        bot,
+        message,
+    ):
         return
 
-    directory = bToN.download_directory(
-        message.from_user.id
+    voice_message = message.reply_to_message
+
+    if (
+        voice_message is None
+        or voice_message.voice is None
+    ):
+        return
+
+    status_message = await message.reply(
+        Reply.EDIT_WAITING
     )
+
+    _set_state(
+        message,
+        voice_message,
+        status_message,
+    )
+
+
+async def handle_duration(bot, message):
+    state = _get_state(message)
+
+    if state is None:
+        return False
+
+    duration = _parse_duration(
+        message.text.strip()
+    )
+
+    if duration is None:
+        await message.reply(
+            Reply.EDIT_WAITING
+        )
+        return True
+
+    start, end = duration
+
+    if start > end:
+        await message.reply(
+            Reply.EDIT_REJECTED
+        )
+        return True
+
+    voice_message, status_message = state
+
+    if voice_message.voice is None:
+        await message.reply(
+            Reply.EDIT_ERROR
+        )
+        _clear_state(message)
+        return True
+
+    voice_duration = voice_message.voice.duration
+
+    if (
+        start >= voice_duration
+        or end > voice_duration
+        or start == end
+    ):
+        await message.reply(
+            Reply.EDIT_ERROR
+        )
+        _clear_state(message)
+        return True
 
     input_path = None
-    output_path = (
-        Path(directory)
-        / f"edit_{message.message_id}.ogg"
-    )
+    output_path = None
 
     try:
+        directory = bToN.download_directory(
+            message.from_user.id
+        )
+
         input_path = await _download_voice(
             bot,
-            state.voice_message,
-            Path(directory),
+            voice_message,
+            directory,
+        )
+
+        output_path = input_path.with_name(
+            f"{input_path.stem}.cut.ogg"
         )
 
         await _cut_voice(
@@ -291,70 +288,32 @@ async def _process_edit(
             end,
         )
 
-        try:
-            await state.status_message.delete()
-        except Exception:
-            pass
-
-        edit_states.pop(
-            _state_key(message),
-            None,
+        await message.reply_voice(
+            FSInputFile(output_path)
         )
 
-        await _send_cut_voice(
-            message,
-            output_path,
+        await _delete_status(
+            status_message
         )
 
     except Exception:
         await message.reply(
-            Reply.EDIT_FAILED
+            Reply.EDIT_ERROR
         )
 
     finally:
-        if input_path is not None:
-            await _remove_file(input_path)
+        _clear_state(message)
 
-        await _remove_file(output_path)
-
-
-async def handle(
-    bot: Bot,
-    message: Message,
-):
-    text = message.text.strip()
-
-    if text == Reply.COMMAND_EDIT:
-        return await _enter_edit_mode(
-            bot,
-            message,
-        )
-
-    state = _state(message)
-
-    if state is None:
-        return False
-
-    parsed = parse_range(text)
-
-    if parsed is None:
-        try:
-            await state.status_message.edit_text(
-                Reply.EDIT_PROMPT
-            )
-        except Exception:
-            pass
-
-        return True
-
-    start, end = parsed
-
-    await _process_edit(
-        bot,
-        message,
-        state,
-        start,
-        end,
-    )
+        for path in (
+            input_path,
+            output_path,
+        ):
+            if path is not None:
+                try:
+                    path.unlink(
+                        missing_ok=True
+                    )
+                except Exception:
+                    pass
 
     return True

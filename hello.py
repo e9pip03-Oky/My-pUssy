@@ -21,7 +21,6 @@ import SeTTiNGS
 import bToN
 import ediT
 
-
 router = Router()
 
 response_indexes = defaultdict(int)
@@ -292,19 +291,16 @@ async def bot_command_handler(
         )
 
 
-async def _send_rotating_response(
-    message,
+@router.message(
+    F.text == Reply.COMMAND_EDIT
+)
+async def edit_handler(
+    message: Message,
+    bot: Bot,
 ):
-    text = _next_response(
-        message.from_user.id
-    )
-
-    if not text:
-        return
-
-    await message.reply(
-        text,
-        reply_markup=_dynamic_markup(),
+    await ediT.start_edit(
+        bot,
+        message,
     )
 
 
@@ -313,7 +309,7 @@ async def text_handler(
     message: Message,
     bot: Bot,
 ):
-    if await ediT.handle(
+    if await ediT.handle_duration(
         bot,
         message,
     ):
@@ -324,6 +320,7 @@ async def text_handler(
     if text in {
         Reply.COMMAND_SETTINGS,
         Reply.COMMAND_BOT,
+        Reply.COMMAND_EDIT,
     }:
         return
 
@@ -353,6 +350,22 @@ async def text_handler(
         message,
         text,
         mode,
+    )
+
+
+async def _send_rotating_response(
+    message,
+):
+    text = _next_response(
+        message.from_user.id
+    )
+
+    if not text:
+        return
+
+    await message.reply(
+        text,
+        reply_markup=_dynamic_markup(),
     )
 
 
