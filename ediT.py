@@ -77,15 +77,18 @@ def _parse_time(value):
         return int(parts[0])
 
     if len(parts) == 2:
-        minutes, seconds = map(
+        first, second = map(
             int,
             parts,
         )
 
-        if seconds >= 60:
+        if second >= 60:
             return None
 
-        return minutes * 60 + seconds
+        if first == 0:
+            return second
+
+        return first * 60 + second
 
     if len(parts) == 3:
         hours, minutes, seconds = map(
@@ -110,7 +113,7 @@ def _parse_time(value):
 
 def _split_duration(text):
     match = re.fullmatch(
-        r"(\S+)\s+/\s+(\S+)",
+        r"\s*(\S+)\s+/\s+(\S+)\s*",
         text,
     )
 
@@ -121,7 +124,18 @@ def _split_duration(text):
         )
 
     match = re.fullmatch(
-        r"(\S+)\s+-\s+(\S+)",
+        r"\s*(\S+)\s+-\s+(\S+)\s*",
+        text,
+    )
+
+    if match:
+        return (
+            match.group(1),
+            match.group(2),
+        )
+
+    match = re.fullmatch(
+        r"\s*(\S+)\s+(\S+)\s*",
         text,
     )
 
@@ -228,7 +242,7 @@ async def handle_duration(
 
     if duration is None:
         await message.reply(
-            Reply.EDIT_FORMAT
+            Reply.EDIT_INVALID_FORMAT
         )
         _clear_state(message)
         return True
