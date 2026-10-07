@@ -8,7 +8,6 @@ from aiogram import (
     Router,
 )
 from aiogram.enums import ButtonStyle
-from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -20,7 +19,6 @@ import CAsh
 import Reply
 import SeTTiNGS
 import bToN
-import ediT
 
 
 router = Router()
@@ -319,7 +317,6 @@ async def text_handler(
     if text in {
         Reply.COMMAND_SETTINGS,
         Reply.COMMAND_BOT,
-        Reply.COMMAND_EDIT,
     }:
         return
 
@@ -375,8 +372,7 @@ async def main():
 
     bot = Bot(token)
 
-    dispatcher = Dispatcher(storage=MemoryStorage())
-    dispatcher.include_router(ediT.router)
+    dispatcher = Dispatcher()
     dispatcher.include_router(router)
 
     await _startup(bot)
