@@ -7,16 +7,24 @@ from aiogram.types import FSInputFile, Message
 
 import Reply
 import bToN
+from yTFMe import cut_voice
 
 
 EDIT_STATES = {}
 
 
 def _state_key(message):
-    return message.chat.id, message.from_user.id
+    return (
+        message.chat.id,
+        message.from_user.id,
+    )
 
 
-def _set_state(message, voice_message, status_message):
+def _set_state(
+    message,
+    voice_message,
+    status_message,
+):
     EDIT_STATES[_state_key(message)] = (
         voice_message,
         status_message,
@@ -24,14 +32,22 @@ def _set_state(message, voice_message, status_message):
 
 
 def _get_state(message):
-    return EDIT_STATES.get(_state_key(message))
+    return EDIT_STATES.get(
+        _state_key(message)
+    )
 
 
 def _clear_state(message):
-    EDIT_STATES.pop(_state_key(message), None)
+    EDIT_STATES.pop(
+        _state_key(message),
+        None,
+    )
 
 
-async def _bot_is_admin(bot, message):
+async def _bot_is_admin(
+    bot,
+    message,
+):
     if message.chat.type == "private":
         return True
 
@@ -41,13 +57,15 @@ async def _bot_is_admin(bot, message):
     }:
         return False
 
-    bot_user = await bot.get_me()
     member = await bot.get_chat_member(
         message.chat.id,
-        bot_user.id,
+        bot.id,
     )
 
-    return member.status.value in bToN.ADMIN_STATUSES
+    return (
+        member.status.value
+        in bToN.ADMIN_STATUSES
+    )
 
 
 def _parse_time(value):
@@ -60,7 +78,10 @@ def _parse_time(value):
         return int(parts[0])
 
     if len(parts) == 2:
-        first, second = map(int, parts)
+        first, second = map(
+            int,
+            parts,
+        )
 
         if second >= 60:
             return None
@@ -71,9 +92,15 @@ def _parse_time(value):
         return first * 60 + second
 
     if len(parts) == 3:
-        hours, minutes, seconds = map(int, parts)
+        hours, minutes, seconds = map(
+            int,
+            parts,
+        )
 
-        if minutes >= 60 or seconds >= 60:
+        if (
+            minutes >= 60
+            or seconds >= 60
+        ):
             return None
 
         return (
@@ -92,7 +119,10 @@ def _split_duration(text):
     )
 
     if match:
-        return match.group(1), match.group(2)
+        return (
+            match.group(1),
+            match.group(2),
+        )
 
     match = re.fullmatch(
         r"\s*(\S+)\s+-\s+(\S+)\s*",
@@ -100,7 +130,10 @@ def _split_duration(text):
     )
 
     if match:
-        return match.group(1), match.group(2)
+        return (
+            match.group(1),
+            match.group(2),
+        )
 
     match = re.fullmatch(
         r"\s*(\S+)\s+(\S+)\s*",
@@ -108,7 +141,10 @@ def _split_duration(text):
     )
 
     if match:
-        return match.group(1), match.group(2)
+        return (
+            match.group(1),
+            match.group(2),
+        )
 
     return None
 
@@ -134,6 +170,7 @@ async def _download_voice(
     directory,
 ):
     directory = Path(directory)
+
     directory.mkdir(
         parents=True,
         exist_ok=True,
@@ -151,54 +188,28 @@ async def _download_voice(
     return path
 
 
-async def _cut_voice(
-    input_path,
-    output_path,
-    start,
-    end,
+async def _delete_status(
+    status_message,
 ):
-    ffmpeg_path = (
-        bToN.get_ffmpeg_path()
-        or "ffmpeg"
-    )
-
-    process = await asyncio.create_subprocess_exec(
-        ffmpeg_path,
-        "-y",
-        "-ss",
-        str(start),
-        "-to",
-        str(end),
-        "-i",
-        str(input_path),
-        "-c",
-        "copy",
-        str(output_path),
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-
-    await process.communicate()
-
-    if process.returncode != 0:
-        raise RuntimeError("FFmpeg failed")
-
-
-async def _delete_status(status_message):
     try:
         await status_message.delete()
     except Exception:
         pass
 
 
-async def start_edit(bot, message):
+async def start_edit(
+    bot,
+    message,
+):
     if not await _bot_is_admin(
         bot,
         message,
     ):
         return
 
-    voice_message = message.reply_to_message
+    voice_message = (
+        message.reply_to_message
+    )
 
     if (
         voice_message is None
@@ -217,7 +228,10 @@ async def start_edit(bot, message):
     )
 
 
-async def handle_duration(bot, message):
+async def handle_duration(
+    bot,
+    message,
+):
     state = _get_state(message)
 
     if state is None:
@@ -250,7 +264,9 @@ async def handle_duration(bot, message):
         _clear_state(message)
         return True
 
-    voice_duration = voice_message.voice.duration
+    voice_duration = (
+        voice_message.voice.duration
+    )
 
     if (
         start >= voice_duration
@@ -267,8 +283,10 @@ async def handle_duration(bot, message):
     output_path = None
 
     try:
-        directory = bToN.download_directory(
-            message.from_user.id
+        directory = (
+            bToN.download_directory(
+                message.from_user.id
+            )
         )
 
         input_path = await _download_voice(
@@ -281,19 +299,19 @@ async def handle_duration(bot, message):
             f"{input_path.stem}.cut.ogg"
         )
 
-        await _cut_voice(
+        await cut_voice(
             input_path,
             output_path,
             start,
             end,
         )
 
-        await message.reply_voice(
-            FSInputFile(output_path)
-        )
-
         await _delete_status(
             status_message
+        )
+
+        await message.reply_voice(
+            FSInputFile(output_path)
         )
 
     except Exception:

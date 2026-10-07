@@ -14,7 +14,9 @@ import Reply
 import bToN
 
 
-UPPER_EXCEPTIONS = set("ATFGUJNML")
+UPPER_EXCEPTIONS = set(
+    "ATFGUJNML"
+)
 
 
 def clean_name(value):
@@ -62,12 +64,17 @@ def get_title(info):
     )
 
 
-def build_filename(info, extension):
+def build_filename(
+    info,
+    extension,
+):
     publisher = get_publisher(info)
     title = get_title(info)
 
     if publisher and title:
-        name = f"{publisher} - {title}"
+        name = (
+            f"{publisher} - {title}"
+        )
     elif publisher:
         name = publisher
     else:
@@ -76,7 +83,10 @@ def build_filename(info, extension):
     return f"{name}.{extension}"
 
 
-def unique_filename(directory, filename):
+def unique_filename(
+    directory,
+    filename,
+):
     path = Path(directory) / filename
 
     if not path.exists():
@@ -113,7 +123,9 @@ async def send_status_message(message):
     )
 
 
-async def delete_status_message(status_message):
+async def delete_status_message(
+    status_message,
+):
     if status_message is None:
         return
 
@@ -174,8 +186,8 @@ async def send_documents(
 
 
 async def _send_document_album(
-    bot: Bot,
-    message: Message,
+    bot,
+    message,
     items,
 ):
     media = []
@@ -221,8 +233,8 @@ async def _send_document_album(
 
 
 async def _send_document(
-    bot: Bot,
-    message: Message,
+    bot,
+    message,
     item,
 ):
     if item.file_id:
@@ -257,8 +269,8 @@ async def _send_document(
 
 
 async def send_voices(
-    bot: Bot,
-    message: Message,
+    bot,
+    message,
     items,
 ):
     for item in items:
@@ -270,8 +282,8 @@ async def send_voices(
 
 
 async def _send_voice(
-    bot: Bot,
-    message: Message,
+    bot,
+    message,
     item,
 ):
     if item.file_id:

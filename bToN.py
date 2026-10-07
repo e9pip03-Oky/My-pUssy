@@ -38,19 +38,31 @@ ADMIN_STATUSES = {
 
 
 def get_bot_token():
-    return os.getenv(BOT_TOKEN_ENV, "")
+    return os.getenv(
+        BOT_TOKEN_ENV,
+        "",
+    )
 
 
 def get_db_path():
-    return os.getenv(DB_PATH_ENV, DEFAULT_DB_PATH)
+    return os.getenv(
+        DB_PATH_ENV,
+        DEFAULT_DB_PATH,
+    )
 
 
 def get_ffmpeg_path():
-    return os.getenv(FFMPEG_PATH_ENV)
+    return os.getenv(
+        FFMPEG_PATH_ENV
+    )
 
 
 def get_takeoff_ids():
-    value = os.getenv(TAKEOFF_ENV, "")
+    value = os.getenv(
+        TAKEOFF_ENV,
+        "",
+    )
+
     return tuple(
         item
         for item in value.split("/")
@@ -67,8 +79,14 @@ def settings_key(
     if chat_type == "private":
         return f"user:{user_id}"
 
-    if chat_type == "supergroup" and thread_id:
-        return f"chat:{chat_id}:topic:{thread_id}"
+    if (
+        chat_type == "supergroup"
+        and thread_id
+    ):
+        return (
+            f"chat:{chat_id}:"
+            f"topic:{thread_id}"
+        )
 
     return f"chat:{chat_id}"
 
@@ -78,10 +96,14 @@ def mode_callback(mode):
 
 
 def parse_mode_callback(data):
-    if not data.startswith(CALLBACK_PREFIX):
+    if not data.startswith(
+        CALLBACK_PREFIX
+    ):
         return None
 
-    return data[len(CALLBACK_PREFIX):]
+    return data[
+        len(CALLBACK_PREFIX):
+    ]
 
 
 def next_mode(mode):
@@ -92,7 +114,9 @@ def next_mode(mode):
 
 
 def download_directory(user_id):
-    return Path(DOWNLOADS_DIR) / str(user_id)
+    return Path(
+        DOWNLOADS_DIR
+    ) / str(user_id)
 
 
 def cache_key(mode, identity):

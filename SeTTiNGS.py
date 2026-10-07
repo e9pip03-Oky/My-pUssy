@@ -45,9 +45,7 @@ class UserQueue:
 
 
 user_queues: dict[int, UserQueue] = {}
-
 cache_locks: dict[str, asyncio.Lock] = {}
-
 download_tasks: dict[
     str,
     asyncio.Task,
@@ -304,8 +302,10 @@ async def _prepare_item(
             )
 
     if result is None:
-        cached_file_id = await CAsh.get_file_id(
-            item.cache_key
+        cached_file_id = (
+            await CAsh.get_file_id(
+                item.cache_key
+            )
         )
 
         if cached_file_id:
@@ -343,8 +343,10 @@ async def _download_item(
     )
 
     async with lock:
-        cached_file_id = await CAsh.get_file_id(
-            item.cache_key
+        cached_file_id = (
+            await CAsh.get_file_id(
+                item.cache_key
+            )
         )
 
         if cached_file_id:

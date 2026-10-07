@@ -227,3 +227,38 @@ async def download_one(
         )
 
     return result
+
+
+async def cut_voice(
+    input_path,
+    output_path,
+    start,
+    end,
+):
+    ffmpeg_path = (
+        bToN.get_ffmpeg_path()
+        or "ffmpeg"
+    )
+
+    process = await asyncio.create_subprocess_exec(
+        ffmpeg_path,
+        "-y",
+        "-ss",
+        str(start),
+        "-i",
+        str(input_path),
+        "-to",
+        str(end - start),
+        "-c",
+        "copy",
+        str(output_path),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+
+    await process.communicate()
+
+    if process.returncode != 0:
+        raise RuntimeError(
+            "FFmpeg failed"
+        )

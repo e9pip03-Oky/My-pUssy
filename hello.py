@@ -21,6 +21,7 @@ import SeTTiNGS
 import bToN
 import ediT
 
+
 router = Router()
 
 response_indexes = defaultdict(int)
@@ -48,18 +49,15 @@ def _dynamic_button():
     )
 
     name = names[
-        button_name_index
-        % len(names)
+        button_name_index % len(names)
     ]
 
     style = styles[
-        button_style_index
-        % len(styles)
+        button_style_index % len(styles)
     ]
 
     user_id = ids[
-        button_id_index
-        % len(ids)
+        button_id_index % len(ids)
     ]
 
     button_name_index += 1
