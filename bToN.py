@@ -117,3 +117,11 @@ def is_telegram_url(url):
         or host.endswith(f".{item}")
         for item in TELEGRAM_HOSTS
     )
+
+
+async def is_bot_admin(bot, chat_id):
+    bot_member = await bot.get_chat_member(
+        chat_id,
+        bot.id,
+    )
+    return bot_member.status.value in ADMIN_STATUSES
