@@ -1,3 +1,4 @@
+import hashlib
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -5,6 +6,14 @@ from urllib.parse import urlparse
 
 MODE_NORMAL = "normal"
 MODE_VOICE = "voice"
+
+MEDIA_TYPE_DOCUMENT = "document"
+MEDIA_TYPE_VOICE = "voice"
+MEDIA_TYPE_VIDEO = "video"
+MEDIA_TYPE_PHOTO = "photo"
+MEDIA_TYPE_AUDIO = "audio"
+MEDIA_TYPE_ANIMATION = "animation"
+MEDIA_TYPE_VIDEO_NOTE = "video_note"
 
 STYLE_PRIMARY = "primary"
 STYLE_DANGER = "danger"
@@ -119,8 +128,18 @@ def download_directory(user_id):
     ) / str(user_id)
 
 
-def cache_key(mode, identity):
-    return f"{mode}:{identity}"
+def cache_key(
+    mode,
+    media_type,
+    value,
+):
+    data = (
+        f"{mode}:{media_type}:{value}"
+    )
+
+    return hashlib.sha256(
+        data.encode("utf-8")
+    ).hexdigest()
 
 
 def is_telegram_url(url):

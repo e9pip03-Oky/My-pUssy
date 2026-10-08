@@ -20,6 +20,7 @@ from yTFMe import (
 class DownloadItem:
     url: str
     mode: str
+    media_type: str
     identity: str = ""
     cache_key: str = ""
     file_id: str | None = None
@@ -190,8 +191,16 @@ async def _process(
         )
 
 
+def _media_type(mode):
+    if mode == bToN.MODE_VOICE:
+        return bToN.MEDIA_TYPE_VOICE
+
+    return bToN.MEDIA_TYPE_DOCUMENT
+
+
 def _build_items(entries, mode):
     items = []
+    media_type = _media_type(mode)
 
     for entry in entries:
         url = entry_url(entry)
@@ -205,10 +214,12 @@ def _build_items(entries, mode):
             DownloadItem(
                 url=url,
                 mode=mode,
+                media_type=media_type,
                 identity=identity,
                 cache_key=bToN.cache_key(
                     mode,
-                    identity,
+                    media_type,
+                    url,
                 ),
             )
         )
