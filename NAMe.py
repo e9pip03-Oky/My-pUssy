@@ -255,6 +255,7 @@ async def _send_document(
             reply_parameters=reply_parameters(
                 message
             ),
+            disable_content_type_detection=True,
         )
 
     if result.document:
