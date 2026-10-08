@@ -68,47 +68,117 @@ async def _bot_is_admin(
 
 
 def _parse_time(value):
-    if not value.isdigit():
+    if not re.fullmatch(
+        r"\d+(?:\.\d+)?",
+        value,
+    ):
         return None
 
+    if "." in value:
+        whole, fraction = value.split(
+            ".",
+            1,
+        )
+
+        if len(fraction) > 2:
+            return None
+
+        fraction_value = int(fraction)
+
+        if fraction_value >= 60:
+            return None
+
+        return int(whole) + (
+            fraction_value / 100
+        )
+
+    return int(value)
+
+
+def _parse_time_with_units(value):
     parts = value.split(":")
 
     if len(parts) == 1:
-        return int(parts[0])
+        return _parse_time(value)
 
     if len(parts) == 2:
-        first, second = map(
-            int,
-            parts,
-        )
+        first, second = parts
 
-        if second >= 60:
+        if not first.isdigit():
             return None
 
-        if first == 0:
-            return second
+        seconds = _parse_time(second)
 
-        return first * 60 + second
+        if seconds is None or seconds >= 60:
+            return None
+
+        return int(first) * 60 + seconds
 
     if len(parts) == 3:
-        hours, minutes, seconds = map(
-            int,
-            parts,
-        )
+        hours, minutes, seconds = parts
 
         if (
-            minutes >= 60
-            or seconds >= 60
+            not hours.isdigit()
+            or not minutes.isdigit()
         ):
             return None
 
+        seconds = _parse_time(seconds)
+
+        if seconds is None:
+            return None
+
+        minutes = int(minutes)
+
+        if minutes >= 60 or seconds >= 60:
+            return None
+
         return (
-            hours * 3600
+            int(hours) * 3600
             + minutes * 60
             + seconds
         )
 
     return None
+
+
+def _parse_hour_time(value):
+    match = re.fullmatch(
+        r"(\d+)\.(\d+):(\d+(?:\.\d+)?)",
+        value,
+    )
+
+    if match is None:
+        return None
+
+    hours = int(match.group(1))
+    minutes = int(match.group(2))
+    seconds = _parse_time(
+        match.group(3)
+    )
+
+    if (
+        minutes >= 60
+        or seconds is None
+        or seconds >= 60
+    ):
+        return None
+
+    return (
+        hours * 3600
+        + minutes * 60
+        + seconds
+    )
+
+
+def _parse_single_time(value):
+    if "." in value and ":" in value:
+        hour_time = _parse_hour_time(value)
+
+        if hour_time is not None:
+            return hour_time
+
+    return _parse_time_with_units(value)
 
 
 def _split_duration(text):
@@ -152,10 +222,15 @@ def _parse_duration(text):
     values = _split_duration(text)
 
     if values is None:
-        return None
+        end = _parse_single_time(text)
 
-    start = _parse_time(values[0])
-    end = _parse_time(values[1])
+        if end is None:
+            return None
+
+        return 0, end
+
+    start = _parse_single_time(values[0])
+    end = _parse_single_time(values[1])
 
     if start is None or end is None:
         return None
