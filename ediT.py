@@ -4,6 +4,7 @@ from pathlib import Path
 from aiogram import Bot
 from aiogram.types import FSInputFile, Message
 
+import CAsh
 import Reply
 import bToN
 from yTFMe import cut_voice
@@ -238,6 +239,17 @@ def _parse_duration(text):
     return start, end
 
 
+def _cache_key(
+    voice_message,
+    start,
+    end,
+):
+    return (
+        f"edit:{voice_message.voice.file_id}:"
+        f"{start:.2f}:{end:.2f}"
+    )
+
+
 async def _download_voice(
     bot,
     voice_message,
@@ -355,6 +367,28 @@ async def handle_duration(
         _clear_state(message)
         return True
 
+    cache_key = _cache_key(
+        voice_message,
+        start,
+        end,
+    )
+
+    cached_file_id = await CAsh.get_file_id(
+        cache_key
+    )
+
+    if cached_file_id is not None:
+        await _delete_status(
+            status_message
+        )
+
+        await message.reply_voice(
+            cached_file_id
+        )
+
+        _clear_state(message)
+        return True
+
     input_path = None
     output_path = None
 
@@ -386,8 +420,13 @@ async def handle_duration(
             status_message
         )
 
-        await message.reply_voice(
+        sent_message = await message.reply_voice(
             FSInputFile(output_path)
+        )
+
+        await CAsh.save_file_id(
+            cache_key,
+            sent_message.voice.file_id,
         )
 
     except Exception:
