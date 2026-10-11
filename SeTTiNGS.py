@@ -1,4 +1,3 @@
-
 import asyncio
 import shutil
 import tempfile
@@ -37,6 +36,7 @@ class SharedDownload:
     task: asyncio.Task
     message: Message
     references: int = 0
+    cleanup_task: asyncio.Task | None = None
 
 
 @dataclass
@@ -217,13 +217,17 @@ async def _process(
 
     finally:
         try:
-            await _release_downloads(items)
+            await bToN._await_cleanup(
+                _release_downloads(items)
+            )
         finally:
             if directory_acquired:
-                await bToN.release_download_directory(
-                    user_id=message.from_user.id,
-                    chat_id=message.chat.id,
-                    chat_type=message.chat.type,
+                await bToN._await_cleanup(
+                    bToN.release_download_directory(
+                        user_id=message.from_user.id,
+                        chat_id=message.chat.id,
+                        chat_type=message.chat.type,
+                    )
                 )
 
 
@@ -352,10 +356,12 @@ async def _prepare_item(
                     )
                 )
             except BaseException:
-                await bToN.release_download_directory(
-                    user_id=message.from_user.id,
-                    chat_id=message.chat.id,
-                    chat_type=message.chat.type,
+                await bToN._await_cleanup(
+                    bToN.release_download_directory(
+                        user_id=message.from_user.id,
+                        chat_id=message.chat.id,
+                        chat_type=message.chat.type,
+                    )
                 )
                 raise
 
@@ -442,10 +448,12 @@ async def _download_item(
                     temp_directory,
                 )
             except BaseException:
-                await asyncio.to_thread(
-                    shutil.rmtree,
-                    temp_directory,
-                    True,
+                await bToN._await_cleanup(
+                    asyncio.to_thread(
+                        shutil.rmtree,
+                        temp_directory,
+                        True,
+                    )
                 )
                 raise
 
@@ -488,13 +496,21 @@ async def _release_downloads(items):
                 )
 
     for job in cleanup_jobs:
-        await _cleanup_shared_download(job)
+        await _wait_for_shared_cleanup(job)
 
 
 def _schedule_download_cleanup(job):
-    asyncio.create_task(
-        _cleanup_shared_download(job)
-    )
+    if job.cleanup_task is None:
+        job.cleanup_task = asyncio.create_task(
+            _cleanup_shared_download(job)
+        )
+
+    return job.cleanup_task
+
+
+async def _wait_for_shared_cleanup(job):
+    task = _schedule_download_cleanup(job)
+    await bToN._await_cleanup(task)
 
 
 async def _cleanup_shared_download(job):
@@ -505,17 +521,21 @@ async def _cleanup_shared_download(job):
 
     try:
         if result is not None:
-            await asyncio.to_thread(
-                shutil.rmtree,
-                result.path.parent,
-                True,
+            await bToN._await_cleanup(
+                asyncio.to_thread(
+                    shutil.rmtree,
+                    result.path.parent,
+                    True,
+                )
             )
     finally:
         message = job.message
 
         if message.from_user is not None:
-            await bToN.release_download_directory(
-                user_id=message.from_user.id,
-                chat_id=message.chat.id,
-                chat_type=message.chat.type,
+            await bToN._await_cleanup(
+                bToN.release_download_directory(
+                    user_id=message.from_user.id,
+                    chat_id=message.chat.id,
+                    chat_type=message.chat.type,
+                )
             )

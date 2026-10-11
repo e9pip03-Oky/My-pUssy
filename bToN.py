@@ -1,4 +1,3 @@
-
 import asyncio
 import hashlib
 import os
@@ -51,6 +50,24 @@ ADMIN_STATUSES = {
 _DOWNLOAD_DIRECTORY_LOCK = asyncio.Lock()
 _ACTIVE_USER_DIRECTORIES = {}
 _ACTIVE_GROUP_DIRECTORIES = {}
+
+
+async def _await_cleanup(awaitable):
+    task = asyncio.ensure_future(awaitable)
+    cancelled = False
+
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+
+    result = task.result()
+
+    if cancelled:
+        raise asyncio.CancelledError
+
+    return result
 
 
 def get_bot_token():
@@ -176,12 +193,27 @@ def _reset_downloads_directory():
 
 async def cleanup_previous_downloads():
     async with _DOWNLOAD_DIRECTORY_LOCK:
-        await asyncio.to_thread(
-            _reset_downloads_directory
-        )
+        try:
+            await _await_cleanup(
+                asyncio.to_thread(
+                    _reset_downloads_directory
+                )
+            )
+        finally:
+            _ACTIVE_USER_DIRECTORIES.clear()
+            _ACTIVE_GROUP_DIRECTORIES.clear()
 
-        _ACTIVE_USER_DIRECTORIES.clear()
-        _ACTIVE_GROUP_DIRECTORIES.clear()
+
+def _active_group_count(group_directory):
+    return sum(
+        count
+        for user_directory, count
+        in _ACTIVE_USER_DIRECTORIES.items()
+        if (
+            count > 0
+            and user_directory.parent == group_directory
+        )
+    )
 
 
 async def acquire_download_directory(
@@ -232,15 +264,32 @@ async def acquire_download_directory(
         if group_directory is not None:
             _ACTIVE_GROUP_DIRECTORIES[
                 group_directory
-            ] = (
-                _ACTIVE_GROUP_DIRECTORIES.get(
-                    group_directory,
-                    0,
-                )
-                + 1
+            ] = _active_group_count(
+                group_directory
             )
 
     return user_directory
+
+
+async def _remove_released_directories(
+    user_directory,
+    remove_user_directory,
+    group_directory,
+    remove_group_directory,
+):
+    if remove_user_directory:
+        await asyncio.to_thread(
+            shutil.rmtree,
+            user_directory,
+            True,
+        )
+
+    if remove_group_directory:
+        await asyncio.to_thread(
+            shutil.rmtree,
+            group_directory,
+            True,
+        )
 
 
 async def release_download_directory(
@@ -267,15 +316,12 @@ async def release_download_directory(
         )
 
     async with _DOWNLOAD_DIRECTORY_LOCK:
-        user_count = (
-            _ACTIVE_USER_DIRECTORIES.get(
-                user_directory,
-                0,
-            )
+        user_count = _ACTIVE_USER_DIRECTORIES.get(
+            user_directory,
+            0,
         )
 
-        if user_count <= 0:
-            return
+        remove_user_directory = user_count <= 1
 
         if user_count > 1:
             _ACTIVE_USER_DIRECTORIES[
@@ -287,37 +333,36 @@ async def release_download_directory(
                 None,
             )
 
-            await asyncio.to_thread(
-                shutil.rmtree,
-                user_directory,
-                True,
-            )
+        remove_group_directory = False
 
-        if group_directory is None:
-            return
-
-        group_count = (
-            _ACTIVE_GROUP_DIRECTORIES.get(
-                group_directory,
-                0,
-            )
-        )
-
-        if group_count <= 1:
-            _ACTIVE_GROUP_DIRECTORIES.pop(
-                group_directory,
-                None,
-            )
-
-            await asyncio.to_thread(
-                shutil.rmtree,
-                group_directory,
-                True,
-            )
-        else:
-            _ACTIVE_GROUP_DIRECTORIES[
+        if group_directory is not None:
+            group_count = _active_group_count(
                 group_directory
-            ] = group_count - 1
+            )
+
+            if group_count > 0:
+                _ACTIVE_GROUP_DIRECTORIES[
+                    group_directory
+                ] = group_count
+            else:
+                _ACTIVE_GROUP_DIRECTORIES.pop(
+                    group_directory,
+                    None,
+                )
+                remove_group_directory = True
+
+        if (
+            remove_user_directory
+            or remove_group_directory
+        ):
+            await _await_cleanup(
+                _remove_released_directories(
+                    user_directory,
+                    remove_user_directory,
+                    group_directory,
+                    remove_group_directory,
+                )
+            )
 
 
 def cache_key(

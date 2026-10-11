@@ -1,4 +1,3 @@
-
 import asyncio
 import re
 import shutil
@@ -467,19 +466,24 @@ async def handle_duration(
     finally:
         _clear_state(message)
 
-        try:
-            if temp_directory is not None:
-                await asyncio.to_thread(
-                    shutil.rmtree,
-                    temp_directory,
-                    True,
-                )
-        finally:
-            if directory_acquired:
-                await bToN.release_download_directory(
-                    user_id=message.from_user.id,
-                    chat_id=message.chat.id,
-                    chat_type=message.chat.type,
-                )
+        async def cleanup_edit_files():
+            try:
+                if temp_directory is not None:
+                    await asyncio.to_thread(
+                        shutil.rmtree,
+                        temp_directory,
+                        True,
+                    )
+            finally:
+                if directory_acquired:
+                    await bToN.release_download_directory(
+                        user_id=message.from_user.id,
+                        chat_id=message.chat.id,
+                        chat_type=message.chat.type,
+                    )
+
+        await bToN._await_cleanup(
+            cleanup_edit_files()
+        )
 
     return True

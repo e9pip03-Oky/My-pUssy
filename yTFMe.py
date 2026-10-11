@@ -14,6 +14,15 @@ class DownloadResult:
     info: dict
 
 
+async def _run_thread_to_completion(function, *args):
+    return await bToN._await_cleanup(
+        asyncio.to_thread(
+            function,
+            *args,
+        )
+    )
+
+
 def _base_options():
     options = {
         "quiet": True,
@@ -208,7 +217,7 @@ async def download_one(
         exist_ok=True,
     )
 
-    result = await asyncio.to_thread(
+    result = await _run_thread_to_completion(
         _download_sync,
         url,
         mode,
@@ -216,7 +225,7 @@ async def download_one(
     )
 
     if mode == bToN.MODE_VOICE:
-        voice_path = await asyncio.to_thread(
+        voice_path = await _run_thread_to_completion(
             _prepare_voice_sync,
             result.path,
         )
@@ -227,6 +236,30 @@ async def download_one(
         )
 
     return result
+
+
+async def _stop_process(process):
+    if process.returncode is not None:
+        return
+
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        pass
+
+    try:
+        await asyncio.wait_for(
+            process.wait(),
+            timeout=5,
+        )
+    except asyncio.TimeoutError:
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+
+        await process.wait()
 
 
 async def cut_voice(
@@ -256,7 +289,13 @@ async def cut_voice(
         stderr=asyncio.subprocess.DEVNULL,
     )
 
-    await process.communicate()
+    try:
+        await process.communicate()
+    except BaseException:
+        await bToN._await_cleanup(
+            _stop_process(process)
+        )
+        raise
 
     if process.returncode != 0:
         raise RuntimeError(
