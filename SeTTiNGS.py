@@ -1,4 +1,7 @@
+
 import asyncio
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,6 +29,14 @@ class DownloadItem:
     file_id: str | None = None
     file_path: Path | None = None
     filename: str | None = None
+    download_job: object | None = None
+
+
+@dataclass
+class SharedDownload:
+    task: asyncio.Task
+    message: Message
+    references: int = 0
 
 
 @dataclass
@@ -47,10 +58,8 @@ class UserQueue:
 
 user_queues: dict[int, UserQueue] = {}
 cache_locks: dict[str, asyncio.Lock] = {}
-download_tasks: dict[
-    str,
-    asyncio.Task,
-] = {}
+download_tasks: dict[str, SharedDownload] = {}
+download_tasks_lock = asyncio.Lock()
 
 
 def _get_cache_lock(key):
@@ -89,20 +98,23 @@ async def submit(
     url,
     mode,
 ):
+    if message.from_user is None:
+        return False
+
     user_id = message.from_user.id
     state = _get_user_queue(user_id)
 
-    if state.queue.full():
-        return False
-
-    await state.queue.put(
-        (
-            bot,
-            message,
-            url,
-            mode,
+    try:
+        state.queue.put_nowait(
+            (
+                bot,
+                message,
+                url,
+                mode,
+            )
         )
-    )
+    except asyncio.QueueFull:
+        return False
 
     return True
 
@@ -136,8 +148,21 @@ async def _process(
     state,
 ):
     status_message = None
+    items = []
+    directory_acquired = False
 
     try:
+        if message.from_user is None:
+            return
+
+        await bToN.acquire_download_directory(
+            user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            chat_type=message.chat.type,
+        )
+
+        directory_acquired = True
+
         entries = await get_entries(url)
 
         items = _build_items(
@@ -189,6 +214,17 @@ async def _process(
             status_message,
             message,
         )
+
+    finally:
+        try:
+            await _release_downloads(items)
+        finally:
+            if directory_acquired:
+                await bToN.release_download_directory(
+                    user_id=message.from_user.id,
+                    chat_id=message.chat.id,
+                    chat_type=message.chat.type,
+                )
 
 
 def _media_type(mode):
@@ -266,8 +302,17 @@ async def _prepare_items(
         if not item.file_id
     ]
 
-    if tasks:
-        await asyncio.gather(*tasks)
+    if not tasks:
+        return
+
+    results = await asyncio.gather(
+        *tasks,
+        return_exceptions=True,
+    )
+
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
 
 
 async def _prepare_item(
@@ -283,34 +328,52 @@ async def _prepare_item(
         item.file_id = cached_file_id
         return
 
-    task = download_tasks.get(
-        item.cache_key
-    )
-
-    if task is None:
-        task = asyncio.create_task(
-            _download_item(
-                message,
-                item,
-                state,
-            )
+    async with download_tasks_lock:
+        job = download_tasks.get(
+            item.cache_key
         )
 
-        download_tasks[item.cache_key] = task
+        if job is None:
+            directory = (
+                await bToN.acquire_download_directory(
+                    user_id=message.from_user.id,
+                    chat_id=message.chat.id,
+                    chat_type=message.chat.type,
+                )
+            )
 
-    try:
-        result = await task
-    finally:
-        if (
-            download_tasks.get(
+            try:
+                task = asyncio.create_task(
+                    _download_item(
+                        message,
+                        item,
+                        state,
+                        directory,
+                    )
+                )
+            except BaseException:
+                await bToN.release_download_directory(
+                    user_id=message.from_user.id,
+                    chat_id=message.chat.id,
+                    chat_type=message.chat.type,
+                )
+                raise
+
+            job = SharedDownload(
+                task=task,
+                message=message,
+            )
+
+            download_tasks[
                 item.cache_key
-            )
-            is task
-        ):
-            download_tasks.pop(
-                item.cache_key,
-                None,
-            )
+            ] = job
+
+        job.references += 1
+        item.download_job = job
+
+    result = await asyncio.shield(
+        job.task
+    )
 
     if result is None:
         cached_file_id = (
@@ -348,6 +411,7 @@ async def _download_item(
     message,
     item,
     state,
+    base_directory,
 ):
     lock = _get_cache_lock(
         item.cache_key
@@ -364,10 +428,94 @@ async def _download_item(
             return None
 
         async with state.semaphore:
-            return await download_one(
-                item.url,
-                item.mode,
-                bToN.download_directory(
-                    message.from_user.id
-                ),
+            temp_directory = Path(
+                tempfile.mkdtemp(
+                    prefix=".media-",
+                    dir=base_directory,
+                )
+            )
+
+            try:
+                return await download_one(
+                    item.url,
+                    item.mode,
+                    temp_directory,
+                )
+            except BaseException:
+                await asyncio.to_thread(
+                    shutil.rmtree,
+                    temp_directory,
+                    True,
+                )
+                raise
+
+
+async def _release_downloads(items):
+    cleanup_jobs = []
+
+    async with download_tasks_lock:
+        for item in items:
+            job = item.download_job
+
+            if job is None:
+                continue
+
+            item.download_job = None
+            job.references -= 1
+
+            if job.references > 0:
+                continue
+
+            if (
+                download_tasks.get(
+                    item.cache_key
+                )
+                is job
+            ):
+                download_tasks.pop(
+                    item.cache_key,
+                    None,
+                )
+
+            if job.task.done():
+                cleanup_jobs.append(job)
+            else:
+                job.task.add_done_callback(
+                    lambda _, shared_job=job:
+                    _schedule_download_cleanup(
+                        shared_job
+                    )
+                )
+
+    for job in cleanup_jobs:
+        await _cleanup_shared_download(job)
+
+
+def _schedule_download_cleanup(job):
+    asyncio.create_task(
+        _cleanup_shared_download(job)
+    )
+
+
+async def _cleanup_shared_download(job):
+    try:
+        result = job.task.result()
+    except BaseException:
+        result = None
+
+    try:
+        if result is not None:
+            await asyncio.to_thread(
+                shutil.rmtree,
+                result.path.parent,
+                True,
+            )
+    finally:
+        message = job.message
+
+        if message.from_user is not None:
+            await bToN.release_download_directory(
+                user_id=message.from_user.id,
+                chat_id=message.chat.id,
+                chat_type=message.chat.type,
             )

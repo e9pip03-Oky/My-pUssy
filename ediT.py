@@ -1,4 +1,8 @@
+
+import asyncio
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 from aiogram import Bot
@@ -266,10 +270,20 @@ async def _download_voice(
         f"{voice_message.message_id}.ogg"
     )
 
-    await bot.download(
-        voice_message.voice.file_id,
-        destination=path,
-    )
+    try:
+        await bot.download(
+            voice_message.voice.file_id,
+            destination=path,
+        )
+    except BaseException:
+        try:
+            path.unlink(
+                missing_ok=True
+            )
+        except OSError:
+            pass
+
+        raise
 
     return path
 
@@ -389,23 +403,34 @@ async def handle_duration(
         _clear_state(message)
         return True
 
-    input_path = None
-    output_path = None
+    directory_acquired = False
+    temp_directory = None
 
     try:
         directory = (
-            bToN.download_directory(
-                message.from_user.id
+            await bToN.acquire_download_directory(
+                user_id=message.from_user.id,
+                chat_id=message.chat.id,
+                chat_type=message.chat.type,
+            )
+        )
+
+        directory_acquired = True
+
+        temp_directory = Path(
+            tempfile.mkdtemp(
+                prefix=".edit-",
+                dir=directory,
             )
         )
 
         input_path = await _download_voice(
             bot,
             voice_message,
-            directory,
+            temp_directory,
         )
 
-        output_path = input_path.with_name(
+        output_path = temp_directory / (
             f"{input_path.stem}.cut.ogg"
         )
 
@@ -424,6 +449,11 @@ async def handle_duration(
             FSInputFile(output_path)
         )
 
+        if sent_message.voice is None:
+            raise RuntimeError(
+                "Voice was not returned"
+            )
+
         await CAsh.save_file_id(
             cache_key,
             sent_message.voice.file_id,
@@ -437,16 +467,19 @@ async def handle_duration(
     finally:
         _clear_state(message)
 
-        for path in (
-            input_path,
-            output_path,
-        ):
-            if path is not None:
-                try:
-                    path.unlink(
-                        missing_ok=True
-                    )
-                except Exception:
-                    pass
+        try:
+            if temp_directory is not None:
+                await asyncio.to_thread(
+                    shutil.rmtree,
+                    temp_directory,
+                    True,
+                )
+        finally:
+            if directory_acquired:
+                await bToN.release_download_directory(
+                    user_id=message.from_user.id,
+                    chat_id=message.chat.id,
+                    chat_type=message.chat.type,
+                )
 
     return True

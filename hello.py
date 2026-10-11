@@ -1,3 +1,4 @@
+
 import asyncio
 from collections import defaultdict
 
@@ -176,12 +177,15 @@ async def _show_settings(
 
 
 @router.message(
-    F.text == Reply.COMMAND_SETTINGS
+    F.text.strip() == Reply.COMMAND_SETTINGS
 )
 async def settings_handler(
     message: Message,
     bot: Bot,
 ):
+    if message.from_user is None:
+        return
+
     if not await _authorized(
         bot,
         message.chat.id,
@@ -343,17 +347,25 @@ async def text_handler(
         bToN.MODE_NORMAL,
     )
 
-    await SeTTiNGS.submit(
+    accepted = await SeTTiNGS.submit(
         bot,
         message,
         text,
         mode,
     )
 
+    if not accepted:
+        await _send_rotating_response(
+            message
+        )
+
 
 async def _send_rotating_response(
     message,
 ):
+    if message.from_user is None:
+        return
+
     text = _next_response(
         message.from_user.id
     )
@@ -383,6 +395,8 @@ async def main():
         raise RuntimeError(
             "BOT_TOKEN is not set"
         )
+
+    await bToN.cleanup_previous_downloads()
 
     await CAsh.configure(
         bToN.get_db_path()

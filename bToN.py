@@ -1,5 +1,8 @@
+
+import asyncio
 import hashlib
 import os
+import shutil
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -44,6 +47,10 @@ ADMIN_STATUSES = {
     "administrator",
     "creator",
 }
+
+_DOWNLOAD_DIRECTORY_LOCK = asyncio.Lock()
+_ACTIVE_USER_DIRECTORIES = {}
+_ACTIVE_GROUP_DIRECTORIES = {}
 
 
 def get_bot_token():
@@ -122,10 +129,195 @@ def next_mode(mode):
     return MODE_VOICE
 
 
-def download_directory(user_id):
-    return Path(
-        DOWNLOADS_DIR
-    ) / str(user_id)
+def download_directory(
+    user_id,
+    chat_id=None,
+    chat_type=None,
+):
+    if chat_type in {
+        "group",
+        "supergroup",
+    }:
+        return (
+            Path(DOWNLOADS_DIR)
+            / str(chat_id)
+            / str(user_id)
+        )
+
+    return (
+        Path(DOWNLOADS_DIR)
+        / str(user_id)
+    )
+
+
+def group_download_directory(chat_id):
+    return (
+        Path(DOWNLOADS_DIR)
+        / str(chat_id)
+    )
+
+
+def _reset_downloads_directory():
+    directory = Path(DOWNLOADS_DIR)
+
+    if (
+        directory.is_symlink()
+        or directory.is_file()
+    ):
+        directory.unlink()
+    elif directory.exists():
+        shutil.rmtree(directory)
+
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+
+async def cleanup_previous_downloads():
+    async with _DOWNLOAD_DIRECTORY_LOCK:
+        await asyncio.to_thread(
+            _reset_downloads_directory
+        )
+
+        _ACTIVE_USER_DIRECTORIES.clear()
+        _ACTIVE_GROUP_DIRECTORIES.clear()
+
+
+async def acquire_download_directory(
+    user_id,
+    chat_id,
+    chat_type,
+):
+    user_directory = download_directory(
+        user_id,
+        chat_id,
+        chat_type,
+    )
+
+    group_directory = None
+
+    if chat_type in {
+        "group",
+        "supergroup",
+    }:
+        group_directory = (
+            group_download_directory(
+                chat_id
+            )
+        )
+
+    async with _DOWNLOAD_DIRECTORY_LOCK:
+        if group_directory is not None:
+            group_directory.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+        user_directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        _ACTIVE_USER_DIRECTORIES[
+            user_directory
+        ] = (
+            _ACTIVE_USER_DIRECTORIES.get(
+                user_directory,
+                0,
+            )
+            + 1
+        )
+
+        if group_directory is not None:
+            _ACTIVE_GROUP_DIRECTORIES[
+                group_directory
+            ] = (
+                _ACTIVE_GROUP_DIRECTORIES.get(
+                    group_directory,
+                    0,
+                )
+                + 1
+            )
+
+    return user_directory
+
+
+async def release_download_directory(
+    user_id,
+    chat_id,
+    chat_type,
+):
+    user_directory = download_directory(
+        user_id,
+        chat_id,
+        chat_type,
+    )
+
+    group_directory = None
+
+    if chat_type in {
+        "group",
+        "supergroup",
+    }:
+        group_directory = (
+            group_download_directory(
+                chat_id
+            )
+        )
+
+    async with _DOWNLOAD_DIRECTORY_LOCK:
+        user_count = (
+            _ACTIVE_USER_DIRECTORIES.get(
+                user_directory,
+                0,
+            )
+        )
+
+        if user_count <= 0:
+            return
+
+        if user_count > 1:
+            _ACTIVE_USER_DIRECTORIES[
+                user_directory
+            ] = user_count - 1
+        else:
+            _ACTIVE_USER_DIRECTORIES.pop(
+                user_directory,
+                None,
+            )
+
+            await asyncio.to_thread(
+                shutil.rmtree,
+                user_directory,
+                True,
+            )
+
+        if group_directory is None:
+            return
+
+        group_count = (
+            _ACTIVE_GROUP_DIRECTORIES.get(
+                group_directory,
+                0,
+            )
+        )
+
+        if group_count <= 1:
+            _ACTIVE_GROUP_DIRECTORIES.pop(
+                group_directory,
+                None,
+            )
+
+            await asyncio.to_thread(
+                shutil.rmtree,
+                group_directory,
+                True,
+            )
+        else:
+            _ACTIVE_GROUP_DIRECTORIES[
+                group_directory
+            ] = group_count - 1
 
 
 def cache_key(
