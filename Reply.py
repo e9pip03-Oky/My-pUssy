@@ -1,15 +1,12 @@
 COMMAND_SETTINGS = "ادت"
 COMMAND_BOT = "بوت"
 COMMAND_EDIT = "تعديل"
+COMMAND_AUDIO_START = "بدء"
 
 MODE_VOICE = "فويس"
 MODE_NORMAL = "نورمال"
 
-DYNAMIC_BUTTON_NAMES = (
-     "المنشئ",
-    "المطور",
-      "المالك",
-)
+DYNAMIC_BUTTON_NAMES = ("المنشئ", "المطور", "المالك")
 
 SETTINGS_TEXT = "تستطيع تغيير وضع عمل البوت\nمن هنا"
 SETTINGS_UNAUTHORIZED = "ليس مسموح لك القيام\nبهذا التغيير"
@@ -18,6 +15,16 @@ STARTUP_TEXT = "اشتغل البوت مرتلخ\nتع امص"
 
 DOWNLOAD_STARTED = "تدلل دامص بعيرك مولاي\nاروح فدوا"
 DOWNLOAD_FAILED = "الرابط غير مدعوم او الموقع مو راضي يتعاون\nالعق عيري يلا"
+
+AUDIO_START_TEXT = (
+    "يتم البدء بالعمل\n"
+    "على ارسال الصوت ك فويس"
+)
+
+AUDIO_START_FAILED = (
+    "الصوت غير مدعوم او لم يتمكن البوت\n"
+    "من التعرف عليه"
+)
 
 EDIT_WAITING = (
     "الفواصل الزمنيه مابين التوقيتان\n"

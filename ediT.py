@@ -1,13 +1,9 @@
-import asyncio
 import re
-import shutil
-import tempfile
 from pathlib import Path
 
 from aiogram import Bot
 from aiogram.types import FSInputFile, Message
 
-import CAsh
 import Reply
 import bToN
 from yTFMe import cut_voice
@@ -242,17 +238,6 @@ def _parse_duration(text):
     return start, end
 
 
-def _cache_key(
-    voice_message,
-    start,
-    end,
-):
-    return (
-        f"edit:{voice_message.voice.file_id}:"
-        f"{start:.2f}:{end:.2f}"
-    )
-
-
 async def _download_voice(
     bot,
     voice_message,
@@ -269,20 +254,10 @@ async def _download_voice(
         f"{voice_message.message_id}.ogg"
     )
 
-    try:
-        await bot.download(
-            voice_message.voice.file_id,
-            destination=path,
-        )
-    except BaseException:
-        try:
-            path.unlink(
-                missing_ok=True
-            )
-        except OSError:
-            pass
-
-        raise
+    await bot.download(
+        voice_message.voice.file_id,
+        destination=path,
+    )
 
     return path
 
@@ -380,56 +355,23 @@ async def handle_duration(
         _clear_state(message)
         return True
 
-    cache_key = _cache_key(
-        voice_message,
-        start,
-        end,
-    )
-
-    cached_file_id = await CAsh.get_file_id(
-        cache_key
-    )
-
-    if cached_file_id is not None:
-        await _delete_status(
-            status_message
-        )
-
-        await message.reply_voice(
-            cached_file_id
-        )
-
-        _clear_state(message)
-        return True
-
-    directory_acquired = False
-    temp_directory = None
+    input_path = None
+    output_path = None
 
     try:
         directory = (
-            await bToN.acquire_download_directory(
-                user_id=message.from_user.id,
-                chat_id=message.chat.id,
-                chat_type=message.chat.type,
-            )
-        )
-
-        directory_acquired = True
-
-        temp_directory = Path(
-            tempfile.mkdtemp(
-                prefix=".edit-",
-                dir=directory,
+            bToN.download_directory(
+                message.from_user.id
             )
         )
 
         input_path = await _download_voice(
             bot,
             voice_message,
-            temp_directory,
+            directory,
         )
 
-        output_path = temp_directory / (
+        output_path = input_path.with_name(
             f"{input_path.stem}.cut.ogg"
         )
 
@@ -444,18 +386,8 @@ async def handle_duration(
             status_message
         )
 
-        sent_message = await message.reply_voice(
+        await message.reply_voice(
             FSInputFile(output_path)
-        )
-
-        if sent_message.voice is None:
-            raise RuntimeError(
-                "Voice was not returned"
-            )
-
-        await CAsh.save_file_id(
-            cache_key,
-            sent_message.voice.file_id,
         )
 
     except Exception:
@@ -466,24 +398,16 @@ async def handle_duration(
     finally:
         _clear_state(message)
 
-        async def cleanup_edit_files():
-            try:
-                if temp_directory is not None:
-                    await asyncio.to_thread(
-                        shutil.rmtree,
-                        temp_directory,
-                        True,
+        for path in (
+            input_path,
+            output_path,
+        ):
+            if path is not None:
+                try:
+                    path.unlink(
+                        missing_ok=True
                     )
-            finally:
-                if directory_acquired:
-                    await bToN.release_download_directory(
-                        user_id=message.from_user.id,
-                        chat_id=message.chat.id,
-                        chat_type=message.chat.type,
-                    )
-
-        await bToN._await_cleanup(
-            cleanup_edit_files()
-        )
+                except Exception:
+                    pass
 
     return True

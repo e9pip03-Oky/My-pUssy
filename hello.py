@@ -16,6 +16,7 @@ from aiogram.types import (
     Message,
 )
 
+import AUdio
 import CAsh
 import Reply
 import SeTTiNGS
@@ -164,28 +165,20 @@ def _settings_keyboard(mode):
     )
 
 
-async def _show_settings(
-    message,
-    mode,
-):
+async def _show_settings(message, mode):
     await message.reply(
         Reply.SETTINGS_TEXT,
-        reply_markup=_settings_keyboard(
-            mode
-        ),
+        reply_markup=_settings_keyboard(mode),
     )
 
 
 @router.message(
-    F.text.strip() == Reply.COMMAND_SETTINGS
+    F.text == Reply.COMMAND_SETTINGS
 )
 async def settings_handler(
     message: Message,
     bot: Bot,
 ):
-    if message.from_user is None:
-        return
-
     if not await _authorized(
         bot,
         message.chat.id,
@@ -201,16 +194,11 @@ async def settings_handler(
         bToN.MODE_NORMAL,
     )
 
-    await _show_settings(
-        message,
-        mode,
-    )
+    await _show_settings(message, mode)
 
 
 @router.callback_query(
-    F.data.startswith(
-        bToN.CALLBACK_PREFIX
-    )
+    F.data.startswith(bToN.CALLBACK_PREFIX)
 )
 async def mode_handler(
     callback: CallbackQuery,
@@ -233,10 +221,8 @@ async def mode_handler(
         )
         return
 
-    selected_mode = (
-        bToN.parse_mode_callback(
-            callback.data
-        )
+    selected_mode = bToN.parse_mode_callback(
+        callback.data
     )
 
     if selected_mode not in {
@@ -280,17 +266,13 @@ async def mode_handler(
 @router.message(
     F.text == Reply.COMMAND_BOT
 )
-async def bot_command_handler(
-    message: Message,
-):
+async def bot_command_handler(message: Message):
     if message.chat.type in {
         "private",
         "group",
         "supergroup",
     }:
-        await _send_rotating_response(
-            message
-        )
+        await _send_rotating_response(message)
 
 
 @router.message(
@@ -300,10 +282,17 @@ async def edit_handler(
     message: Message,
     bot: Bot,
 ):
-    await ediT.start_edit(
-        bot,
-        message,
-    )
+    await ediT.start_edit(bot, message)
+
+
+@router.message(
+    F.video | F.audio | F.voice | F.document
+)
+async def audio_media_handler(
+    message: Message,
+    bot: Bot,
+):
+    await AUdio.inspect_message(message, bot)
 
 
 @router.message(F.text)
@@ -311,13 +300,26 @@ async def text_handler(
     message: Message,
     bot: Bot,
 ):
-    if await ediT.handle_duration(
-        bot,
-        message,
-    ):
+    if await ediT.handle_duration(bot, message):
         return
 
     text = message.text.strip()
+
+    if text == Reply.COMMAND_AUDIO_START:
+        handled = await AUdio.handle_start(
+            message,
+            bot,
+        )
+
+        if handled:
+            return
+
+        if message.reply_to_message is not None:
+            await _send_rotating_response(message)
+        elif message.chat.type == "private":
+            await _send_rotating_response(message)
+
+        return
 
     if text in {
         Reply.COMMAND_SETTINGS,
@@ -334,9 +336,7 @@ async def text_handler(
         or text.startswith("https://")
     ):
         if message.chat.type == "private":
-            await _send_rotating_response(
-                message
-            )
+            await _send_rotating_response(message)
 
         return
 
@@ -347,25 +347,15 @@ async def text_handler(
         bToN.MODE_NORMAL,
     )
 
-    accepted = await SeTTiNGS.submit(
+    await SeTTiNGS.submit(
         bot,
         message,
         text,
         mode,
     )
 
-    if not accepted:
-        await _send_rotating_response(
-            message
-        )
 
-
-async def _send_rotating_response(
-    message,
-):
-    if message.from_user is None:
-        return
-
+async def _send_rotating_response(message):
     text = _next_response(
         message.from_user.id
     )
@@ -396,9 +386,11 @@ async def main():
             "BOT_TOKEN is not set"
         )
 
-    await bToN.cleanup_previous_downloads()
-
     await CAsh.configure(
+        bToN.get_db_path()
+    )
+
+    await AUdio.configure(
         bToN.get_db_path()
     )
 
@@ -407,12 +399,10 @@ async def main():
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
 
-    await _startup(bot)
-
     try:
-        await dispatcher.start_polling(
-            bot
-        )
+        await _startup(bot)
+
+        await dispatcher.start_polling(bot)
     finally:
         await bot.session.close()
 
