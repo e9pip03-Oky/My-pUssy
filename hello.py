@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import unicodedata
 from collections import defaultdict
 
@@ -9,6 +10,7 @@ from aiogram import (
     Router,
 )
 from aiogram.enums import ButtonStyle
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -26,6 +28,7 @@ import ediT
 
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 response_indexes = defaultdict(int)
 
@@ -170,6 +173,19 @@ async def _authorized(
         member.status.value
         in bToN.ADMIN_STATUSES
     )
+
+
+async def _edit_reply_markup(
+    message,
+    reply_markup,
+):
+    try:
+        await message.edit_reply_markup(
+            reply_markup=reply_markup
+        )
+    except TelegramBadRequest as error:
+        if "message is not modified" not in str(error):
+            raise
 
 
 def _settings_keyboard(
@@ -386,11 +402,12 @@ async def mode_handler(
         await _get_language_enabled(key)
     )
 
-    await message.edit_reply_markup(
-        reply_markup=_settings_keyboard(
+    await _edit_reply_markup(
+        message,
+        _settings_keyboard(
             selected_mode,
             language_enabled,
-        )
+        ),
     )
 
     await callback.answer()
@@ -446,20 +463,20 @@ async def language_handler(
             bToN.MODE_NORMAL,
         )
 
-        await message.edit_reply_markup(
-            reply_markup=_settings_keyboard(
+        await _edit_reply_markup(
+            message,
+            _settings_keyboard(
                 mode,
                 not enabled,
-            )
+            ),
         )
 
     elif data == bToN.LANGUAGE_CHOOSE_CALLBACK:
         target = await _get_language_target(key)
 
-        await message.edit_reply_markup(
-            reply_markup=_language_keyboard(
-                target
-            )
+        await _edit_reply_markup(
+            message,
+            _language_keyboard(target),
         )
 
     elif data == bToN.LANGUAGE_BACK_CALLBACK:
@@ -470,11 +487,12 @@ async def language_handler(
 
         enabled = await _get_language_enabled(key)
 
-        await message.edit_reply_markup(
-            reply_markup=_settings_keyboard(
+        await _edit_reply_markup(
+            message,
+            _settings_keyboard(
                 mode,
                 enabled,
-            )
+            ),
         )
 
     elif data.startswith(
@@ -491,15 +509,23 @@ async def language_handler(
             await callback.answer()
             return
 
+        current_target = await _get_language_target(key)
+
+        if target == current_target:
+            target = (
+                bToN.LANGUAGE_TARGET_RUSSIAN
+                if current_target == bToN.LANGUAGE_TARGET_ENGLISH
+                else bToN.LANGUAGE_TARGET_ENGLISH
+            )
+
         await CAsh.save_setting(
             _language_target_key(key),
             target,
         )
 
-        await message.edit_reply_markup(
-            reply_markup=_language_keyboard(
-                target
-            )
+        await _edit_reply_markup(
+            message,
+            _language_keyboard(target),
         )
 
     await callback.answer()
@@ -670,6 +696,9 @@ async def text_handler(
                         target,
                     )
                 except Exception:
+                    logger.exception(
+                        "Language translation failed"
+                    )
                     return
 
                 if result is not None:
