@@ -102,3 +102,37 @@ async def save_mode(key, mode):
     )
 
     await DB.commit()
+
+
+async def get_setting(key, default_value):
+    async with DB.execute(
+        """
+        SELECT mode
+        FROM settings
+        WHERE settings_key = ?
+        """,
+        (key,),
+    ) as cursor:
+        row = await cursor.fetchone()
+
+    if row is None:
+        return default_value
+
+    return row[0]
+
+
+async def save_setting(key, value):
+    await DB.execute(
+        """
+        INSERT INTO settings (
+            settings_key,
+            mode
+        )
+        VALUES (?, ?)
+        ON CONFLICT(settings_key)
+        DO UPDATE SET mode = excluded.mode
+        """,
+        (key, value),
+    )
+
+    await DB.commit()

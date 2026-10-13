@@ -6,6 +6,12 @@ COMMAND_AUDIO_START = "بدء"
 MODE_VOICE = "فويس"
 MODE_NORMAL = "نورمال"
 
+BUTTON_LANGUAGE = "لغتي"
+BUTTON_CHANGE_LANGUAGE = "تبديل لغتي"
+BUTTON_LANGUAGE_ENGLISH = "eNG"
+BUTTON_LANGUAGE_RUSSIAN = "rUS"
+BUTTON_LANGUAGE_BACK = "عودة"
+
 DYNAMIC_BUTTON_NAMES = ("المنشئ", "المطور", "المالك")
 
 SETTINGS_TEXT = "تستطيع تغيير وضع عمل البوت\nمن هنا"

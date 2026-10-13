@@ -1,5 +1,5 @@
-
 import asyncio
+import unicodedata
 from collections import defaultdict
 
 from aiogram import (
@@ -15,6 +15,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
+from deep_translator import GoogleTranslator
 
 import AUdio
 import CAsh
@@ -101,13 +102,54 @@ def _next_response(user_id):
     return responses[index]
 
 
-def _settings_key(message):
+def _settings_key(message, user_id=None):
+    if user_id is None:
+        user_id = message.from_user.id
+
     return bToN.settings_key(
         chat_id=message.chat.id,
-        user_id=message.from_user.id,
+        user_id=user_id,
         thread_id=message.message_thread_id,
         chat_type=message.chat.type,
     )
+
+
+def _language_enabled_key(key):
+    return (
+        f"{bToN.LANGUAGE_ENABLED_KEY_PREFIX}"
+        f"{key}"
+    )
+
+
+def _language_target_key(key):
+    return (
+        f"{bToN.LANGUAGE_TARGET_KEY_PREFIX}"
+        f"{key}"
+    )
+
+
+async def _get_language_enabled(key):
+    value = await CAsh.get_setting(
+        _language_enabled_key(key),
+        bToN.LANGUAGE_DISABLED,
+    )
+
+    return value == bToN.LANGUAGE_ENABLED
+
+
+async def _get_language_target(key):
+    value = await CAsh.get_setting(
+        _language_target_key(key),
+        bToN.LANGUAGE_DEFAULT_TARGET,
+    )
+
+    if value not in {
+        bToN.LANGUAGE_TARGET_ENGLISH,
+        bToN.LANGUAGE_TARGET_RUSSIAN,
+    }:
+        return bToN.LANGUAGE_DEFAULT_TARGET
+
+    return value
 
 
 async def _authorized(
@@ -130,7 +172,10 @@ async def _authorized(
     )
 
 
-def _settings_keyboard(mode):
+def _settings_keyboard(
+    mode,
+    language_enabled=False,
+):
     voice_style = (
         ButtonStyle.PRIMARY
         if mode == bToN.MODE_VOICE
@@ -140,6 +185,12 @@ def _settings_keyboard(mode):
     normal_style = (
         ButtonStyle.PRIMARY
         if mode == bToN.MODE_NORMAL
+        else ButtonStyle.DANGER
+    )
+
+    language_style = (
+        ButtonStyle.PRIMARY
+        if language_enabled
         else ButtonStyle.DANGER
     )
 
@@ -160,15 +211,86 @@ def _settings_keyboard(mode):
                     ),
                     style=normal_style,
                 ),
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text=Reply.BUTTON_LANGUAGE,
+                    callback_data=(
+                        bToN.LANGUAGE_TOGGLE_CALLBACK
+                    ),
+                    style=language_style,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=Reply.BUTTON_CHANGE_LANGUAGE,
+                    callback_data=(
+                        bToN.LANGUAGE_CHOOSE_CALLBACK
+                    ),
+                    style=ButtonStyle.SUCCESS,
+                ),
+            ],
         ]
     )
 
 
-async def _show_settings(message, mode):
+def _language_keyboard(target):
+    english_style = (
+        ButtonStyle.PRIMARY
+        if target == bToN.LANGUAGE_TARGET_ENGLISH
+        else ButtonStyle.DANGER
+    )
+
+    russian_style = (
+        ButtonStyle.PRIMARY
+        if target == bToN.LANGUAGE_TARGET_RUSSIAN
+        else ButtonStyle.DANGER
+    )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=Reply.BUTTON_LANGUAGE_ENGLISH,
+                    callback_data=(
+                        f"{bToN.LANGUAGE_TARGET_CALLBACK_PREFIX}"
+                        f"{bToN.LANGUAGE_TARGET_ENGLISH}"
+                    ),
+                    style=english_style,
+                ),
+                InlineKeyboardButton(
+                    text=Reply.BUTTON_LANGUAGE_RUSSIAN,
+                    callback_data=(
+                        f"{bToN.LANGUAGE_TARGET_CALLBACK_PREFIX}"
+                        f"{bToN.LANGUAGE_TARGET_RUSSIAN}"
+                    ),
+                    style=russian_style,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=Reply.BUTTON_LANGUAGE_BACK,
+                    callback_data=(
+                        bToN.LANGUAGE_BACK_CALLBACK
+                    ),
+                    style=ButtonStyle.SUCCESS,
+                ),
+            ],
+        ]
+    )
+
+
+async def _show_settings(
+    message,
+    mode,
+    language_enabled=False,
+):
     await message.reply(
         Reply.SETTINGS_TEXT,
-        reply_markup=_settings_keyboard(mode),
+        reply_markup=_settings_keyboard(
+            mode,
+            language_enabled,
+        ),
     )
 
 
@@ -194,7 +316,15 @@ async def settings_handler(
         bToN.MODE_NORMAL,
     )
 
-    await _show_settings(message, mode)
+    language_enabled = (
+        await _get_language_enabled(key)
+    )
+
+    await _show_settings(
+        message,
+        mode,
+        language_enabled,
+    )
 
 
 @router.callback_query(
@@ -232,11 +362,9 @@ async def mode_handler(
         await callback.answer()
         return
 
-    key = bToN.settings_key(
-        chat_id=message.chat.id,
-        user_id=callback.from_user.id,
-        thread_id=message.message_thread_id,
-        chat_type=message.chat.type,
+    key = _settings_key(
+        message,
+        callback.from_user.id,
     )
 
     current_mode = await CAsh.get_mode(
@@ -254,11 +382,125 @@ async def mode_handler(
         selected_mode,
     )
 
+    language_enabled = (
+        await _get_language_enabled(key)
+    )
+
     await message.edit_reply_markup(
         reply_markup=_settings_keyboard(
-            selected_mode
+            selected_mode,
+            language_enabled,
         )
     )
+
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.startswith(bToN.LANGUAGE_CALLBACK_PREFIX)
+)
+async def language_handler(
+    callback: CallbackQuery,
+    bot: Bot,
+):
+    message = callback.message
+
+    if message is None:
+        return
+
+    if not await _authorized(
+        bot,
+        message.chat.id,
+        callback.from_user.id,
+        message.chat.type,
+    ):
+        await callback.answer(
+            Reply.SETTINGS_UNAUTHORIZED,
+            show_alert=True,
+        )
+        return
+
+    key = _settings_key(
+        message,
+        callback.from_user.id,
+    )
+
+    data = callback.data
+
+    if data == bToN.LANGUAGE_TOGGLE_CALLBACK:
+        enabled = await _get_language_enabled(key)
+
+        value = (
+            bToN.LANGUAGE_DISABLED
+            if enabled
+            else bToN.LANGUAGE_ENABLED
+        )
+
+        await CAsh.save_setting(
+            _language_enabled_key(key),
+            value,
+        )
+
+        mode = await CAsh.get_mode(
+            key,
+            bToN.MODE_NORMAL,
+        )
+
+        await message.edit_reply_markup(
+            reply_markup=_settings_keyboard(
+                mode,
+                not enabled,
+            )
+        )
+
+    elif data == bToN.LANGUAGE_CHOOSE_CALLBACK:
+        target = await _get_language_target(key)
+
+        await message.edit_reply_markup(
+            reply_markup=_language_keyboard(
+                target
+            )
+        )
+
+    elif data == bToN.LANGUAGE_BACK_CALLBACK:
+        mode = await CAsh.get_mode(
+            key,
+            bToN.MODE_NORMAL,
+        )
+
+        enabled = await _get_language_enabled(key)
+
+        await message.edit_reply_markup(
+            reply_markup=_settings_keyboard(
+                mode,
+                enabled,
+            )
+        )
+
+    elif data.startswith(
+        bToN.LANGUAGE_TARGET_CALLBACK_PREFIX
+    ):
+        target = data[
+            len(bToN.LANGUAGE_TARGET_CALLBACK_PREFIX):
+        ]
+
+        if target not in {
+            bToN.LANGUAGE_TARGET_ENGLISH,
+            bToN.LANGUAGE_TARGET_RUSSIAN,
+        }:
+            await callback.answer()
+            return
+
+        await CAsh.save_setting(
+            _language_target_key(key),
+            target,
+        )
+
+        await message.edit_reply_markup(
+            reply_markup=_language_keyboard(
+                target
+            )
+        )
 
     await callback.answer()
 
@@ -293,6 +535,87 @@ async def audio_media_handler(
     bot: Bot,
 ):
     await AUdio.inspect_message(message, bot)
+
+
+def _is_script_letter(char, script):
+    return (
+        char.isalpha()
+        and script in unicodedata.name(
+            char,
+            "",
+        )
+    )
+
+
+def _contains_script(text, script):
+    return any(
+        _is_script_letter(char, script)
+        for char in text
+    )
+
+
+def _format_letter_case(text):
+    result = []
+
+    for char in text:
+        if _is_script_letter(char, "LATIN"):
+            if (
+                char.upper()
+                in bToN.LANGUAGE_UPPER_EXCEPTIONS
+            ):
+                result.append(char.upper())
+            else:
+                result.append(char.lower())
+
+        elif _is_script_letter(char, "CYRILLIC"):
+            if (
+                char.upper()
+                in bToN.RUSSIAN_UPPER_EXCEPTIONS
+            ):
+                result.append(char.upper())
+            else:
+                result.append(char.lower())
+
+        else:
+            result.append(char)
+
+    return "".join(result)
+
+
+def _translate_text(text, target):
+    return GoogleTranslator(
+        source="auto",
+        target=target,
+    ).translate(text)
+
+
+async def _language_response_text(text, target):
+    has_latin = _contains_script(
+        text,
+        "LATIN",
+    )
+
+    has_cyrillic = _contains_script(
+        text,
+        "CYRILLIC",
+    )
+
+    if has_latin or has_cyrillic:
+        return _format_letter_case(text)
+
+    if _contains_script(text, "ARABIC"):
+        translated = await asyncio.to_thread(
+            _translate_text,
+            text,
+            target,
+        )
+
+        if not translated:
+            return None
+
+        return _format_letter_case(translated)
+
+    return _format_letter_case(text)
 
 
 @router.message(F.text)
@@ -336,6 +659,24 @@ async def text_handler(
         or text.startswith("https://")
     ):
         if message.chat.type == "private":
+            key = _settings_key(message)
+
+            if await _get_language_enabled(key):
+                target = await _get_language_target(key)
+
+                try:
+                    result = await _language_response_text(
+                        text,
+                        target,
+                    )
+                except Exception:
+                    return
+
+                if result is not None:
+                    await message.reply(result)
+
+                return
+
             await _send_rotating_response(message)
 
         return
