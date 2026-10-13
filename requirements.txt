@@ -4,4 +4,4 @@ aiofiles
 aiodns
 aiosqlite
 yt-dlp
-deep-translator
+googletrans
