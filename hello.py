@@ -17,7 +17,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from deep_translator import GoogleTranslator
+from googletrans import Translator
 
 import AUdio
 import CAsh
@@ -609,10 +609,11 @@ def _format_letter_case(text):
 
 
 def _translate_text(text, target):
-    return GoogleTranslator(
-        source="auto",
-        target=target,
-    ).translate(text)
+    return Translator().translate(
+        text,
+        src="auto",
+        dest=target,
+    ).text
 
 
 async def _language_response_text(text, target):
