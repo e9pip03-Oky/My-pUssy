@@ -1,3 +1,4 @@
+
 import asyncio
 import logging
 import unicodedata
@@ -204,6 +205,12 @@ def _settings_keyboard(
         else ButtonStyle.DANGER
     )
 
+    sticker_style = (
+        ButtonStyle.PRIMARY
+        if mode == bToN.MODE_STICKER
+        else ButtonStyle.DANGER
+    )
+
     language_style = (
         ButtonStyle.PRIMARY
         if language_enabled
@@ -226,6 +233,13 @@ def _settings_keyboard(
                         bToN.MODE_NORMAL
                     ),
                     style=normal_style,
+                ),
+                InlineKeyboardButton(
+                    text=Reply.MODE_STICKER,
+                    callback_data=bToN.mode_callback(
+                        bToN.MODE_STICKER
+                    ),
+                    style=sticker_style,
                 ),
             ],
             [
@@ -332,6 +346,13 @@ async def settings_handler(
         bToN.MODE_NORMAL,
     )
 
+    if mode not in {
+        bToN.MODE_NORMAL,
+        bToN.MODE_VOICE,
+        bToN.MODE_STICKER,
+    }:
+        mode = bToN.MODE_NORMAL
+
     language_enabled = (
         await _get_language_enabled(key)
     )
@@ -374,6 +395,7 @@ async def mode_handler(
     if selected_mode not in {
         bToN.MODE_NORMAL,
         bToN.MODE_VOICE,
+        bToN.MODE_STICKER,
     }:
         await callback.answer()
         return
@@ -387,6 +409,13 @@ async def mode_handler(
         key,
         bToN.MODE_NORMAL,
     )
+
+    if current_mode not in {
+        bToN.MODE_NORMAL,
+        bToN.MODE_VOICE,
+        bToN.MODE_STICKER,
+    }:
+        current_mode = bToN.MODE_NORMAL
 
     if selected_mode == current_mode:
         selected_mode = bToN.next_mode(
@@ -463,6 +492,13 @@ async def language_handler(
             bToN.MODE_NORMAL,
         )
 
+        if mode not in {
+            bToN.MODE_NORMAL,
+            bToN.MODE_VOICE,
+            bToN.MODE_STICKER,
+        }:
+            mode = bToN.MODE_NORMAL
+
         await _edit_reply_markup(
             message,
             _settings_keyboard(
@@ -484,6 +520,13 @@ async def language_handler(
             key,
             bToN.MODE_NORMAL,
         )
+
+        if mode not in {
+            bToN.MODE_NORMAL,
+            bToN.MODE_VOICE,
+            bToN.MODE_STICKER,
+        }:
+            mode = bToN.MODE_NORMAL
 
         enabled = await _get_language_enabled(key)
 
@@ -719,6 +762,13 @@ async def text_handler(
         key,
         bToN.MODE_NORMAL,
     )
+
+    if mode not in {
+        bToN.MODE_NORMAL,
+        bToN.MODE_VOICE,
+        bToN.MODE_STICKER,
+    }:
+        mode = bToN.MODE_NORMAL
 
     await SeTTiNGS.submit(
         bot,

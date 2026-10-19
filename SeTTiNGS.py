@@ -1,3 +1,4 @@
+
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -173,6 +174,12 @@ async def _process(
                 message,
                 items,
             )
+        elif mode == bToN.MODE_STICKER:
+            await NAMe.send_animations(
+                bot,
+                message,
+                items,
+            )
         else:
             await NAMe.send_documents(
                 bot,
@@ -194,6 +201,9 @@ async def _process(
 def _media_type(mode):
     if mode == bToN.MODE_VOICE:
         return bToN.MEDIA_TYPE_VOICE
+
+    if mode == bToN.MODE_STICKER:
+        return bToN.MEDIA_TYPE_ANIMATION
 
     return bToN.MEDIA_TYPE_DOCUMENT
 
@@ -329,11 +339,12 @@ async def _prepare_item(
 
     item.file_path = result.path
 
-    extension = (
-        "ogg"
-        if item.mode == bToN.MODE_VOICE
-        else result.path.suffix.lstrip(".")
-    )
+    if item.mode == bToN.MODE_VOICE:
+        extension = "ogg"
+    elif item.mode == bToN.MODE_STICKER:
+        extension = "mp4"
+    else:
+        extension = result.path.suffix.lstrip(".")
 
     item.filename = NAMe.unique_filename(
         result.path.parent,

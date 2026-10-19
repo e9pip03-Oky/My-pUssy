@@ -1,3 +1,4 @@
+
 import re
 from pathlib import Path
 
@@ -310,6 +311,55 @@ async def _send_voice(
     if result.voice:
         item.file_id = (
             result.voice.file_id
+        )
+
+        await CAsh.save_file_id(
+            item.cache_key,
+            item.file_id,
+        )
+
+
+async def send_animations(
+    bot,
+    message,
+    items,
+):
+    for item in items:
+        await _send_animation(
+            bot,
+            message,
+            item,
+        )
+
+
+async def _send_animation(
+    bot,
+    message,
+    item,
+):
+    if item.file_id:
+        result = await bot.send_animation(
+            chat_id=message.chat.id,
+            animation=item.file_id,
+            reply_parameters=reply_parameters(
+                message
+            ),
+        )
+    else:
+        result = await bot.send_animation(
+            chat_id=message.chat.id,
+            animation=FSInputFile(
+                item.file_path,
+                filename=item.filename,
+            ),
+            reply_parameters=reply_parameters(
+                message
+            ),
+        )
+
+    if result.animation:
+        item.file_id = (
+            result.animation.file_id
         )
 
         await CAsh.save_file_id(

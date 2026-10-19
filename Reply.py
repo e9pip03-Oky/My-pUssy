@@ -1,3 +1,4 @@
+
 COMMAND_SETTINGS = "ادت"
 COMMAND_BOT = "بوت"
 COMMAND_EDIT = "تعديل"
@@ -5,6 +6,7 @@ COMMAND_AUDIO_START = "بدء"
 
 MODE_VOICE = "فويس"
 MODE_NORMAL = "نورمال"
+MODE_STICKER = "ستيكر"
 
 BUTTON_LANGUAGE = "لغتي"
 BUTTON_CHANGE_LANGUAGE = "تبديل لغتي"

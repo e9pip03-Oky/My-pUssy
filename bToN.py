@@ -1,3 +1,4 @@
+
 import hashlib
 import os
 from pathlib import Path
@@ -6,6 +7,7 @@ from urllib.parse import urlparse
 
 MODE_NORMAL = "normal"
 MODE_VOICE = "voice"
+MODE_STICKER = "sticker"
 
 MEDIA_TYPE_DOCUMENT = "document"
 MEDIA_TYPE_VOICE = "voice"
@@ -135,10 +137,20 @@ def parse_mode_callback(data):
 
 
 def next_mode(mode):
-    if mode == MODE_VOICE:
-        return MODE_NORMAL
+    modes = (
+        MODE_VOICE,
+        MODE_NORMAL,
+        MODE_STICKER,
+    )
 
-    return MODE_VOICE
+    try:
+        index = modes.index(mode)
+    except ValueError:
+        return MODE_VOICE
+
+    return modes[
+        (index + 1) % len(modes)
+    ]
 
 
 def download_directory(user_id):
