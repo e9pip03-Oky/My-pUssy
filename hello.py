@@ -608,12 +608,15 @@ def _format_letter_case(text):
     return "".join(result)
 
 
-def _translate_text(text, target):
-    return Translator().translate(
-        text,
-        src="auto",
-        dest=target,
-    ).text
+async def _translate_text(text, target):
+    async with Translator() as translator:
+        result = await translator.translate(
+            text,
+            src="auto",
+            dest=target,
+        )
+
+    return result.text
 
 
 async def _language_response_text(text, target):
@@ -631,8 +634,7 @@ async def _language_response_text(text, target):
         return _format_letter_case(text)
 
     if _contains_script(text, "ARABIC"):
-        translated = await asyncio.to_thread(
-            _translate_text,
+        translated = await _translate_text(
             text,
             target,
         )
