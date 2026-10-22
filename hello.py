@@ -1,15 +1,9 @@
-
 import asyncio
 import logging
 import unicodedata
 from collections import defaultdict
 
-from aiogram import (
-    Bot,
-    Dispatcher,
-    F,
-    Router,
-)
+from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ButtonStyle
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
@@ -26,7 +20,6 @@ import Reply
 import SeTTiNGS
 import bToN
 import ediT
-
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -55,17 +48,9 @@ def _dynamic_button():
         ButtonStyle.SUCCESS,
     )
 
-    name = names[
-        button_name_index % len(names)
-    ]
-
-    style = styles[
-        button_style_index % len(styles)
-    ]
-
-    user_id = ids[
-        button_id_index % len(ids)
-    ]
+    name = names[button_name_index % len(names)]
+    style = styles[button_style_index % len(styles)]
+    user_id = ids[button_id_index % len(ids)]
 
     button_name_index += 1
     button_style_index += 1
@@ -85,9 +70,7 @@ def _dynamic_markup():
         return None
 
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [button]
-        ]
+        inline_keyboard=[[button]]
     )
 
 
@@ -98,10 +81,7 @@ def _next_response(user_id):
         return ""
 
     index = response_indexes[user_id]
-
-    response_indexes[user_id] = (
-        index + 1
-    ) % len(responses)
+    response_indexes[user_id] = (index + 1) % len(responses)
 
     return responses[index]
 
@@ -119,17 +99,31 @@ def _settings_key(message, user_id=None):
 
 
 def _language_enabled_key(key):
-    return (
-        f"{bToN.LANGUAGE_ENABLED_KEY_PREFIX}"
-        f"{key}"
-    )
+    return f"{bToN.LANGUAGE_ENABLED_KEY_PREFIX}{key}"
 
 
 def _language_target_key(key):
-    return (
-        f"{bToN.LANGUAGE_TARGET_KEY_PREFIX}"
-        f"{key}"
-    )
+    return f"{bToN.LANGUAGE_TARGET_KEY_PREFIX}{key}"
+
+
+def _sticker_landscape_key(key):
+    return f"{bToN.STICKER_LANDSCAPE_KEY_PREFIX}{key}"
+
+
+def _sticker_portrait_key(key):
+    return f"{bToN.STICKER_PORTRAIT_KEY_PREFIX}{key}"
+
+
+def _sticker_flip_horizontal_key(key):
+    return f"{bToN.STICKER_FLIP_HORIZONTAL_KEY_PREFIX}{key}"
+
+
+def _sticker_flip_vertical_key(key):
+    return f"{bToN.STICKER_FLIP_VERTICAL_KEY_PREFIX}{key}"
+
+
+def _sticker_previous_mode_key(key):
+    return f"{bToN.STICKER_PREVIOUS_MODE_KEY_PREFIX}{key}"
 
 
 async def _get_language_enabled(key):
@@ -156,30 +150,85 @@ async def _get_language_target(key):
     return value
 
 
-async def _authorized(
-    bot,
-    chat_id,
-    user_id,
-    chat_type,
-):
+async def _get_sticker_option_states(key):
+    defaults = bToN.STICKER_OPTION_DISABLED
+
+    values = await asyncio.gather(
+        CAsh.get_setting(_sticker_landscape_key(key), defaults),
+        CAsh.get_setting(_sticker_portrait_key(key), defaults),
+        CAsh.get_setting(_sticker_flip_horizontal_key(key), defaults),
+        CAsh.get_setting(_sticker_flip_vertical_key(key), defaults),
+    )
+
+    return {
+        bToN.STICKER_LANDSCAPE: (
+            values[0] == bToN.STICKER_OPTION_ENABLED
+        ),
+        bToN.STICKER_PORTRAIT: (
+            values[1] == bToN.STICKER_OPTION_ENABLED
+        ),
+        bToN.STICKER_FLIP_HORIZONTAL: (
+            values[2] == bToN.STICKER_OPTION_ENABLED
+        ),
+        bToN.STICKER_FLIP_VERTICAL: (
+            values[3] == bToN.STICKER_OPTION_ENABLED
+        ),
+    }
+
+
+async def _get_sticker_options(key):
+    states = await _get_sticker_option_states(key)
+
+    if states[bToN.STICKER_LANDSCAPE]:
+        orientation = bToN.STICKER_LANDSCAPE
+    elif states[bToN.STICKER_PORTRAIT]:
+        orientation = bToN.STICKER_PORTRAIT
+    else:
+        orientation = bToN.STICKER_OPTION_NONE
+
+    if states[bToN.STICKER_FLIP_HORIZONTAL]:
+        flip = bToN.STICKER_FLIP_HORIZONTAL
+    elif states[bToN.STICKER_FLIP_VERTICAL]:
+        flip = bToN.STICKER_FLIP_VERTICAL
+    else:
+        flip = bToN.STICKER_OPTION_NONE
+
+    return orientation, flip
+
+
+async def _settings_mode(key):
+    mode = await CAsh.get_mode(key, bToN.MODE_NORMAL)
+
+    if mode != bToN.MODE_STICKER:
+        return mode, False
+
+    previous_mode = await CAsh.get_setting(
+        _sticker_previous_mode_key(key),
+        bToN.MODE_NORMAL,
+    )
+
+    if previous_mode not in {
+        bToN.MODE_NORMAL,
+        bToN.MODE_VOICE,
+    }:
+        previous_mode = bToN.MODE_NORMAL
+
+    return previous_mode, True
+
+
+async def _authorized(bot, chat_id, user_id, chat_type):
     if chat_type == "private":
         return True
 
-    member = await bot.get_chat_member(
-        chat_id,
-        user_id,
-    )
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+    except Exception:
+        return False
 
-    return (
-        member.status.value
-        in bToN.ADMIN_STATUSES
-    )
+    return member.status.value in bToN.ADMIN_STATUSES
 
 
-async def _edit_reply_markup(
-    message,
-    reply_markup,
-):
+async def _edit_reply_markup(message, reply_markup):
     try:
         await message.edit_reply_markup(
             reply_markup=reply_markup
@@ -192,6 +241,7 @@ async def _edit_reply_markup(
 def _settings_keyboard(
     mode,
     language_enabled=False,
+    sticker_active=False,
 ):
     voice_style = (
         ButtonStyle.PRIMARY
@@ -207,7 +257,7 @@ def _settings_keyboard(
 
     sticker_style = (
         ButtonStyle.PRIMARY
-        if mode == bToN.MODE_STICKER
+        if sticker_active
         else ButtonStyle.DANGER
     )
 
@@ -234,29 +284,25 @@ def _settings_keyboard(
                     ),
                     style=normal_style,
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     text=Reply.MODE_STICKER,
-                    callback_data=bToN.mode_callback(
-                        bToN.MODE_STICKER
-                    ),
+                    callback_data=bToN.STICKER_OPEN_CALLBACK,
                     style=sticker_style,
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=Reply.BUTTON_LANGUAGE,
-                    callback_data=(
-                        bToN.LANGUAGE_TOGGLE_CALLBACK
-                    ),
+                    callback_data=bToN.LANGUAGE_TOGGLE_CALLBACK,
                     style=language_style,
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=Reply.BUTTON_CHANGE_LANGUAGE,
-                    callback_data=(
-                        bToN.LANGUAGE_CHOOSE_CALLBACK
-                    ),
+                    callback_data=bToN.LANGUAGE_CHOOSE_CALLBACK,
                     style=ButtonStyle.SUCCESS,
                 ),
             ],
@@ -300,10 +346,70 @@ def _language_keyboard(target):
             [
                 InlineKeyboardButton(
                     text=Reply.BUTTON_LANGUAGE_BACK,
-                    callback_data=(
-                        bToN.LANGUAGE_BACK_CALLBACK
-                    ),
+                    callback_data=bToN.LANGUAGE_BACK_CALLBACK,
                     style=ButtonStyle.SUCCESS,
+                ),
+            ],
+        ]
+    )
+
+
+async def _sticker_keyboard(key, sticker_active):
+    states = await _get_sticker_option_states(key)
+
+    def option_button(option, label):
+        return InlineKeyboardButton(
+            text=label,
+            callback_data=(
+                f"{bToN.STICKER_OPTION_CALLBACK_PREFIX}"
+                f"{option}"
+            ),
+            style=(
+                ButtonStyle.PRIMARY
+                if states[option]
+                else ButtonStyle.DANGER
+            ),
+        )
+
+    activation_label = (
+        Reply.STICKER_DISABLE
+        if sticker_active
+        else Reply.STICKER_ENABLE
+    )
+
+    activation_style = (
+        ButtonStyle.PRIMARY
+        if sticker_active
+        else ButtonStyle.DANGER
+    )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                option_button(
+                    bToN.STICKER_LANDSCAPE,
+                    Reply.STICKER_LANDSCAPE,
+                ),
+                option_button(
+                    bToN.STICKER_PORTRAIT,
+                    Reply.STICKER_PORTRAIT,
+                ),
+            ],
+            [
+                option_button(
+                    bToN.STICKER_FLIP_HORIZONTAL,
+                    Reply.STICKER_FLIP_HORIZONTAL,
+                ),
+                option_button(
+                    bToN.STICKER_FLIP_VERTICAL,
+                    Reply.STICKER_FLIP_VERTICAL,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=activation_label,
+                    callback_data=bToN.STICKER_ACTIVATE_CALLBACK,
+                    style=activation_style,
                 ),
             ],
         ]
@@ -314,23 +420,20 @@ async def _show_settings(
     message,
     mode,
     language_enabled=False,
+    sticker_active=False,
 ):
     await message.reply(
         Reply.SETTINGS_TEXT,
         reply_markup=_settings_keyboard(
             mode,
             language_enabled,
+            sticker_active,
         ),
     )
 
 
-@router.message(
-    F.text == Reply.COMMAND_SETTINGS
-)
-async def settings_handler(
-    message: Message,
-    bot: Bot,
-):
+@router.message(F.text == Reply.COMMAND_SETTINGS)
+async def settings_handler(message: Message, bot: Bot):
     if not await _authorized(
         bot,
         message.chat.id,
@@ -340,40 +443,25 @@ async def settings_handler(
         return
 
     key = _settings_key(message)
-
-    mode = await CAsh.get_mode(
-        key,
-        bToN.MODE_NORMAL,
-    )
-
-    if mode not in {
-        bToN.MODE_NORMAL,
-        bToN.MODE_VOICE,
-        bToN.MODE_STICKER,
-    }:
-        mode = bToN.MODE_NORMAL
-
-    language_enabled = (
-        await _get_language_enabled(key)
-    )
+    mode, sticker_active = await _settings_mode(key)
+    language_enabled = await _get_language_enabled(key)
 
     await _show_settings(
         message,
         mode,
         language_enabled,
+        sticker_active,
     )
 
 
 @router.callback_query(
-    F.data.startswith(bToN.CALLBACK_PREFIX)
+    F.data.startswith(bToN.STICKER_CALLBACK_PREFIX)
 )
-async def mode_handler(
-    callback: CallbackQuery,
-    bot: Bot,
-):
+async def sticker_handler(callback: CallbackQuery, bot: Bot):
     message = callback.message
 
     if message is None:
+        await callback.answer()
         return
 
     if not await _authorized(
@@ -388,54 +476,177 @@ async def mode_handler(
         )
         return
 
-    selected_mode = bToN.parse_mode_callback(
-        callback.data
-    )
+    key = _settings_key(message, callback.from_user.id)
+    data = callback.data
+    mode, sticker_active = await _settings_mode(key)
+
+    if data == bToN.STICKER_OPEN_CALLBACK:
+        await _edit_reply_markup(
+            message,
+            await _sticker_keyboard(key, sticker_active),
+        )
+
+    elif data == bToN.STICKER_ACTIVATE_CALLBACK:
+        current_mode = await CAsh.get_mode(
+            key,
+            bToN.MODE_NORMAL,
+        )
+
+        if current_mode == bToN.MODE_STICKER:
+            previous_mode = await CAsh.get_setting(
+                _sticker_previous_mode_key(key),
+                bToN.MODE_NORMAL,
+            )
+
+            if previous_mode not in {
+                bToN.MODE_NORMAL,
+                bToN.MODE_VOICE,
+            }:
+                previous_mode = bToN.MODE_NORMAL
+
+            await CAsh.save_mode(key, previous_mode)
+            mode = previous_mode
+            sticker_active = False
+
+        else:
+            previous_mode = (
+                current_mode
+                if current_mode in {
+                    bToN.MODE_NORMAL,
+                    bToN.MODE_VOICE,
+                }
+                else bToN.MODE_NORMAL
+            )
+
+            await CAsh.save_setting(
+                _sticker_previous_mode_key(key),
+                previous_mode,
+            )
+            await CAsh.save_mode(key, bToN.MODE_STICKER)
+
+            mode = previous_mode
+            sticker_active = True
+
+        language_enabled = await _get_language_enabled(key)
+
+        await _edit_reply_markup(
+            message,
+            _settings_keyboard(
+                mode,
+                language_enabled,
+                sticker_active,
+            ),
+        )
+
+    elif data.startswith(
+        bToN.STICKER_OPTION_CALLBACK_PREFIX
+    ):
+        option = data[
+            len(bToN.STICKER_OPTION_CALLBACK_PREFIX):
+        ]
+
+        key_map = {
+            bToN.STICKER_LANDSCAPE: (
+                _sticker_landscape_key,
+                _sticker_portrait_key,
+            ),
+            bToN.STICKER_PORTRAIT: (
+                _sticker_portrait_key,
+                _sticker_landscape_key,
+            ),
+            bToN.STICKER_FLIP_HORIZONTAL: (
+                _sticker_flip_horizontal_key,
+                _sticker_flip_vertical_key,
+            ),
+            bToN.STICKER_FLIP_VERTICAL: (
+                _sticker_flip_vertical_key,
+                _sticker_flip_horizontal_key,
+            ),
+        }
+
+        if option not in key_map:
+            await callback.answer()
+            return
+
+        selected_key, opposite_key = key_map[option]
+        states = await _get_sticker_option_states(key)
+
+        if states[option]:
+            await CAsh.save_setting(
+                selected_key(key),
+                bToN.STICKER_OPTION_DISABLED,
+            )
+        else:
+            await CAsh.save_setting(
+                selected_key(key),
+                bToN.STICKER_OPTION_ENABLED,
+            )
+            await CAsh.save_setting(
+                opposite_key(key),
+                bToN.STICKER_OPTION_DISABLED,
+            )
+
+        await _edit_reply_markup(
+            message,
+            await _sticker_keyboard(key, sticker_active),
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.startswith(bToN.CALLBACK_PREFIX)
+)
+async def mode_handler(callback: CallbackQuery, bot: Bot):
+    message = callback.message
+
+    if message is None:
+        await callback.answer()
+        return
+
+    if not await _authorized(
+        bot,
+        message.chat.id,
+        callback.from_user.id,
+        message.chat.type,
+    ):
+        await callback.answer(
+            Reply.SETTINGS_UNAUTHORIZED,
+            show_alert=True,
+        )
+        return
+
+    selected_mode = bToN.parse_mode_callback(callback.data)
 
     if selected_mode not in {
         bToN.MODE_NORMAL,
         bToN.MODE_VOICE,
-        bToN.MODE_STICKER,
     }:
         await callback.answer()
         return
 
-    key = _settings_key(
-        message,
-        callback.from_user.id,
-    )
-
+    key = _settings_key(message, callback.from_user.id)
     current_mode = await CAsh.get_mode(
         key,
         bToN.MODE_NORMAL,
     )
 
-    if current_mode not in {
-        bToN.MODE_NORMAL,
-        bToN.MODE_VOICE,
-        bToN.MODE_STICKER,
-    }:
-        current_mode = bToN.MODE_NORMAL
+    if (
+        current_mode != bToN.MODE_STICKER
+        and selected_mode == current_mode
+    ):
+        selected_mode = bToN.next_mode(current_mode)
 
-    if selected_mode == current_mode:
-        selected_mode = bToN.next_mode(
-            current_mode
-        )
+    await CAsh.save_mode(key, selected_mode)
 
-    await CAsh.save_mode(
-        key,
-        selected_mode,
-    )
-
-    language_enabled = (
-        await _get_language_enabled(key)
-    )
+    language_enabled = await _get_language_enabled(key)
 
     await _edit_reply_markup(
         message,
         _settings_keyboard(
             selected_mode,
             language_enabled,
+            False,
         ),
     )
 
@@ -445,13 +656,11 @@ async def mode_handler(
 @router.callback_query(
     F.data.startswith(bToN.LANGUAGE_CALLBACK_PREFIX)
 )
-async def language_handler(
-    callback: CallbackQuery,
-    bot: Bot,
-):
+async def language_handler(callback: CallbackQuery, bot: Bot):
     message = callback.message
 
     if message is None:
+        await callback.answer()
         return
 
     if not await _authorized(
@@ -466,11 +675,7 @@ async def language_handler(
         )
         return
 
-    key = _settings_key(
-        message,
-        callback.from_user.id,
-    )
-
+    key = _settings_key(message, callback.from_user.id)
     data = callback.data
 
     if data == bToN.LANGUAGE_TOGGLE_CALLBACK:
@@ -487,23 +692,14 @@ async def language_handler(
             value,
         )
 
-        mode = await CAsh.get_mode(
-            key,
-            bToN.MODE_NORMAL,
-        )
-
-        if mode not in {
-            bToN.MODE_NORMAL,
-            bToN.MODE_VOICE,
-            bToN.MODE_STICKER,
-        }:
-            mode = bToN.MODE_NORMAL
+        mode, sticker_active = await _settings_mode(key)
 
         await _edit_reply_markup(
             message,
             _settings_keyboard(
                 mode,
                 not enabled,
+                sticker_active,
             ),
         )
 
@@ -516,18 +712,7 @@ async def language_handler(
         )
 
     elif data == bToN.LANGUAGE_BACK_CALLBACK:
-        mode = await CAsh.get_mode(
-            key,
-            bToN.MODE_NORMAL,
-        )
-
-        if mode not in {
-            bToN.MODE_NORMAL,
-            bToN.MODE_VOICE,
-            bToN.MODE_STICKER,
-        }:
-            mode = bToN.MODE_NORMAL
-
+        mode, sticker_active = await _settings_mode(key)
         enabled = await _get_language_enabled(key)
 
         await _edit_reply_markup(
@@ -535,6 +720,7 @@ async def language_handler(
             _settings_keyboard(
                 mode,
                 enabled,
+                sticker_active,
             ),
         )
 
@@ -574,9 +760,7 @@ async def language_handler(
     await callback.answer()
 
 
-@router.message(
-    F.text == Reply.COMMAND_BOT
-)
+@router.message(F.text == Reply.COMMAND_BOT)
 async def bot_command_handler(message: Message):
     if message.chat.type in {
         "private",
@@ -586,34 +770,18 @@ async def bot_command_handler(message: Message):
         await _send_rotating_response(message)
 
 
-@router.message(
-    F.text == Reply.COMMAND_EDIT
-)
-async def edit_handler(
-    message: Message,
-    bot: Bot,
-):
+@router.message(F.text == Reply.COMMAND_EDIT)
+async def edit_handler(message: Message, bot: Bot):
     await ediT.start_edit(bot, message)
 
 
-@router.message(
-    F.video | F.audio | F.voice | F.document
-)
-async def audio_media_handler(
-    message: Message,
-    bot: Bot,
-):
+@router.message(F.video | F.audio | F.voice | F.document)
+async def audio_media_handler(message: Message, bot: Bot):
     await AUdio.inspect_message(message, bot)
 
 
 def _is_script_letter(char, script):
-    return (
-        char.isalpha()
-        and script in unicodedata.name(
-            char,
-            "",
-        )
-    )
+    return char.isalpha() and script in unicodedata.name(char, "")
 
 
 def _contains_script(text, script):
@@ -628,19 +796,13 @@ def _format_letter_case(text):
 
     for char in text:
         if _is_script_letter(char, "LATIN"):
-            if (
-                char.upper()
-                in bToN.LANGUAGE_UPPER_EXCEPTIONS
-            ):
+            if char.upper() in bToN.LANGUAGE_UPPER_EXCEPTIONS:
                 result.append(char.upper())
             else:
                 result.append(char.lower())
 
         elif _is_script_letter(char, "CYRILLIC"):
-            if (
-                char.upper()
-                in bToN.RUSSIAN_UPPER_EXCEPTIONS
-            ):
+            if char.upper() in bToN.RUSSIAN_UPPER_EXCEPTIONS:
                 result.append(char.upper())
             else:
                 result.append(char.lower())
@@ -663,24 +825,14 @@ async def _translate_text(text, target):
 
 
 async def _language_response_text(text, target):
-    has_latin = _contains_script(
-        text,
-        "LATIN",
-    )
-
-    has_cyrillic = _contains_script(
-        text,
-        "CYRILLIC",
-    )
+    has_latin = _contains_script(text, "LATIN")
+    has_cyrillic = _contains_script(text, "CYRILLIC")
 
     if has_latin or has_cyrillic:
         return _format_letter_case(text)
 
     if _contains_script(text, "ARABIC"):
-        translated = await _translate_text(
-            text,
-            target,
-        )
+        translated = await _translate_text(text, target)
 
         if not translated:
             return None
@@ -691,20 +843,14 @@ async def _language_response_text(text, target):
 
 
 @router.message(F.text)
-async def text_handler(
-    message: Message,
-    bot: Bot,
-):
+async def text_handler(message: Message, bot: Bot):
     if await ediT.handle_duration(bot, message):
         return
 
     text = message.text.strip()
 
     if text == Reply.COMMAND_AUDIO_START:
-        handled = await AUdio.handle_start(
-            message,
-            bot,
-        )
+        handled = await AUdio.handle_start(message, bot)
 
         if handled:
             return
@@ -742,9 +888,7 @@ async def text_handler(
                         target,
                     )
                 except Exception:
-                    logger.exception(
-                        "Language translation failed"
-                    )
+                    logger.exception("Language translation failed")
                     return
 
                 if result is not None:
@@ -757,31 +901,27 @@ async def text_handler(
         return
 
     key = _settings_key(message)
+    mode = await CAsh.get_mode(key, bToN.MODE_NORMAL)
 
-    mode = await CAsh.get_mode(
-        key,
-        bToN.MODE_NORMAL,
-    )
-
-    if mode not in {
-        bToN.MODE_NORMAL,
-        bToN.MODE_VOICE,
-        bToN.MODE_STICKER,
-    }:
-        mode = bToN.MODE_NORMAL
+    if mode == bToN.MODE_STICKER:
+        sticker_options = await _get_sticker_options(key)
+    else:
+        sticker_options = (
+            bToN.STICKER_OPTION_NONE,
+            bToN.STICKER_OPTION_NONE,
+        )
 
     await SeTTiNGS.submit(
         bot,
         message,
         text,
         mode,
+        sticker_options,
     )
 
 
 async def _send_rotating_response(message):
-    text = _next_response(
-        message.from_user.id
-    )
+    text = _next_response(message.from_user.id)
 
     if not text:
         return
@@ -805,26 +945,17 @@ async def main():
     token = bToN.get_bot_token()
 
     if not token:
-        raise RuntimeError(
-            "BOT_TOKEN is not set"
-        )
+        raise RuntimeError("BOT_TOKEN is not set")
 
-    await CAsh.configure(
-        bToN.get_db_path()
-    )
-
-    await AUdio.configure(
-        bToN.get_db_path()
-    )
+    await CAsh.configure(bToN.get_db_path())
+    await AUdio.configure(bToN.get_db_path())
 
     bot = Bot(token)
-
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
 
     try:
         await _startup(bot)
-
         await dispatcher.start_polling(bot)
     finally:
         await bot.session.close()

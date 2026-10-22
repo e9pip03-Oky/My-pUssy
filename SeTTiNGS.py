@@ -1,4 +1,3 @@
-
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +26,10 @@ class DownloadItem:
     file_id: str | None = None
     file_path: Path | None = None
     filename: str | None = None
+    sticker_options: tuple[str, str] = (
+        bToN.STICKER_OPTION_NONE,
+        bToN.STICKER_OPTION_NONE,
+    )
 
 
 @dataclass
@@ -41,17 +44,12 @@ class UserQueue:
             bToN.MAX_ACTIVE_DOWNLOADS
         )
     )
-    workers: list[asyncio.Task] = field(
-        default_factory=list
-    )
+    workers: list[asyncio.Task] = field(default_factory=list)
 
 
 user_queues: dict[int, UserQueue] = {}
 cache_locks: dict[str, asyncio.Lock] = {}
-download_tasks: dict[
-    str,
-    asyncio.Task,
-] = {}
+download_tasks: dict[str, asyncio.Task] = {}
 
 
 def _get_cache_lock(key):
@@ -72,13 +70,9 @@ def _get_user_queue(user_id):
         user_queues[user_id] = state
 
     if not state.workers:
-        for _ in range(
-            bToN.MAX_ACTIVE_DOWNLOADS
-        ):
+        for _ in range(bToN.MAX_ACTIVE_DOWNLOADS):
             state.workers.append(
-                asyncio.create_task(
-                    _worker(state)
-                )
+                asyncio.create_task(_worker(state))
             )
 
     return state
@@ -89,6 +83,10 @@ async def submit(
     message: Message,
     url,
     mode,
+    sticker_options=(
+        bToN.STICKER_OPTION_NONE,
+        bToN.STICKER_OPTION_NONE,
+    ),
 ):
     user_id = message.from_user.id
     state = _get_user_queue(user_id)
@@ -102,6 +100,7 @@ async def submit(
             message,
             url,
             mode,
+            sticker_options,
         )
     )
 
@@ -115,6 +114,7 @@ async def _worker(state):
             message,
             url,
             mode,
+            sticker_options,
         ) = await state.queue.get()
 
         try:
@@ -123,6 +123,7 @@ async def _worker(state):
                 message,
                 url,
                 mode,
+                sticker_options,
                 state,
             )
         finally:
@@ -134,68 +135,36 @@ async def _process(
     message,
     url,
     mode,
+    sticker_options,
     state,
 ):
     status_message = None
 
     try:
         entries = await get_entries(url)
-
-        items = _build_items(
-            entries,
-            mode,
-        )
+        items = _build_items(entries, mode, sticker_options)
 
         if not items:
-            raise ValueError(
-                "No downloadable items"
-            )
+            raise ValueError("No downloadable items")
 
-        await _load_cached_file_ids(
-            items
-        )
+        await _load_cached_file_ids(items)
 
         if not _all_cached(items):
-            status_message = (
-                await NAMe.send_status_message(
-                    message
-                )
-            )
+            status_message = await NAMe.send_status_message(message)
 
-        await _prepare_items(
-            message,
-            items,
-            state,
-        )
+        await _prepare_items(message, items, state)
 
         if mode == bToN.MODE_VOICE:
-            await NAMe.send_voices(
-                bot,
-                message,
-                items,
-            )
+            await NAMe.send_voices(bot, message, items)
         elif mode == bToN.MODE_STICKER:
-            await NAMe.send_animations(
-                bot,
-                message,
-                items,
-            )
+            await NAMe.send_animations(bot, message, items)
         else:
-            await NAMe.send_documents(
-                bot,
-                message,
-                items,
-            )
+            await NAMe.send_documents(bot, message, items)
 
-        await NAMe.delete_status_message(
-            status_message
-        )
+        await NAMe.delete_status_message(status_message)
 
     except Exception:
-        await NAMe.show_failure(
-            status_message,
-            message,
-        )
+        await NAMe.show_failure(status_message, message)
 
 
 def _media_type(mode):
@@ -208,9 +177,11 @@ def _media_type(mode):
     return bToN.MEDIA_TYPE_DOCUMENT
 
 
-def _build_items(entries, mode):
+def _build_items(entries, mode, sticker_options):
     items = []
     media_type = _media_type(mode)
+
+    orientation, flip = sticker_options
 
     for entry in entries:
         url = entry_url(entry)
@@ -219,6 +190,10 @@ def _build_items(entries, mode):
             continue
 
         identity = entry_identity(entry)
+        variant = None
+
+        if mode == bToN.MODE_STICKER:
+            variant = f"{orientation}:{flip}"
 
         items.append(
             DownloadItem(
@@ -230,7 +205,9 @@ def _build_items(entries, mode):
                     mode,
                     media_type,
                     url,
+                    variant,
                 ),
+                sticker_options=sticker_options,
             )
         )
 
@@ -238,39 +215,23 @@ def _build_items(entries, mode):
 
 
 async def _load_cached_file_ids(items):
-    tasks = [
-        _load_cached_file_id(item)
-        for item in items
-    ]
-
-    await asyncio.gather(*tasks)
+    await asyncio.gather(
+        *(_load_cached_file_id(item) for item in items)
+    )
 
 
 async def _load_cached_file_id(item):
-    item.file_id = await CAsh.get_file_id(
-        item.cache_key
-    )
+    item.file_id = await CAsh.get_file_id(item.cache_key)
 
 
 def _all_cached(items):
-    return all(
-        item.file_id
-        for item in items
-    )
+    return all(item.file_id for item in items)
 
 
-async def _prepare_items(
-    message,
-    items,
-    state,
-):
+async def _prepare_items(message, items, state):
     tasks = [
         asyncio.create_task(
-            _prepare_item(
-                message,
-                item,
-                state,
-            )
+            _prepare_item(message, item, state)
         )
         for item in items
         if not item.file_id
@@ -280,62 +241,35 @@ async def _prepare_items(
         await asyncio.gather(*tasks)
 
 
-async def _prepare_item(
-    message,
-    item,
-    state,
-):
-    cached_file_id = await CAsh.get_file_id(
-        item.cache_key
-    )
+async def _prepare_item(message, item, state):
+    cached_file_id = await CAsh.get_file_id(item.cache_key)
 
     if cached_file_id:
         item.file_id = cached_file_id
         return
 
-    task = download_tasks.get(
-        item.cache_key
-    )
+    task = download_tasks.get(item.cache_key)
 
     if task is None:
         task = asyncio.create_task(
-            _download_item(
-                message,
-                item,
-                state,
-            )
+            _download_item(message, item, state)
         )
-
         download_tasks[item.cache_key] = task
 
     try:
         result = await task
     finally:
-        if (
-            download_tasks.get(
-                item.cache_key
-            )
-            is task
-        ):
-            download_tasks.pop(
-                item.cache_key,
-                None,
-            )
+        if download_tasks.get(item.cache_key) is task:
+            download_tasks.pop(item.cache_key, None)
 
     if result is None:
-        cached_file_id = (
-            await CAsh.get_file_id(
-                item.cache_key
-            )
-        )
+        cached_file_id = await CAsh.get_file_id(item.cache_key)
 
         if cached_file_id:
             item.file_id = cached_file_id
             return
 
-        raise RuntimeError(
-            "Cached file was not found"
-        )
+        raise RuntimeError("Cached file was not found")
 
     item.file_path = result.path
 
@@ -348,28 +282,15 @@ async def _prepare_item(
 
     item.filename = NAMe.unique_filename(
         result.path.parent,
-        NAMe.build_filename(
-            result.info,
-            extension,
-        ),
+        NAMe.build_filename(result.info, extension),
     ).name
 
 
-async def _download_item(
-    message,
-    item,
-    state,
-):
-    lock = _get_cache_lock(
-        item.cache_key
-    )
+async def _download_item(message, item, state):
+    lock = _get_cache_lock(item.cache_key)
 
     async with lock:
-        cached_file_id = (
-            await CAsh.get_file_id(
-                item.cache_key
-            )
-        )
+        cached_file_id = await CAsh.get_file_id(item.cache_key)
 
         if cached_file_id:
             return None
@@ -378,7 +299,6 @@ async def _download_item(
             return await download_one(
                 item.url,
                 item.mode,
-                bToN.download_directory(
-                    message.from_user.id
-                ),
+                bToN.download_directory(message.from_user.id),
+                item.sticker_options,
             )

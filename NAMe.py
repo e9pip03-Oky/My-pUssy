@@ -1,4 +1,3 @@
-
 import re
 from pathlib import Path
 
@@ -14,26 +13,13 @@ import CAsh
 import Reply
 import bToN
 
-
-UPPER_EXCEPTIONS = set(
-    "ATFGUJNML"
-)
+UPPER_EXCEPTIONS = set("ATFGUJNML")
 
 
 def clean_name(value):
     value = value or ""
-
-    value = re.sub(
-        r"[^\w\s]",
-        "",
-        value,
-    )
-
-    value = re.sub(
-        r"\s+",
-        " ",
-        value,
-    ).strip()
+    value = re.sub(r"[^\w\s]", "", value)
+    value = re.sub(r"\s+", " ", value).strip()
 
     result = []
 
@@ -65,17 +51,12 @@ def get_title(info):
     )
 
 
-def build_filename(
-    info,
-    extension,
-):
+def build_filename(info, extension):
     publisher = get_publisher(info)
     title = get_title(info)
 
     if publisher and title:
-        name = (
-            f"{publisher} - {title}"
-        )
+        name = f"{publisher} - {title}"
     elif publisher:
         name = publisher
     else:
@@ -84,10 +65,7 @@ def build_filename(
     return f"{name}.{extension}"
 
 
-def unique_filename(
-    directory,
-    filename,
-):
+def unique_filename(directory, filename):
     path = Path(directory) / filename
 
     if not path.exists():
@@ -98,10 +76,7 @@ def unique_filename(
     number = 2
 
     while True:
-        candidate = (
-            Path(directory)
-            / f"{stem} {number}{suffix}"
-        )
+        candidate = Path(directory) / f"{stem} {number}{suffix}"
 
         if not candidate.exists():
             return candidate
@@ -110,23 +85,17 @@ def unique_filename(
 
 
 def reply_parameters(message):
-    return ReplyParameters(
-        message_id=message.message_id
-    )
+    return ReplyParameters(message_id=message.message_id)
 
 
 async def send_status_message(message):
     if not Reply.DOWNLOAD_STARTED:
         return None
 
-    return await message.reply(
-        Reply.DOWNLOAD_STARTED
-    )
+    return await message.reply(Reply.DOWNLOAD_STARTED)
 
 
-async def delete_status_message(
-    status_message,
-):
+async def delete_status_message(status_message):
     if status_message is None:
         return
 
@@ -136,10 +105,7 @@ async def delete_status_message(
         pass
 
 
-async def show_failure(
-    status_message,
-    message,
-):
+async def show_failure(status_message, message):
     if status_message is not None:
         if Reply.DOWNLOAD_FAILED:
             try:
@@ -148,58 +114,28 @@ async def show_failure(
                 )
             except Exception:
                 pass
-
         return
 
     if Reply.DOWNLOAD_FAILED:
-        await message.reply(
-            Reply.DOWNLOAD_FAILED
-        )
+        await message.reply(Reply.DOWNLOAD_FAILED)
 
 
-async def send_documents(
-    bot: Bot,
-    message: Message,
-    items,
-):
-    for start in range(
-        0,
-        len(items),
-        bToN.ALBUM_BATCH_SIZE,
-    ):
-        batch = items[
-            start:start
-            + bToN.ALBUM_BATCH_SIZE
-        ]
+async def send_documents(bot: Bot, message: Message, items):
+    for start in range(0, len(items), bToN.ALBUM_BATCH_SIZE):
+        batch = items[start:start + bToN.ALBUM_BATCH_SIZE]
 
         if len(batch) == 1:
-            await _send_document(
-                bot,
-                message,
-                batch[0],
-            )
+            await _send_document(bot, message, batch[0])
         else:
-            await _send_document_album(
-                bot,
-                message,
-                batch,
-            )
+            await _send_document_album(bot, message, batch)
 
 
-async def _send_document_album(
-    bot,
-    message,
-    items,
-):
+async def _send_document_album(bot, message, items):
     media = []
 
     for item in items:
         if item.file_id:
-            media.append(
-                InputMediaDocument(
-                    media=item.file_id
-                )
-            )
+            media.append(InputMediaDocument(media=item.file_id))
         else:
             media.append(
                 InputMediaDocument(
@@ -213,38 +149,24 @@ async def _send_document_album(
     result = await bot.send_media_group(
         chat_id=message.chat.id,
         media=media,
-        reply_parameters=reply_parameters(
-            message
-        ),
+        reply_parameters=reply_parameters(message),
     )
 
-    for sent, item in zip(
-        result,
-        items,
-    ):
+    for sent, item in zip(result, items):
         if sent.document:
-            item.file_id = (
-                sent.document.file_id
-            )
-
+            item.file_id = sent.document.file_id
             await CAsh.save_file_id(
                 item.cache_key,
                 item.file_id,
             )
 
 
-async def _send_document(
-    bot,
-    message,
-    item,
-):
+async def _send_document(bot, message, item):
     if item.file_id:
         result = await bot.send_document(
             chat_id=message.chat.id,
             document=item.file_id,
-            reply_parameters=reply_parameters(
-                message
-            ),
+            reply_parameters=reply_parameters(message),
         )
     else:
         result = await bot.send_document(
@@ -253,48 +175,26 @@ async def _send_document(
                 item.file_path,
                 filename=item.filename,
             ),
-            reply_parameters=reply_parameters(
-                message
-            ),
+            reply_parameters=reply_parameters(message),
             disable_content_type_detection=True,
         )
 
     if result.document:
-        item.file_id = (
-            result.document.file_id
-        )
-
-        await CAsh.save_file_id(
-            item.cache_key,
-            item.file_id,
-        )
+        item.file_id = result.document.file_id
+        await CAsh.save_file_id(item.cache_key, item.file_id)
 
 
-async def send_voices(
-    bot,
-    message,
-    items,
-):
+async def send_voices(bot, message, items):
     for item in items:
-        await _send_voice(
-            bot,
-            message,
-            item,
-        )
+        await _send_voice(bot, message, item)
 
 
-async def _send_voice(
-    bot,
-    message,
-    item,
-):
+async def _send_voice(bot, message, item):
     if item.file_id:
         result = await bot.send_voice(
             chat_id=message.chat.id,
             voice=item.file_id,
-            reply_parameters=reply_parameters(
-                message
-            ),
+            reply_parameters=reply_parameters(message),
         )
     else:
         result = await bot.send_voice(
@@ -303,47 +203,25 @@ async def _send_voice(
                 item.file_path,
                 filename=item.filename,
             ),
-            reply_parameters=reply_parameters(
-                message
-            ),
+            reply_parameters=reply_parameters(message),
         )
 
     if result.voice:
-        item.file_id = (
-            result.voice.file_id
-        )
-
-        await CAsh.save_file_id(
-            item.cache_key,
-            item.file_id,
-        )
+        item.file_id = result.voice.file_id
+        await CAsh.save_file_id(item.cache_key, item.file_id)
 
 
-async def send_animations(
-    bot,
-    message,
-    items,
-):
+async def send_animations(bot, message, items):
     for item in items:
-        await _send_animation(
-            bot,
-            message,
-            item,
-        )
+        await _send_animation(bot, message, item)
 
 
-async def _send_animation(
-    bot,
-    message,
-    item,
-):
+async def _send_animation(bot, message, item):
     if item.file_id:
         result = await bot.send_animation(
             chat_id=message.chat.id,
             animation=item.file_id,
-            reply_parameters=reply_parameters(
-                message
-            ),
+            reply_parameters=reply_parameters(message),
         )
     else:
         result = await bot.send_animation(
@@ -352,17 +230,9 @@ async def _send_animation(
                 item.file_path,
                 filename=item.filename,
             ),
-            reply_parameters=reply_parameters(
-                message
-            ),
+            reply_parameters=reply_parameters(message),
         )
 
     if result.animation:
-        item.file_id = (
-            result.animation.file_id
-        )
-
-        await CAsh.save_file_id(
-            item.cache_key,
-            item.file_id,
-        )
+        item.file_id = result.animation.file_id
+        await CAsh.save_file_id(item.cache_key, item.file_id)

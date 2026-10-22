@@ -1,9 +1,7 @@
-
 import hashlib
 import os
 from pathlib import Path
 from urllib.parse import urlparse
-
 
 MODE_NORMAL = "normal"
 MODE_VOICE = "voice"
@@ -55,6 +53,26 @@ LANGUAGE_DEFAULT_TARGET = LANGUAGE_TARGET_ENGLISH
 LANGUAGE_UPPER_EXCEPTIONS = "ATFGUJNML"
 RUSSIAN_UPPER_EXCEPTIONS = "АБИ"
 
+STICKER_CALLBACK_PREFIX = "sticker:"
+STICKER_OPEN_CALLBACK = "sticker:open"
+STICKER_ACTIVATE_CALLBACK = "sticker:activate"
+STICKER_OPTION_CALLBACK_PREFIX = "sticker:option:"
+
+STICKER_LANDSCAPE = "landscape"
+STICKER_PORTRAIT = "portrait"
+STICKER_FLIP_HORIZONTAL = "horizontal"
+STICKER_FLIP_VERTICAL = "vertical"
+
+STICKER_OPTION_ENABLED = "enabled"
+STICKER_OPTION_DISABLED = "disabled"
+STICKER_OPTION_NONE = "none"
+
+STICKER_LANDSCAPE_KEY_PREFIX = "sticker_landscape:"
+STICKER_PORTRAIT_KEY_PREFIX = "sticker_portrait:"
+STICKER_FLIP_HORIZONTAL_KEY_PREFIX = "sticker_flip_horizontal:"
+STICKER_FLIP_VERTICAL_KEY_PREFIX = "sticker_flip_vertical:"
+STICKER_PREVIOUS_MODE_KEY_PREFIX = "sticker_previous_mode:"
+
 TELEGRAM_HOSTS = {
     "t.me",
     "telegram.me",
@@ -68,36 +86,20 @@ ADMIN_STATUSES = {
 
 
 def get_bot_token():
-    return os.getenv(
-        BOT_TOKEN_ENV,
-        "",
-    )
+    return os.getenv(BOT_TOKEN_ENV, "")
 
 
 def get_db_path():
-    return os.getenv(
-        DB_PATH_ENV,
-        DEFAULT_DB_PATH,
-    )
+    return os.getenv(DB_PATH_ENV, DEFAULT_DB_PATH)
 
 
 def get_ffmpeg_path():
-    return os.getenv(
-        FFMPEG_PATH_ENV
-    )
+    return os.getenv(FFMPEG_PATH_ENV)
 
 
 def get_takeoff_ids():
-    value = os.getenv(
-        TAKEOFF_ENV,
-        "",
-    )
-
-    return tuple(
-        item
-        for item in value.split("/")
-        if item
-    )
+    value = os.getenv(TAKEOFF_ENV, "")
+    return tuple(item for item in value.split("/") if item)
 
 
 def settings_key(
@@ -109,14 +111,8 @@ def settings_key(
     if chat_type == "private":
         return f"user:{user_id}"
 
-    if (
-        chat_type == "supergroup"
-        and thread_id
-    ):
-        return (
-            f"chat:{chat_id}:"
-            f"topic:{thread_id}"
-        )
+    if chat_type == "supergroup" and thread_id:
+        return f"chat:{chat_id}:topic:{thread_id}"
 
     return f"chat:{chat_id}"
 
@@ -126,51 +122,30 @@ def mode_callback(mode):
 
 
 def parse_mode_callback(data):
-    if not data.startswith(
-        CALLBACK_PREFIX
-    ):
+    if not data.startswith(CALLBACK_PREFIX):
         return None
 
-    return data[
-        len(CALLBACK_PREFIX):
-    ]
+    return data[len(CALLBACK_PREFIX):]
 
 
 def next_mode(mode):
-    modes = (
-        MODE_VOICE,
-        MODE_NORMAL,
-        MODE_STICKER,
-    )
+    if mode == MODE_VOICE:
+        return MODE_NORMAL
 
-    try:
-        index = modes.index(mode)
-    except ValueError:
-        return MODE_VOICE
-
-    return modes[
-        (index + 1) % len(modes)
-    ]
+    return MODE_VOICE
 
 
 def download_directory(user_id):
-    return Path(
-        DOWNLOADS_DIR
-    ) / str(user_id)
+    return Path(DOWNLOADS_DIR) / str(user_id)
 
 
-def cache_key(
-    mode,
-    media_type,
-    value,
-):
-    data = (
-        f"{mode}:{media_type}:{value}"
-    )
+def cache_key(mode, media_type, value, variant=None):
+    data = f"{mode}:{media_type}:{value}"
 
-    return hashlib.sha256(
-        data.encode("utf-8")
-    ).hexdigest()
+    if variant is not None:
+        data = f"{data}:{variant}"
+
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
 def is_telegram_url(url):
@@ -187,7 +162,6 @@ def is_telegram_url(url):
     host = host.lower().rstrip(".")
 
     return any(
-        host == item
-        or host.endswith(f".{item}")
+        host == item or host.endswith(f".{item}")
         for item in TELEGRAM_HOSTS
     )

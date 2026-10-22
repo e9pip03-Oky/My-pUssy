@@ -1,6 +1,4 @@
-
 import asyncio
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,19 +34,12 @@ def _extract_entries_sync(url):
     options["extract_flat"] = True
 
     with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(
-            url,
-            download=False,
-        )
+        info = ydl.extract_info(url, download=False)
 
     entries = info.get("entries")
 
     if entries is not None:
-        return [
-            entry
-            for entry in entries
-            if entry
-        ]
+        return [entry for entry in entries if entry]
 
     return [info]
 
@@ -85,9 +76,7 @@ def entry_identity(entry):
 
 
 def _find_downloaded_file(directory, info):
-    requested = info.get(
-        "requested_downloads"
-    ) or []
+    requested = info.get("requested_downloads") or []
 
     for item in requested:
         filepath = item.get("filepath")
@@ -98,12 +87,8 @@ def _find_downloaded_file(directory, info):
             if path.exists():
                 return path
 
-    with yt_dlp.YoutubeDL(
-        _base_options()
-    ) as ydl:
-        prepared = Path(
-            ydl.prepare_filename(info)
-        )
+    with yt_dlp.YoutubeDL(_base_options()) as ydl:
+        prepared = Path(ydl.prepare_filename(info))
 
     if prepared.exists():
         return prepared
@@ -111,42 +96,17 @@ def _find_downloaded_file(directory, info):
     identifier = info.get("id")
 
     if identifier:
-        matches = list(
-            Path(directory).glob(
-                f"{identifier}.*"
-            )
-        )
-
-        matches = [
-            path
-            for path in matches
-            if not path.name.endswith(
-                ".animation.mp4"
-            )
-            and not path.name.endswith(
-                ".voice.ogg"
-            )
-        ]
+        matches = list(Path(directory).glob(f"{identifier}.*"))
 
         if matches:
             return matches[0]
 
-    raise FileNotFoundError(
-        "Downloaded file was not found"
-    )
+    raise FileNotFoundError("Downloaded file was not found")
 
 
-def _download_sync(
-    url,
-    mode,
-    directory,
-):
+def _download_sync(url, mode, directory):
     options = _base_options()
-
-    options["outtmpl"] = str(
-        Path(directory)
-        / "%(id)s.%(ext)s"
-    )
+    options["outtmpl"] = str(Path(directory) / "%(id)s.%(ext)s")
 
     if mode == bToN.MODE_VOICE:
         options["format"] = "bestaudio/best"
@@ -154,151 +114,16 @@ def _download_sync(
         options["format"] = "bv+ba/b"
 
     with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(
-            url,
-            download=True,
-        )
+        info = ydl.extract_info(url, download=True)
 
-    path = _find_downloaded_file(
-        directory,
-        info,
-    )
+    path = _find_downloaded_file(directory, info)
 
-    return DownloadResult(
-        path=path,
-        info=info,
-    )
-
-
-def _ffprobe_path():
-    configured_path = bToN.get_ffmpeg_path()
-
-    if configured_path:
-        path = Path(configured_path)
-
-        if path.is_dir():
-            sibling = path / "ffprobe"
-        else:
-            sibling = path.with_name("ffprobe")
-
-        if sibling.is_file():
-            return str(sibling)
-
-    return shutil.which("ffprobe") or "ffprobe"
-
-
-def _video_codec(path):
-    result = subprocess.run(
-        [
-            _ffprobe_path(),
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=codec_name",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
-
-    codec = result.stdout.strip()
-
-    if not codec:
-        raise ValueError(
-            "Downloaded media has no video stream"
-        )
-
-    return codec
-
-
-def _prepare_animation_sync(path):
-    output = path.with_name(
-        f"{path.stem}.animation.mp4"
-    )
-
-    ffmpeg_path = (
-        bToN.get_ffmpeg_path()
-        or "ffmpeg"
-    )
-
-    codec = _video_codec(path)
-
-    command = [
-        ffmpeg_path,
-        "-y",
-        "-i",
-        str(path),
-        "-map",
-        "0:v:0",
-        "-an",
-    ]
-
-    if codec == "h264":
-        command.extend(
-            [
-                "-c:v",
-                "copy",
-            ]
-        )
-    else:
-        command.extend(
-            [
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "23",
-                "-pix_fmt",
-                "yuv420p",
-            ]
-        )
-
-    command.extend(
-        [
-            "-movflags",
-            "+faststart",
-            "-f",
-            "mp4",
-            str(output),
-        ]
-    )
-
-    subprocess.run(
-        command,
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    if (
-        not output.is_file()
-        or output.stat().st_size == 0
-    ):
-        raise RuntimeError(
-            "FFmpeg did not create the animation file"
-        )
-
-    path.unlink()
-
-    return output
+    return DownloadResult(path=path, info=info)
 
 
 def _prepare_voice_sync(path):
-    output = path.with_name(
-        f"{path.stem}.voice.ogg"
-    )
-
-    ffmpeg_path = (
-        bToN.get_ffmpeg_path()
-        or "ffmpeg"
-    )
+    output = path.with_name(f"{path.stem}.voice.ogg")
+    ffmpeg_path = bToN.get_ffmpeg_path() or "ffmpeg"
 
     command = [
         ffmpeg_path,
@@ -323,23 +148,81 @@ def _prepare_voice_sync(path):
     path.unlink()
 
     final_path = path.with_suffix(".ogg")
-
-    output.rename(final_path)
+    output.replace(final_path)
 
     return final_path
+
+
+def _prepare_sticker_sync(path, sticker_options):
+    orientation, flip = sticker_options
+    output = path.with_name(f"{path.stem}.sticker.mp4")
+    filters = []
+
+    if orientation == bToN.STICKER_LANDSCAPE:
+        filters.append("transpose=clock:passthrough=landscape")
+    elif orientation == bToN.STICKER_PORTRAIT:
+        filters.append("transpose=clock:passthrough=portrait")
+
+    if flip == bToN.STICKER_FLIP_HORIZONTAL:
+        filters.append("hflip")
+    elif flip == bToN.STICKER_FLIP_VERTICAL:
+        filters.append("vflip")
+
+    command = [
+        bToN.get_ffmpeg_path() or "ffmpeg",
+        "-y",
+        "-i",
+        str(path),
+        "-map",
+        "0:v:0",
+        "-an",
+    ]
+
+    if filters:
+        command.extend(["-vf", ",".join(filters)])
+
+    command.extend(
+        [
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(output),
+        ]
+    )
+
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        if not output.is_file() or output.stat().st_size == 0:
+            raise RuntimeError("Sticker conversion produced no output")
+
+    except Exception:
+        output.unlink(missing_ok=True)
+        raise
+
+    path.unlink(missing_ok=True)
+    return output
 
 
 async def download_one(
     url,
     mode,
     directory,
+    sticker_options=(
+        bToN.STICKER_OPTION_NONE,
+        bToN.STICKER_OPTION_NONE,
+    ),
 ):
     directory = Path(directory)
-
-    directory.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    directory.mkdir(parents=True, exist_ok=True)
 
     result = await asyncio.to_thread(
         _download_sync,
@@ -360,29 +243,22 @@ async def download_one(
         )
 
     if mode == bToN.MODE_STICKER:
-        animation_path = await asyncio.to_thread(
-            _prepare_animation_sync,
+        sticker_path = await asyncio.to_thread(
+            _prepare_sticker_sync,
             result.path,
+            sticker_options,
         )
 
         return DownloadResult(
-            path=animation_path,
+            path=sticker_path,
             info=result.info,
         )
 
     return result
 
 
-async def cut_voice(
-    input_path,
-    output_path,
-    start,
-    end,
-):
-    ffmpeg_path = (
-        bToN.get_ffmpeg_path()
-        or "ffmpeg"
-    )
+async def cut_voice(input_path, output_path, start, end):
+    ffmpeg_path = bToN.get_ffmpeg_path() or "ffmpeg"
 
     process = await asyncio.create_subprocess_exec(
         ffmpeg_path,
@@ -403,6 +279,4 @@ async def cut_voice(
     await process.communicate()
 
     if process.returncode != 0:
-        raise RuntimeError(
-            "FFmpeg failed"
-        )
+        raise RuntimeError("FFmpeg failed")

@@ -2,28 +2,20 @@ import re
 from pathlib import Path
 
 from aiogram import Bot
-from aiogram.types import FSInputFile, Message
+from aiogram.types import FSInputFile
 
 import Reply
 import bToN
 from yTFMe import cut_voice
 
-
 EDIT_STATES = {}
 
 
 def _state_key(message):
-    return (
-        message.chat.id,
-        message.from_user.id,
-    )
+    return message.chat.id, message.from_user.id
 
 
-def _set_state(
-    message,
-    voice_message,
-    status_message,
-):
+def _set_state(message, voice_message, status_message):
     EDIT_STATES[_state_key(message)] = (
         voice_message,
         status_message,
@@ -31,54 +23,37 @@ def _set_state(
 
 
 def _get_state(message):
-    return EDIT_STATES.get(
-        _state_key(message)
-    )
+    return EDIT_STATES.get(_state_key(message))
 
 
 def _clear_state(message):
-    EDIT_STATES.pop(
-        _state_key(message),
-        None,
-    )
+    EDIT_STATES.pop(_state_key(message), None)
 
 
-async def _bot_is_admin(
-    bot,
-    message,
-):
+async def _bot_is_admin(bot: Bot, message):
     if message.chat.type == "private":
         return True
 
-    if message.chat.type not in {
-        "group",
-        "supergroup",
-    }:
+    if message.chat.type not in {"group", "supergroup"}:
         return False
 
-    member = await bot.get_chat_member(
-        message.chat.id,
-        bot.id,
-    )
+    try:
+        member = await bot.get_chat_member(
+            message.chat.id,
+            bot.id,
+        )
+    except Exception:
+        return False
 
-    return (
-        member.status.value
-        in bToN.ADMIN_STATUSES
-    )
+    return member.status.value in bToN.ADMIN_STATUSES
 
 
 def _parse_time(value):
-    if not re.fullmatch(
-        r"\d+(?:\.\d+)?",
-        value,
-    ):
+    if not re.fullmatch(r"\d+(?:\.\d+)?", value):
         return None
 
     if "." in value:
-        whole, fraction = value.split(
-            ".",
-            1,
-        )
+        whole, fraction = value.split(".", 1)
 
         if len(fraction) > 2:
             return None
@@ -88,9 +63,7 @@ def _parse_time(value):
         if fraction_value >= 60:
             return None
 
-        return int(whole) + (
-            fraction_value / 100
-        )
+        return int(whole) + fraction_value / 100
 
     return int(value)
 
@@ -117,10 +90,7 @@ def _parse_time_with_units(value):
     if len(parts) == 3:
         hours, minutes, seconds = parts
 
-        if (
-            not hours.isdigit()
-            or not minutes.isdigit()
-        ):
+        if not hours.isdigit() or not minutes.isdigit():
             return None
 
         seconds = _parse_time(seconds)
@@ -133,11 +103,7 @@ def _parse_time_with_units(value):
         if minutes >= 60 or seconds >= 60:
             return None
 
-        return (
-            int(hours) * 3600
-            + minutes * 60
-            + seconds
-        )
+        return int(hours) * 3600 + minutes * 60 + seconds
 
     return None
 
@@ -153,22 +119,12 @@ def _parse_hour_time(value):
 
     hours = int(match.group(1))
     minutes = int(match.group(2))
-    seconds = _parse_time(
-        match.group(3)
-    )
+    seconds = _parse_time(match.group(3))
 
-    if (
-        minutes >= 60
-        or seconds is None
-        or seconds >= 60
-    ):
+    if minutes >= 60 or seconds is None or seconds >= 60:
         return None
 
-    return (
-        hours * 3600
-        + minutes * 60
-        + seconds
-    )
+    return hours * 3600 + minutes * 60 + seconds
 
 
 def _parse_single_time(value):
@@ -182,38 +138,17 @@ def _parse_single_time(value):
 
 
 def _split_duration(text):
-    match = re.fullmatch(
+    patterns = (
         r"\s*(\S+)\s+/\s+(\S+)\s*",
-        text,
-    )
-
-    if match:
-        return (
-            match.group(1),
-            match.group(2),
-        )
-
-    match = re.fullmatch(
         r"\s*(\S+)\s+-\s+(\S+)\s*",
-        text,
-    )
-
-    if match:
-        return (
-            match.group(1),
-            match.group(2),
-        )
-
-    match = re.fullmatch(
         r"\s*(\S+)\s+(\S+)\s*",
-        text,
     )
 
-    if match:
-        return (
-            match.group(1),
-            match.group(2),
-        )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, text)
+
+        if match:
+            return match.group(1), match.group(2)
 
     return None
 
@@ -238,21 +173,11 @@ def _parse_duration(text):
     return start, end
 
 
-async def _download_voice(
-    bot,
-    voice_message,
-    directory,
-):
+async def _download_voice(bot, voice_message, directory):
     directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
 
-    directory.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    path = directory / (
-        f"{voice_message.message_id}.ogg"
-    )
+    path = directory / f"{voice_message.message_id}.ogg"
 
     await bot.download(
         voice_message.voice.file_id,
@@ -262,38 +187,23 @@ async def _download_voice(
     return path
 
 
-async def _delete_status(
-    status_message,
-):
+async def _delete_status(status_message):
     try:
         await status_message.delete()
     except Exception:
         pass
 
 
-async def start_edit(
-    bot,
-    message,
-):
-    if not await _bot_is_admin(
-        bot,
-        message,
-    ):
+async def start_edit(bot, message):
+    if not await _bot_is_admin(bot, message):
         return
 
-    voice_message = (
-        message.reply_to_message
-    )
+    voice_message = message.reply_to_message
 
-    if (
-        voice_message is None
-        or voice_message.voice is None
-    ):
+    if voice_message is None or voice_message.voice is None:
         return
 
-    status_message = await message.reply(
-        Reply.EDIT_WAITING
-    )
+    status_message = await message.reply(Reply.EDIT_WAITING)
 
     _set_state(
         message,
@@ -302,56 +212,41 @@ async def start_edit(
     )
 
 
-async def handle_duration(
-    bot,
-    message,
-):
+async def handle_duration(bot, message):
     state = _get_state(message)
 
     if state is None:
         return False
 
-    duration = _parse_duration(
-        message.text.strip()
-    )
+    duration = _parse_duration(message.text.strip())
 
     if duration is None:
-        await message.reply(
-            Reply.EDIT_INVALID_FORMAT
-        )
+        await message.reply(Reply.EDIT_INVALID_FORMAT)
         _clear_state(message)
         return True
 
     start, end = duration
 
     if start > end:
-        await message.reply(
-            Reply.EDIT_REJECTED
-        )
+        await message.reply(Reply.EDIT_REJECTED)
         _clear_state(message)
         return True
 
     voice_message, status_message = state
 
     if voice_message.voice is None:
-        await message.reply(
-            Reply.EDIT_ERROR
-        )
+        await message.reply(Reply.EDIT_ERROR)
         _clear_state(message)
         return True
 
-    voice_duration = (
-        voice_message.voice.duration
-    )
+    voice_duration = voice_message.voice.duration
 
     if (
         start >= voice_duration
         or end > voice_duration
         or start == end
     ):
-        await message.reply(
-            Reply.EDIT_ERROR
-        )
+        await message.reply(Reply.EDIT_ERROR)
         _clear_state(message)
         return True
 
@@ -359,10 +254,8 @@ async def handle_duration(
     output_path = None
 
     try:
-        directory = (
-            bToN.download_directory(
-                message.from_user.id
-            )
+        directory = bToN.download_directory(
+            message.from_user.id
         )
 
         input_path = await _download_voice(
@@ -382,31 +275,22 @@ async def handle_duration(
             end,
         )
 
-        await _delete_status(
-            status_message
-        )
+        await _delete_status(status_message)
 
         await message.reply_voice(
             FSInputFile(output_path)
         )
 
     except Exception:
-        await message.reply(
-            Reply.EDIT_ERROR
-        )
+        await message.reply(Reply.EDIT_ERROR)
 
     finally:
         _clear_state(message)
 
-        for path in (
-            input_path,
-            output_path,
-        ):
+        for path in (input_path, output_path):
             if path is not None:
                 try:
-                    path.unlink(
-                        missing_ok=True
-                    )
+                    path.unlink(missing_ok=True)
                 except Exception:
                     pass
 

@@ -1,19 +1,17 @@
 import aiosqlite
 
-
 DB = None
 
 
 async def configure(db_path):
     global DB
 
-    DB = await aiosqlite.connect(
-        db_path
-    )
+    if DB is not None:
+        await DB.close()
 
-    await DB.execute(
-        "PRAGMA journal_mode=WAL"
-    )
+    DB = await aiosqlite.connect(db_path)
+
+    await DB.execute("PRAGMA journal_mode=WAL")
 
     await DB.execute(
         """
@@ -47,26 +45,19 @@ async def get_file_id(key):
     ) as cursor:
         row = await cursor.fetchone()
 
-    if row is None:
-        return None
-
-    return row[0]
+    return row[0] if row else None
 
 
 async def save_file_id(key, file_id):
     await DB.execute(
         """
-        INSERT INTO file_cache (
-            cache_key,
-            file_id
-        )
+        INSERT INTO file_cache (cache_key, file_id)
         VALUES (?, ?)
         ON CONFLICT(cache_key)
         DO UPDATE SET file_id = excluded.file_id
         """,
         (key, file_id),
     )
-
     await DB.commit()
 
 
@@ -81,26 +72,19 @@ async def get_mode(key, default_mode):
     ) as cursor:
         row = await cursor.fetchone()
 
-    if row is None:
-        return default_mode
-
-    return row[0]
+    return row[0] if row else default_mode
 
 
 async def save_mode(key, mode):
     await DB.execute(
         """
-        INSERT INTO settings (
-            settings_key,
-            mode
-        )
+        INSERT INTO settings (settings_key, mode)
         VALUES (?, ?)
         ON CONFLICT(settings_key)
         DO UPDATE SET mode = excluded.mode
         """,
         (key, mode),
     )
-
     await DB.commit()
 
 
@@ -115,24 +99,17 @@ async def get_setting(key, default_value):
     ) as cursor:
         row = await cursor.fetchone()
 
-    if row is None:
-        return default_value
-
-    return row[0]
+    return row[0] if row else default_value
 
 
 async def save_setting(key, value):
     await DB.execute(
         """
-        INSERT INTO settings (
-            settings_key,
-            mode
-        )
+        INSERT INTO settings (settings_key, mode)
         VALUES (?, ?)
         ON CONFLICT(settings_key)
         DO UPDATE SET mode = excluded.mode
         """,
         (key, value),
     )
-
     await DB.commit()

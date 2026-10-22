@@ -6,9 +6,8 @@ from pathlib import Path
 import aiosqlite
 from aiogram.types import FSInputFile
 
-import bToN
 import Reply
-
+import bToN
 
 DB_PATH = None
 
@@ -53,12 +52,7 @@ async def configure(db_path):
 
 
 def _get_media(message):
-    for attribute in (
-        "video",
-        "audio",
-        "voice",
-        "document",
-    ):
+    for attribute in ("video", "audio", "voice", "document"):
         media = getattr(message, attribute, None)
 
         if media is not None:
@@ -71,10 +65,7 @@ async def _can_inspect(message, bot):
     if message.chat.type == "private":
         return True
 
-    if message.chat.type not in {
-        "group",
-        "supergroup",
-    }:
+    if message.chat.type not in {"group", "supergroup"}:
         return False
 
     try:
@@ -85,10 +76,7 @@ async def _can_inspect(message, bot):
     except Exception:
         return False
 
-    return (
-        member.status.value
-        in bToN.ADMIN_STATUSES
-    )
+    return member.status.value in bToN.ADMIN_STATUSES
 
 
 async def _run_process(*args):
@@ -99,7 +87,6 @@ async def _run_process(*args):
     )
 
     stdout, _ = await process.communicate()
-
     return process.returncode, stdout
 
 
@@ -123,20 +110,14 @@ async def _has_audio_stream(path):
     return return_code == 0 and bool(output.strip())
 
 
-async def _download_message_media(
-    message,
-    bot,
-    destination,
-):
+async def _download_message_media(message, bot, destination):
     media, _ = _get_media(message)
 
     if media is None:
         return False
 
     try:
-        telegram_file = await bot.get_file(
-            media.file_id
-        )
+        telegram_file = await bot.get_file(media.file_id)
 
         if not telegram_file.file_path:
             return False
@@ -149,10 +130,8 @@ async def _download_message_media(
         return False
 
     try:
-        return (
-            Path(destination).is_file()
-            and Path(destination).stat().st_size > 0
-        )
+        path = Path(destination)
+        return path.is_file() and path.stat().st_size > 0
     except OSError:
         return False
 
@@ -170,10 +149,7 @@ async def _save_source(message):
             )
             VALUES (?, ?)
             """,
-            (
-                message.chat.id,
-                message.message_id,
-            ),
+            (message.chat.id, message.message_id),
         )
         await db.commit()
 
@@ -223,10 +199,7 @@ async def _is_registered(message):
             FROM audio_sources
             WHERE chat_id = ? AND message_id = ?
             """,
-            (
-                source.chat.id,
-                source.message_id,
-            ),
+            (source.chat.id, source.message_id),
         ) as cursor:
             return await cursor.fetchone() is not None
 
@@ -254,9 +227,7 @@ async def _extract_audio(input_path, output_path):
 
 async def _show_failure(status_message):
     try:
-        await status_message.edit_text(
-            Reply.AUDIO_START_FAILED
-        )
+        await status_message.edit_text(Reply.AUDIO_START_FAILED)
     except Exception:
         pass
 
@@ -275,9 +246,7 @@ async def handle_start(message, bot):
     if media is None:
         return False
 
-    status_message = await message.reply(
-        Reply.AUDIO_START_TEXT
-    )
+    status_message = await message.reply(Reply.AUDIO_START_TEXT)
 
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
