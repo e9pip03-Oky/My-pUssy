@@ -1,7 +1,5 @@
 aiogram
 aiohttp
-aiofiles
-aiodns
 aiosqlite
 yt-dlp
 googletrans
