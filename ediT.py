@@ -71,7 +71,8 @@ async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
         await message.reply(EDIT_SEPARATOR_MSG)
         return True
 
-    segments = re.split(r"\s+[/\-]\s+", text_val)
+    segments = re.split(r"\s+[/\-\s]\s+", text_val)
+    
     if len(segments) == 1:
         start_val = "0"
         end_val = segments[0].strip()

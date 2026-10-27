@@ -5,6 +5,7 @@ import re
 from aiogram import Bot, F
 from aiogram.types import CallbackQuery, FSInputFile, Message
 from googletrans import Translator
+import yt_dlp
 
 from Reply import (
     ADMIN_COMMAND, BOT_TRIGGER, MODE_MSG, MODE_DENIED, RANDOM_REPLIES,
@@ -81,22 +82,36 @@ def make_handler(
                 workdir = user_dir(chat_id, user_id, bot.id, is_private)
                 base = os.path.join(workdir, str(message.message_id))
 
+                cache_key = f"link_{mode}:{url}"
+                
+                cached = await cache.get(cache_key)
+                if cached:
+                    try:
+                        if mode == "voice":
+                            await message.reply_voice(cached)
+                        else:
+                            await message.reply_document(cached)
+                        failed = False
+                        return
+                    except Exception:
+                        await cache.delete(cache_key)
+
                 if mode == "voice":
                     info, in_path = await download(url, base)
                     out_path = await to_voice(in_path, workdir, make_name(info))
                     if out_path and os.path.exists(out_path):
                         sent = await message.reply_voice(FSInputFile(out_path))
                         failed = False
-                        if sent.voice and info.get("id"):
-                            await cache.set(f"link_voice:{info['id']}", sent.voice.file_id)
+                        if sent.voice:
+                            await cache.set(cache_key, sent.voice.file_id)
                 else:
                     info, in_path = await download_merge(url, base)
                     if in_path and os.path.exists(in_path):
                         doc_name = os.path.basename(in_path)
                         sent = await message.reply_document(FSInputFile(in_path, filename=doc_name))
                         failed = False
-                        if info.get("id"):
-                            await cache.set(f"link_doc:{info['id']}", sent.document.file_id)
+                        if sent.document:
+                            await cache.set(cache_key, sent.document.file_id)
             except Exception as exc:
                 log.warning("link failed %s: %s", message.message_id, exc)
             finally:
@@ -127,8 +142,7 @@ def make_handler(
             query = extract_query(text)
             if query and URL_RE.match(query):
                 url = URL_RE.search(query).group(0)
-                current_mode = await modes.get(mode_key)
-                await _process_url(message, bot, url, current_mode)
+                await _process_url(message, bot, url, "voice")
                 return
 
         url_match = URL_RE.search(text)

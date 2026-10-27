@@ -75,7 +75,7 @@ def _download(url: str, base: str) -> tuple[dict, str]:
         "outtmpl": base + ".%(ext)s",
         "quiet": True,
         "no_warnings": True,
-        "noplaylist": True,
+        "noplaylist": False,
         "max_filesize": MAX_FILESIZE,
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -89,21 +89,7 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
         "outtmpl": base + ".%(ext)s",
         "quiet": True,
         "no_warnings": True,
-        "noplaylist": True,
-        "max_filesize": MAX_FILESIZE,
-    }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        return info, ydl.prepare_filename(info)
-
-
-def _download_yt(url: str, base: str) -> tuple[dict, str]:
-    opts = {
-        "format": "ba/b",
-        "outtmpl": base + ".%(ext)s",
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
+        "noplaylist": False,
         "max_filesize": MAX_FILESIZE,
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -121,10 +107,6 @@ async def download(url: str, base: str) -> tuple[dict, str]:
 
 async def download_merge(url: str, base: str) -> tuple[dict, str]:
     return await asyncio.to_thread(_download_merge, url, base)
-
-
-async def download_yt(url: str, base: str) -> tuple[dict, str]:
-    return await asyncio.to_thread(_download_yt, url, base)
 
 
 async def to_voice(in_path: str, workdir: str, name: str) -> str | None:
