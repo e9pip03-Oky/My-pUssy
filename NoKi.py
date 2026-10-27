@@ -28,13 +28,17 @@ translator = Translator()
 
 def _fix_lang_text(text: str) -> str:
     res = []
+    prev_char = ""
     for char in text:
-        if char.upper() in UPPER_TARGETS:
+        if char == "s" and prev_char == "s":
+            res.append("S")
+        elif char.upper() in UPPER_TARGETS:
             res.append(char.upper())
         elif "a" <= char.lower() <= "z" or "а" <= char.lower() <= "я":
             res.append(char.lower())
         else:
             res.append(char)
+        prev_char = char
     return "".join(res)
 
 
@@ -135,7 +139,7 @@ def make_handler(
                 return
 
         if await lang.get(mode_key):
-            if any(c.upper() in UPPER_TARGETS for c in text):
+            if any(c.upper() in UPPER_TARGETS for c in text) or "ss" in text.lower():
                 fixed_text = _fix_lang_text(text)
                 if fixed_text != text:
                     await message.reply(fixed_text)

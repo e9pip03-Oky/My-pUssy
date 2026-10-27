@@ -12,7 +12,7 @@ LANG_RUS = "rUS"
 LANG_ENABLE = "تفعيل"
 LANG_DISABLE = "تعطيل"
 LANG_BACK = "عودة"
-LANG_MSG = "اختر لغة الترجمة أو فعل/عطل الميزة"
+LANG_MSG = "تستطيع تغيير لغتي من هنا مولاي\nاضغط زرا من الازرار"
 
 EDIT_KEYWORDS = ("تعديل", "قص")
 EDIT_SEPARATOR_MSG = "الفواصل الزمنيه مابين التوقيتان\nيقبل / و - ويلزم ان يكون ماقبلهم وبعدهم disTANce"
