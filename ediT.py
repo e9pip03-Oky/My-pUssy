@@ -67,7 +67,7 @@ async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
     prompt_msg = state["prompt_msg"]
     text_val = message.text.strip()
 
-    # استبدال أي فاصل (مسافة، /، -) بمسافة واحدة
+    # استبدال أي فاصل (/, -, أو مسافة) بمسافة واحدة
     clean_text = re.sub(r"[/\-]", " ", text_val)
     segments = [s for s in clean_text.split() if s]
 
