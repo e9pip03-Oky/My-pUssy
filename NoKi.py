@@ -107,7 +107,8 @@ def make_handler(
                 else:
                     info, in_path = await download_merge(url, base)
                     if in_path and os.path.exists(in_path):
-                        doc_name = os.path.basename(in_path)
+                        ext = os.path.splitext(in_path)[1]
+                        doc_name = f"{make_name(info)}{ext}"
                         sent = await message.reply_document(FSInputFile(in_path, filename=doc_name))
                         failed = False
                         if sent.document:
