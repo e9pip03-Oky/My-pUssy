@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import logging
 import os
 
@@ -11,10 +10,6 @@ MAX_CONCURRENT = 3
 MAX_WAITING = 3
 BASE_DIR = "downloads"
 CACHE_PREFIX = "voice:"
-
-
-def _hash_key(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
 
 
 class ChatQueue:
@@ -80,17 +75,6 @@ class RedisBase:
             await self._client.delete(key)
         else:
             self._memory.pop(key, None)
-
-
-class VoiceCache(RedisBase):
-    async def get(self, video_id: str) -> str | None:
-        return await self._get(CACHE_PREFIX + _hash_key(video_id))
-
-    async def set(self, video_id: str, file_id: str) -> None:
-        await self._set(CACHE_PREFIX + _hash_key(video_id), file_id)
-
-    async def delete(self, video_id: str) -> None:
-        await self._del(CACHE_PREFIX + _hash_key(video_id))
 
 
 class ModeStorage(RedisBase):
@@ -187,10 +171,6 @@ def _redis_client(url: str | None) -> aioredis.Redis | None:
 
 def build_storage(url: str | None) -> RedisStorage | None:
     return RedisStorage.from_url(url) if url else None
-
-
-def build_cache(url: str | None) -> VoiceCache:
-    return VoiceCache(_redis_client(url))
 
 
 def build_counter(url: str | None) -> ReplyCounter:

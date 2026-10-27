@@ -9,7 +9,6 @@ import NoKi
 from bToN import build_buttons, build_markup, parse_ids
 from cAsh import (
     build_adt,
-    build_cache,
     build_counter,
     build_lang,
     build_lang_code,
@@ -42,7 +41,6 @@ async def main() -> None:
     dispatcher = Dispatcher(storage=build_storage(REDIS_URL))
     NoKi.register(
         dispatcher,
-        build_cache(REDIS_URL),
         build_counter(REDIS_URL),
         build_modes(REDIS_URL),
         build_adt(REDIS_URL),

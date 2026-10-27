@@ -12,7 +12,7 @@ from Reply import (
 )
 from bToN import build_mode_markup, build_specific_markup, build_lang_markup
 from cAsh import (
-    AdtStorage, LangStorage, LangCodeStorage, ModeStorage, ReplyCounter, VoiceCache,
+    AdtStorage, LangStorage, LangCodeStorage, ModeStorage, ReplyCounter,
     ButtonCycleStorage, cleanup, queue, user_dir,
 )
 from ediT import set_edit_state, handle_pending_edit
@@ -53,7 +53,7 @@ async def _is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> b
 
 
 def make_handler(
-    cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage,
+    counter: ReplyCounter, modes: ModeStorage,
     adt: AdtStorage, lang: LangStorage, lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
 ):
@@ -91,24 +91,12 @@ def make_handler(
                         if not entry_url:
                             continue
                         
-                        cache_key = f"link_voice:{entry_url}"
-                        cached = await cache.get(cache_key)
-                        if cached:
-                            try:
-                                await message.reply_voice(cached)
-                                failed = False
-                                continue
-                            except Exception:
-                                await cache.delete(cache_key)
-
                         base = os.path.join(workdir, f"{base_name}_{idx}")
                         info, in_path = await download(entry_url, base)
                         out_path = await to_voice(in_path, workdir, make_name(info))
                         if out_path and os.path.exists(out_path):
-                            sent = await message.reply_voice(FSInputFile(out_path))
+                            await message.reply_voice(FSInputFile(out_path))
                             failed = False
-                            if sent.voice:
-                                await cache.set(cache_key, sent.voice.file_id)
                             cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
                             
                 else:
@@ -117,22 +105,14 @@ def make_handler(
                         if not entry_url:
                             continue
                             
-                        cache_key = f"link_doc:{entry_url}"
-                        cached = await cache.get(cache_key)
-                        
-                        if cached:
+                        base = os.path.join(workdir, f"{base_name}_{idx}")
+                        info, in_path = await download_merge(entry_url, base)
+                        if in_path and os.path.exists(in_path):
+                            ext = os.path.splitext(in_path)[1]
+                            doc_name = f"{make_name(info)}{ext}"
+                            await message.reply_document(FSInputFile(in_path, filename=doc_name))
                             failed = False
-                        else:
-                            base = os.path.join(workdir, f"{base_name}_{idx}")
-                            info, in_path = await download_merge(entry_url, base)
-                            if in_path and os.path.exists(in_path):
-                                ext = os.path.splitext(in_path)[1]
-                                doc_name = f"{make_name(info)}{ext}"
-                                sent = await message.reply_document(FSInputFile(in_path, filename=doc_name))
-                                failed = False
-                                if sent.document:
-                                    await cache.set(cache_key, sent.document.file_id)
-                                cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+                            cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
 
             except Exception as exc:
                 log.warning("link failed %s: %s", message.message_id, exc)
@@ -157,7 +137,7 @@ def make_handler(
         thread_id = message.message_thread_id
         mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
 
-        if await handle_pending_edit(message, bot, cache):
+        if await handle_pending_edit(message, bot):
             return
 
         url_match = URL_RE.search(text)
@@ -288,10 +268,10 @@ def make_handler(
 
 
 def register(
-    dispatcher, cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage,
+    dispatcher, counter: ReplyCounter, modes: ModeStorage,
     adt: AdtStorage, lang: LangStorage, lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
 ):
-    handler, callback = make_handler(cache, counter, modes, adt, lang, lang_code, btn_cycle)
+    handler, callback = make_handler(counter, modes, adt, lang, lang_code, btn_cycle)
     dispatcher.message.register(handler, F.text)
     dispatcher.callback_query.register(callback)

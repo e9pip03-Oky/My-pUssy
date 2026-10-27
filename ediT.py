@@ -57,7 +57,7 @@ async def set_edit_state(message: Message, bot: Bot):
     }
 
 
-async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
+async def handle_pending_edit(message: Message, bot: Bot) -> bool:
     user_id = message.from_user.id
     if user_id not in EDIT_STATE:
         return False
@@ -109,9 +109,7 @@ async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
         await bot.download_file(voice_file.file_path, in_path)
         success = await trim_voice(in_path, out_path, start_val, end_val)
         if success:
-            sent = await message.reply_voice(FSInputFile(out_path))
-            if sent.voice:
-                await cache.set(f"trim:{voice_msg.message_id}", sent.voice.file_id)
+            await message.reply_voice(FSInputFile(out_path))
             try:
                 await prompt_msg.delete()
             except Exception:
