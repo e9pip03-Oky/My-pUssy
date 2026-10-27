@@ -4,7 +4,7 @@ import os
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from Reply import (
-    BUTTON_NAMES, MODE_VOICE, MODE_DEFAULT, MODE_LANG,
+    BUTTON_NAMES, MODE_VOICE, MODE_DEFAULT, MODE_LANG, MODE_NOTE,
     LANG_ENG, LANG_RUS, LANG_ENABLE, LANG_DISABLE, LANG_BACK
 )
 
@@ -53,18 +53,22 @@ def build_mode_markup(
 ) -> InlineKeyboardMarkup:
     v_style = "primary" if current_mode == "voice" else "danger"
     d_style = "primary" if current_mode == "default" else "danger"
+    n_style = "primary" if current_mode == "note" else "danger"
     l_style = "success" if lang_active else "danger"
 
     b1 = InlineKeyboardButton(
-        text=MODE_VOICE, callback_data=f"toggle:{owner_id}:{mode_key}", style=v_style
+        text=MODE_VOICE, callback_data=f"toggle:voice:{owner_id}:{mode_key}", style=v_style
     )
     b2 = InlineKeyboardButton(
-        text=MODE_DEFAULT, callback_data=f"toggle:{owner_id}:{mode_key}", style=d_style
+        text=MODE_NOTE, callback_data=f"toggle:note:{owner_id}:{mode_key}", style=n_style
     )
     b3 = InlineKeyboardButton(
+        text=MODE_DEFAULT, callback_data=f"toggle:default:{owner_id}:{mode_key}", style=d_style
+    )
+    b4 = InlineKeyboardButton(
         text=MODE_LANG, callback_data=f"lang:{owner_id}:{mode_key}", style=l_style
     )
-    return InlineKeyboardMarkup(inline_keyboard=[[b1, b2], [b3]])
+    return InlineKeyboardMarkup(inline_keyboard=[[b1, b2, b3], [b4]])
 
 
 def build_lang_markup(lang_active: bool, current_code: str, owner_id: int, mode_key: str) -> InlineKeyboardMarkup:

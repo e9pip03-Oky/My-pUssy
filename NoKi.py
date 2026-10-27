@@ -16,7 +16,7 @@ from cAsh import (
     ButtonCycleStorage, cleanup, queue, user_dir,
 )
 from ediT import set_edit_state, handle_pending_edit
-from yTFMe import download, download_merge, make_name, to_voice, get_entries
+from yTFMe import download, download_merge, make_name, to_voice, to_note, get_entries
 
 log = logging.getLogger("voicebot")
 URL_RE = re.compile(r"https?://\S+")
@@ -96,6 +96,20 @@ def make_handler(
                         out_path = await to_voice(in_path, workdir, make_name(info))
                         if out_path and os.path.exists(out_path):
                             await message.reply_voice(FSInputFile(out_path))
+                            failed = False
+                            cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+                            
+                elif mode == "note":
+                    for idx, entry in enumerate(entries):
+                        entry_url = entry.get("webpage_url") or entry.get("url")
+                        if not entry_url:
+                            continue
+                        
+                        base = os.path.join(workdir, f"{base_name}_{idx}")
+                        info, in_path = await download_merge(entry_url, base)
+                        out_path = os.path.join(workdir, f"{base_name}_{idx}_note.mp4")
+                        if await to_note(in_path, out_path):
+                            await message.reply_video_note(FSInputFile(out_path))
                             failed = False
                             cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
                             
@@ -213,16 +227,14 @@ def make_handler(
         chat_id = callback.message.chat.id
 
         if action == "toggle":
-            owner_id, mode_key = int(parts[1]), parts[2]
+            mode_chosen = parts[1]
+            owner_id, mode_key = int(parts[2]), parts[3]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            current_mode = await modes.get(mode_key)
-            new_mode = "default" if current_mode == "voice" else "voice"
-            await modes.set(mode_key, new_mode)
-            new_mode = await modes.get(mode_key)
+            await modes.set(mode_key, mode_chosen)
             new_lang = await lang.get(mode_key)
-            await callback.message.edit_reply_markup(reply_markup=build_mode_markup(new_mode, new_lang, owner_id, mode_key))
+            await callback.message.edit_reply_markup(reply_markup=build_mode_markup(mode_chosen, new_lang, owner_id, mode_key))
 
         elif action == "lang":
             owner_id, mode_key = int(parts[1]), parts[2]
@@ -258,9 +270,9 @@ def make_handler(
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            new_mode = await modes.get(mode_key)
+            current_mode = await modes.get(mode_key)
             new_lang = await lang.get(mode_key)
-            await callback.message.edit_text(MODE_MSG, reply_markup=build_mode_markup(new_mode, new_lang, owner_id, mode_key))
+            await callback.message.edit_text(MODE_MSG, reply_markup=build_mode_markup(current_mode, new_lang, owner_id, mode_key))
 
         await callback.answer()
 

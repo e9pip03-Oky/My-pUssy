@@ -101,6 +101,20 @@ async def to_voice(in_path: str, workdir: str, name: str) -> str | None:
     return out_path if proc.returncode == 0 else None
 
 
+async def to_note(in_path: str, out_path: str) -> bool:
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y", "-i", in_path,
+        "-t", "60",
+        "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=640:640",
+        "-c:v", "libx264", "-c:a", "aac",
+        out_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    return proc.returncode == 0
+
+
 async def trim_voice(in_path: str, out_path: str, start: str, end: str | None = None) -> bool:
     cmd = ["ffmpeg", "-y", "-ss", start]
     if end:
