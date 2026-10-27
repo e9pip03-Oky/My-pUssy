@@ -11,11 +11,8 @@ UPPER_LETTERS = set("ATFGUJNML")
 def _fix_english_case(text: str) -> str:
     res = []
     for char in text:
-        if 'a' <= char.lower() <= 'z':
-            if char.upper() in UPPER_LETTERS:
-                res.append(char.upper())
-            else:
-                res.append(char.lower())
+        if "a" <= char.lower() <= "z":
+            res.append(char.upper() if char.upper() in UPPER_LETTERS else char.lower())
         else:
             res.append(char)
     return "".join(res)
@@ -24,11 +21,13 @@ def _fix_english_case(text: str) -> str:
 def make_name(info: dict) -> str:
     uploader = info.get("uploader") or info.get("channel") or ""
     pub = re.sub(r"[^\w]", "", re.sub(r"\s+", "_", uploader.strip()))
-    title = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", (info.get("title") or "").strip()).replace("_", "")).strip()
-    
-    pub = _fix_english_case(pub)
-    title = _fix_english_case(title)
-    
+    title = re.sub(
+        r"\s+",
+        " ",
+        re.sub(r"[^\w\s]", "", (info.get("title") or "").strip()).replace("_", ""),
+    ).strip()
+
+    pub, title = _fix_english_case(pub), _fix_english_case(title)
     name = f"{pub} - {title}" if pub and title else (title or pub or "audio")
     return name[:120].rstrip() or "audio"
 
@@ -42,15 +41,32 @@ def _match_score(title: str, query: str) -> int:
 
 
 def _pick_best(entries: list[dict], target: str) -> dict:
-    return max(entries, key=lambda e: (_match_score(e.get("title") or "", target), e.get("view_count") or 0))
+    return max(
+        entries,
+        key=lambda e: (
+            _match_score(e.get("title") or "", target),
+            e.get("view_count") or 0,
+        ),
+    )
 
 
 def _get_playlist_entries(target: str) -> list[dict]:
-    opts = {"quiet": True, "no_warnings": True, "noplaylist": False, "default_search": "ytsearch3", "extract_flat": True, "max_filesize": MAX_FILESIZE}
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": False,
+        "default_search": "ytsearch3",
+        "extract_flat": True,
+        "max_filesize": MAX_FILESIZE,
+    }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(target, download=False)
     entries = [e for e in info.get("entries") or [] if e]
-    return entries if entries else ([_pick_best(info["entries"], target)] if info.get("entries") else [info])
+    return (
+        entries
+        if entries
+        else ([_pick_best(info["entries"], target)] if info.get("entries") else [info])
+    )
 
 
 def _download(url: str, base: str) -> tuple[dict, str]:
@@ -61,7 +77,6 @@ def _download(url: str, base: str) -> tuple[dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
-        "default_search": "ytsearch3",
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -76,7 +91,6 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
-        "default_search": "ytsearch3",
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -100,8 +114,18 @@ async def download_merge(entry: dict, base: str) -> tuple[dict, str]:
 async def to_voice(in_path: str, workdir: str, name: str) -> str | None:
     out_path = os.path.join(workdir, f"{name}.ogg")
     proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-y", "-i", in_path, "-vn", "-c:a", "libopus", "-f", "ogg", out_path,
-        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        "ffmpeg",
+        "-y",
+        "-i",
+        in_path,
+        "-vn",
+        "-c:a",
+        "libopus",
+        "-f",
+        "ogg",
+        out_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
     await proc.wait()
     return out_path if proc.returncode == 0 else None

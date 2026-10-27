@@ -120,27 +120,21 @@ class ReplyCounter(RedisBase):
 
 class AdtStorage(RedisBase):
     async def get_messages(self, mode_key: str) -> list[int]:
-        key = CACHE_PREFIX + f"adt:{mode_key}"
-        val = await self._get(key)
-        if val:
-            return [int(x) for x in val.split(",") if x]
-        return []
+        val = await self._get(CACHE_PREFIX + f"adt:{mode_key}")
+        return [int(x) for x in val.split(",") if x] if val else []
 
     async def save_messages(self, mode_key: str, msg_ids: list[int]) -> None:
-        key = CACHE_PREFIX + f"adt:{mode_key}"
-        await self._set(key, ",".join(map(str, msg_ids)))
+        await self._set(CACHE_PREFIX + f"adt:{mode_key}", ",".join(map(str, msg_ids)))
 
 
 class ButtonCycleStorage(RedisBase):
     async def get_index(self, chat_id: int) -> int:
-        key = CACHE_PREFIX + f"btn_cycle:{chat_id}"
-        val = await self._get(key)
+        val = await self._get(CACHE_PREFIX + f"btn_cycle:{chat_id}")
         return int(val) if val else 0
 
     async def advance(self, chat_id: int, total: int) -> None:
-        key = CACHE_PREFIX + f"btn_cycle:{chat_id}"
         idx = await self.get_index(chat_id)
-        await self._set(key, str((idx + 1) % total))
+        await self._set(CACHE_PREFIX + f"btn_cycle:{chat_id}", str((idx + 1) % total))
 
 
 def _root(chat_id: int, bot_id: int, is_private: bool) -> str:
@@ -153,14 +147,20 @@ def user_dir(chat_id: int, user_id: int, bot_id: int, is_private: bool) -> str:
     return path
 
 
-def cleanup(chat_id: int, user_id: int, bot_id: int, is_private: bool, message_id: int) -> None:
+def cleanup(
+    chat_id: int, user_id: int, bot_id: int, is_private: bool, message_id: int
+) -> None:
     root = _root(chat_id, bot_id, is_private)
     user_path = os.path.join(BASE_DIR, root, str(user_id))
 
     if os.path.isdir(user_path):
         prefix = str(message_id)
         for fname in os.listdir(user_path):
-            if fname == prefix or fname.startswith(prefix + ".") or fname.startswith(prefix + "_"):
+            if (
+                fname == prefix
+                or fname.startswith(prefix + ".")
+                or fname.startswith(prefix + "_")
+            ):
                 try:
                     os.remove(os.path.join(user_path, fname))
                 except OSError:

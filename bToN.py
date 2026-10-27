@@ -1,4 +1,5 @@
 import logging
+import os
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -14,47 +15,50 @@ def parse_ids(raw: str) -> list[int]:
 
 def build_buttons(ids: list[int]) -> list[tuple[int, str, str]]:
     result = []
-    seen_ids = set()
-    for index, user_id in enumerate([uid for uid in ids if uid not in seen_ids and not seen_ids.add(uid)]):
-        name = BUTTON_NAMES[index % len(BUTTON_NAMES)]
-        style = BUTTON_STYLES[index % len(BUTTON_STYLES)]
-        result.append((user_id, name, style))
+    seen = set()
+    for i, uid in enumerate([u for u in ids if u not in seen and not seen.add(u)]):
+        result.append(
+            (
+                uid,
+                BUTTON_NAMES[i % len(BUTTON_NAMES)],
+                BUTTON_STYLES[i % len(BUTTON_STYLES)],
+            )
+        )
     return result
 
 
 def build_markup(name: str, user_id: int, style: str) -> InlineKeyboardMarkup:
-    button = InlineKeyboardButton(text=name, url=f"tg://user?id={user_id}", style=style)
-    return InlineKeyboardMarkup(inline_keyboard=[[button]])
+    btn = InlineKeyboardButton(text=name, url=f"tg://user?id={user_id}", style=style)
+    return InlineKeyboardMarkup(inline_keyboard=[[btn]])
 
 
 def build_specific_markup(index: int) -> InlineKeyboardMarkup | None:
-    from Reply import BUTTON_NAMES
-    from cAsh import ButtonCycleStorage
-    import os
-    
-    raw_ids = os.environ.get("boT_NoTice", "")
-    ids = parse_ids(raw_ids)
+    ids = parse_ids(os.environ.get("boT_NoTice", ""))
     if not ids:
         return None
-        
     unique_ids = list(dict.fromkeys(ids))
     if not unique_ids:
         return None
-        
-    user_id = unique_ids[index % len(unique_ids)]
+    uid = unique_ids[index % len(unique_ids)]
     name = BUTTON_NAMES[index % len(BUTTON_NAMES)]
     style = BUTTON_STYLES[index % len(BUTTON_STYLES)]
-    
-    return build_markup(name, user_id, style)
+    return build_markup(name, uid, style)
 
 
-def build_mode_markup(current_mode: str, lang_active: bool, owner_id: int, mode_key: str) -> InlineKeyboardMarkup:
-    voice_style = "primary" if current_mode == "voice" else "danger"
-    default_style = "primary" if current_mode == "default" else "danger"
-    lang_style = "success" if lang_active else "danger"
-    
-    btn_voice = InlineKeyboardButton(text=MODE_VOICE, callback_data=f"toggle:{owner_id}:{mode_key}", style=voice_style)
-    btn_default = InlineKeyboardButton(text=MODE_DEFAULT, callback_data=f"toggle:{owner_id}:{mode_key}", style=default_style)
-    btn_lang = InlineKeyboardButton(text=MODE_LANG, callback_data=f"lang:{owner_id}:{mode_key}", style=lang_style)
-    
-    return InlineKeyboardMarkup(inline_keyboard=[[btn_voice, btn_default], [btn_lang]])
+def build_mode_markup(
+    current_mode: str, lang_active: bool, owner_id: int, mode_key: str
+) -> InlineKeyboardMarkup:
+    v_style = "primary" if current_mode == "voice" else "danger"
+    d_style = "primary" if current_mode == "default" else "danger"
+    l_style = "success" if lang_active else "danger"
+
+    b1 = InlineKeyboardButton(
+        text=MODE_VOICE, callback_data=f"toggle:{owner_id}:{mode_key}", style=v_style
+    )
+    b2 = InlineKeyboardButton(
+        text=MODE_DEFAULT, callback_data=f"toggle:{owner_id}:{mode_key}", style=d_style
+    )
+    b3 = InlineKeyboardButton(
+        text=MODE_LANG, callback_data=f"lang:{owner_id}:{mode_key}", style=l_style
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[[b1, b2], [b3]])

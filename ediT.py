@@ -5,7 +5,9 @@ import re
 from aiogram import Bot
 from aiogram.types import FSInputFile, Message
 
-from Reply import EDIT_KEYWORDS, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG, EDIT_FAIL_MSG
+from Reply import (
+    EDIT_KEYWORDS, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG, EDIT_FAIL_MSG,
+)
 from cAsh import cleanup, user_dir
 from yTFMe import trim_voice
 
@@ -25,20 +27,19 @@ def _parse_time(t: str) -> float | None:
     parts = main_part.split(":")
     if len(parts) > 3:
         return None
-        
     try:
         nums = [int(p) for p in parts]
     except ValueError:
         return None
-    
+
     if len(nums) == 3:
         if nums[0] >= 24 or nums[1] >= 60 or nums[2] >= 60:
             return None
-        return nums[0]*3600 + nums[1]*60 + nums[2] + micro_val
+        return nums[0] * 3600 + nums[1] * 60 + nums[2] + micro_val
     elif len(nums) == 2:
         if nums[0] >= 60 or nums[1] >= 60:
             return None
-        return nums[0]*60 + nums[1] + micro_val
+        return nums[0] * 60 + nums[1] + micro_val
     elif len(nums) == 1:
         if nums[0] >= 60:
             return None
@@ -49,47 +50,44 @@ def _parse_time(t: str) -> float | None:
 async def handle_edit(message: Message, bot: Bot, cache):
     if not message.reply_to_message or not message.reply_to_message.voice:
         return
-        
+
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.reply(EDIT_FAIL_MSG)
+        await message.reply(EDIT_SEPARATOR_MSG)
         return
-    
+
     text_val = parts[1].strip()
-    
     if re.search(r"(?<!\s)[/-](?!\s)|(?<!\s)[/-]|[/-](?!\s)", text_val):
         await message.reply(EDIT_SEPARATOR_MSG)
         return
-        
+
     segments = re.split(r"\s+[/\-]\s+", text_val)
-    
     if len(segments) == 1:
-        start_val = segments[0].strip()
-        end_val = None
+        start_val, end_val = segments[0].strip(), None
         if _parse_time(start_val) is None:
-            await message.reply(EDIT_FAIL_MSG)
+            await message.reply(EDIT_SEPARATOR_MSG)
             return
     elif len(segments) == 2:
         start_val, end_val = segments[0].strip(), segments[1].strip()
         s_val, e_val = _parse_time(start_val), _parse_time(end_val)
         if s_val is None or e_val is None:
-            await message.reply(EDIT_FAIL_MSG)
+            await message.reply(EDIT_SEPARATOR_MSG)
             return
         if s_val >= e_val:
             await message.reply(EDIT_START_BIGGER_MSG)
             return
     else:
-        await message.reply(EDIT_FAIL_MSG)
+        await message.reply(EDIT_SEPARATOR_MSG)
         return
 
     chat_id = message.chat.id
     user_id = message.from_user.id if message.from_user else 0
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
-    
+
     in_path = os.path.join(workdir, f"{message.reply_to_message.message_id}_in.ogg")
     out_path = os.path.join(workdir, f"{message.message_id}_out.ogg")
-    
+
     try:
         voice_file = await bot.get_file(message.reply_to_message.voice.file_id)
         await bot.download_file(voice_file.file_path, in_path)
