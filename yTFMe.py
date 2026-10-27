@@ -61,6 +61,7 @@ def _download(url: str, base: str) -> tuple[dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
+        "default_search": "ytsearch3",
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -75,6 +76,7 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
+        "default_search": "ytsearch3",
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)

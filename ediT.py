@@ -52,13 +52,13 @@ async def handle_edit(message: Message, bot: Bot, cache):
         
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.reply(EDIT_FAIL_MSG)
+        await message.answer(EDIT_FAIL_MSG) # رد عادي
         return
     
     text_val = parts[1].strip()
     
     if re.search(r"(?<!\s)[/-](?!\s)|(?<!\s)[/-]|[/-](?!\s)", text_val):
-        await message.reply(EDIT_SEPARATOR_MSG)
+        await message.answer(EDIT_SEPARATOR_MSG) # رد عادي
         return
         
     segments = re.split(r"\s+[/\-]\s+", text_val)
@@ -67,19 +67,19 @@ async def handle_edit(message: Message, bot: Bot, cache):
         start_val = segments[0].strip()
         end_val = None
         if _parse_time(start_val) is None:
-            await message.reply(EDIT_FAIL_MSG)
+            await message.answer(EDIT_FAIL_MSG)
             return
     elif len(segments) == 2:
         start_val, end_val = segments[0].strip(), segments[1].strip()
         s_val, e_val = _parse_time(start_val), _parse_time(end_val)
         if s_val is None or e_val is None:
-            await message.reply(EDIT_FAIL_MSG)
+            await message.answer(EDIT_FAIL_MSG)
             return
         if s_val >= e_val:
-            await message.reply(EDIT_START_BIGGER_MSG)
+            await message.answer(EDIT_START_BIGGER_MSG)
             return
     else:
-        await message.reply(EDIT_FAIL_MSG)
+        await message.answer(EDIT_FAIL_MSG)
         return
 
     chat_id = message.chat.id
@@ -99,8 +99,8 @@ async def handle_edit(message: Message, bot: Bot, cache):
             if sent.voice:
                 await cache.set(f"trim:{message.reply_to_message.message_id}", sent.voice.file_id)
         else:
-            await message.reply(EDIT_FAIL_MSG)
+            await message.answer(EDIT_FAIL_MSG)
     except Exception:
-        await message.reply(EDIT_FAIL_MSG)
+        await message.answer(EDIT_FAIL_MSG)
     finally:
         cleanup(chat_id, user_id, bot.id, is_private, message.message_id)

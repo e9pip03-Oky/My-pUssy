@@ -8,7 +8,8 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from Reply import (
     ADMIN_COMMAND, BOT_TRIGGER, FAIL_TEXT, KEYWORD, LOADING_TEXT,
-    MODE_MSG, MODE_DENIED, NO_QUERY_TEXT, RANDOM_REPLIES, WAIT_TEXT, EDIT_KEYWORDS
+    MODE_MSG, MODE_DENIED, NO_QUERY_TEXT, RANDOM_REPLIES, WAIT_TEXT, EDIT_KEYWORDS,
+    LINK_FAIL_TEXT
 )
 from bToN import build_mode_markup
 from cAsh import AdtStorage, LangStorage, ModeStorage, ReplyCounter, VoiceCache, cleanup, queue, user_dir
@@ -95,7 +96,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
             finally:
                 try: await status.delete()
                 except Exception: pass
-                if failed: await message.answer(FAIL_TEXT)
+                if failed: await message.answer(LINK_FAIL_TEXT)
         finally:
             cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
             await queue.release(chat_id)
@@ -217,7 +218,11 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
         if url_match := URL_RE.search(text):
             url = url_match.group(0)
             if "t.me/" in url or "telegram.me/" in url:
-                pass 
+                if not extract_query(text) and not is_keyword_only(text):
+                    if message.chat.type == "private":
+                        idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
+                        await message.reply(RANDOM_REPLIES[idx])
+                    return
             else:
                 current_mode = await modes.get(mode_key)
                 await _process_url(message, bot, url, current_mode)
@@ -232,10 +237,10 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
                 await message.answer(NO_QUERY_TEXT)
             else:
                 idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-                await message.answer(RANDOM_REPLIES[idx])
+                await message.reply(RANDOM_REPLIES[idx])
         elif text == BOT_TRIGGER:
             idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-            await message.answer(RANDOM_REPLIES[idx])
+            await message.reply(RANDOM_REPLIES[idx])
 
     async def on_callback(callback: CallbackQuery):
         data = callback.data
