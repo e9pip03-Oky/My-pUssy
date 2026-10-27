@@ -4,14 +4,15 @@ import re
 
 from aiogram import Bot, F
 from aiogram.types import CallbackQuery, FSInputFile, Message
+from googletrans import Translator
 
 from Reply import (
     ADMIN_COMMAND, BOT_TRIGGER, MODE_MSG, MODE_DENIED, RANDOM_REPLIES,
-    EDIT_KEYWORDS, LINK_FAIL_TEXT, BUTTON_NAMES, NO_QUERY_TEXT, LOADING_TEXT,
+    EDIT_KEYWORDS, LINK_FAIL_TEXT, BUTTON_NAMES, NO_QUERY_TEXT, LOADING_TEXT, LANG_MSG
 )
-from bToN import build_mode_markup, build_specific_markup
+from bToN import build_mode_markup, build_specific_markup, build_lang_markup
 from cAsh import (
-    AdtStorage, LangStorage, ModeStorage, ReplyCounter, VoiceCache,
+    AdtStorage, LangStorage, LangCodeStorage, ModeStorage, ReplyCounter, VoiceCache,
     ButtonCycleStorage, cleanup, queue, user_dir,
 )
 from ediT import set_edit_state, handle_pending_edit
@@ -21,6 +22,8 @@ from yTFMe import download, download_merge, make_name, to_voice
 log = logging.getLogger("voicebot")
 URL_RE = re.compile(r"https?://\S+")
 UPPER_TARGETS = set("ATFGUJNMLБИА")
+
+translator = Translator()
 
 
 def _fix_lang_text(text: str) -> str:
@@ -48,7 +51,8 @@ async def _is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> b
 
 def make_handler(
     cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage,
-    adt: AdtStorage, lang: LangStorage, btn_cycle: ButtonCycleStorage,
+    adt: AdtStorage, lang: LangStorage, lang_code: LangCodeStorage,
+    btn_cycle: ButtonCycleStorage,
 ):
     async def _get_random_reply_markup(chat_id: int):
         total = len(BUTTON_NAMES)
@@ -115,12 +119,36 @@ def make_handler(
         if await handle_pending_edit(message, bot, cache):
             return
 
+        url_match = URL_RE.search(text)
+        if url_match:
+            url = url_match.group(0)
+            if "t.me/" in url or "telegram.me/" in url:
+                if not extract_query(text) and not is_keyword_only(text):
+                    if message.chat.type == "private":
+                        idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
+                        markup = await _get_random_reply_markup(chat_id)
+                        await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
+                    return
+            else:
+                current_mode = await modes.get(mode_key)
+                await _process_url(message, bot, url, current_mode)
+                return
+
         if await lang.get(mode_key):
             if any(c.upper() in UPPER_TARGETS for c in text):
                 fixed_text = _fix_lang_text(text)
                 if fixed_text != text:
                     await message.reply(fixed_text)
                     return
+            else:
+                try:
+                    code = await lang_code.get(mode_key)
+                    res = await translator.translate(text, dest=code)
+                    fixed_text = _fix_lang_text(res.text)
+                    await message.reply(fixed_text)
+                    return
+                except Exception as exc:
+                    log.warning("translation failed: %s", exc)
 
         if message.reply_to_message and message.reply_to_message.voice:
             if text.startswith(EDIT_KEYWORDS):
@@ -145,20 +173,6 @@ def make_handler(
                 await adt.save_messages(mode_key, old_msgs)
             return
 
-        if url_match := URL_RE.search(text):
-            url = url_match.group(0)
-            if "t.me/" in url or "telegram.me/" in url:
-                if not extract_query(text) and not is_keyword_only(text):
-                    if message.chat.type == "private":
-                        idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-                        markup = await _get_random_reply_markup(chat_id)
-                        await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
-                    return
-            else:
-                current_mode = await modes.get(mode_key)
-                await _process_url(message, bot, url, current_mode)
-                return
-
         if query := extract_query(text):
             await process_search(message, bot, query, cache)
             return
@@ -177,44 +191,74 @@ def make_handler(
 
     async def on_callback(callback: CallbackQuery):
         data = callback.data
-        if not data.startswith(("toggle:", "lang:")):
+        if not data.startswith(("toggle:", "lang:", "setlang:", "togglelang:", "back:")):
             return
+            
         parts = data.split(":")
-        action, owner_id, mode_key = parts[0], int(parts[1]), parts[2]
+        action = parts[0]
         user_id = callback.from_user.id
-
-        if user_id != owner_id:
-            await callback.answer(MODE_DENIED, show_alert=True)
-            return
-
         chat_id = callback.message.chat.id
+
         if action == "toggle":
+            owner_id, mode_key = int(parts[1]), parts[2]
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
             current_mode = await modes.get(mode_key)
             new_mode = "default" if current_mode == "voice" else "voice"
             await modes.set(mode_key, new_mode)
+            new_mode = await modes.get(mode_key)
+            new_lang = await lang.get(mode_key)
+            await callback.message.edit_reply_markup(reply_markup=build_mode_markup(new_mode, new_lang, owner_id, mode_key))
+
         elif action == "lang":
+            owner_id, mode_key = int(parts[1]), parts[2]
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            lang_active = await lang.get(mode_key)
+            current_code = await lang_code.get(mode_key)
+            await callback.message.edit_text(LANG_MSG, reply_markup=build_lang_markup(lang_active, current_code, owner_id, mode_key))
+
+        elif action == "setlang":
+            code, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            await lang_code.set(mode_key, code)
+            lang_active = await lang.get(mode_key)
+            await callback.message.edit_reply_markup(reply_markup=build_lang_markup(lang_active, code, owner_id, mode_key))
+
+        elif action == "togglelang":
+            owner_id, mode_key = int(parts[1]), parts[2]
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
             current_lang = await lang.get(mode_key)
             await lang.set(mode_key, not current_lang)
+            new_lang = await lang.get(mode_key)
+            current_code = await lang_code.get(mode_key)
+            await callback.message.edit_reply_markup(reply_markup=build_lang_markup(new_lang, current_code, owner_id, mode_key))
 
-        new_mode = await modes.get(mode_key)
-        new_lang = await lang.get(mode_key)
-        await callback.message.edit_reply_markup(
-            reply_markup=build_mode_markup(new_mode, new_lang, owner_id, mode_key)
-        )
+        elif action == "back":
+            owner_id, mode_key = int(parts[1]), parts[2]
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            new_mode = await modes.get(mode_key)
+            new_lang = await lang.get(mode_key)
+            await callback.message.edit_text(MODE_MSG, reply_markup=build_mode_markup(new_mode, new_lang, owner_id, mode_key))
+
         await callback.answer()
 
     return on_message, on_callback
 
 
 def register(
-    dispatcher,
-    cache: VoiceCache,
-    counter: ReplyCounter,
-    modes: ModeStorage,
-    adt: AdtStorage,
-    lang: LangStorage,
+    dispatcher, cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage,
+    adt: AdtStorage, lang: LangStorage, lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
 ):
-    handler, callback = make_handler(cache, counter, modes, adt, lang, btn_cycle)
+    handler, callback = make_handler(cache, counter, modes, adt, lang, lang_code, btn_cycle)
     dispatcher.message.register(handler, F.text)
     dispatcher.callback_query.register(callback)

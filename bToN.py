@@ -3,7 +3,10 @@ import os
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from Reply import BUTTON_NAMES, MODE_VOICE, MODE_DEFAULT, MODE_LANG
+from Reply import (
+    BUTTON_NAMES, MODE_VOICE, MODE_DEFAULT, MODE_LANG,
+    LANG_ENG, LANG_RUS, LANG_ENABLE, LANG_DISABLE, LANG_BACK
+)
 
 log = logging.getLogger("voicebot")
 BUTTON_STYLES = ("primary", "success", "danger")
@@ -62,3 +65,24 @@ def build_mode_markup(
         text=MODE_LANG, callback_data=f"lang:{owner_id}:{mode_key}", style=l_style
     )
     return InlineKeyboardMarkup(inline_keyboard=[[b1, b2], [b3]])
+
+
+def build_lang_markup(lang_active: bool, current_code: str, owner_id: int, mode_key: str) -> InlineKeyboardMarkup:
+    eng_style = "primary" if current_code == "en" else "danger"
+    rus_style = "primary" if current_code == "ru" else "danger"
+    
+    btn_eng = InlineKeyboardButton(text=LANG_ENG, callback_data=f"setlang:en:{owner_id}:{mode_key}", style=eng_style)
+    btn_rus = InlineKeyboardButton(text=LANG_RUS, callback_data=f"setlang:ru:{owner_id}:{mode_key}", style=rus_style)
+    
+    if lang_active:
+        btn_toggle = InlineKeyboardButton(text=LANG_DISABLE, callback_data=f"togglelang:{owner_id}:{mode_key}", style="primary")
+    else:
+        btn_toggle = InlineKeyboardButton(text=LANG_ENABLE, callback_data=f"togglelang:{owner_id}:{mode_key}", style="danger")
+        
+    btn_back = InlineKeyboardButton(text=LANG_BACK, callback_data=f"back:{owner_id}:{mode_key}", style="success")
+    
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [btn_eng, btn_rus],
+        [btn_toggle],
+        [btn_back]
+    ])

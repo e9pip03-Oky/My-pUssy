@@ -7,6 +7,13 @@ MODE_LANG = "لغتي"
 MODE_MSG = "تستطيع تغيير وضع عمل البوت\nمن هنا"
 MODE_DENIED = "ليس مسموح لك القيام\nبهذا التغيير"
 
+LANG_ENG = "eNG"
+LANG_RUS = "rUS"
+LANG_ENABLE = "تفعيل"
+LANG_DISABLE = "تعطيل"
+LANG_BACK = "عودة"
+LANG_MSG = "اختر لغة الترجمة أو فعل/عطل الميزة"
+
 EDIT_KEYWORDS = ("تعديل", "قص")
 EDIT_SEPARATOR_MSG = "الفواصل الزمنيه مابين التوقيتان\nيقبل / و - ويلزم ان يكون ماقبلهم وبعدهم disTANce"
 EDIT_START_BIGGER_MSG = "مدة البدايه اكبر من مدة النهايه\nمرفوض"

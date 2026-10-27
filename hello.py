@@ -12,6 +12,7 @@ from cAsh import (
     build_cache,
     build_counter,
     build_lang,
+    build_lang_code,
     build_modes,
     build_storage,
     build_btn_cycle,
@@ -46,6 +47,7 @@ async def main() -> None:
         build_modes(REDIS_URL),
         build_adt(REDIS_URL),
         build_lang(REDIS_URL),
+        build_lang_code(REDIS_URL),
         build_btn_cycle(REDIS_URL),
     )
     await send_boot_notice(bot)

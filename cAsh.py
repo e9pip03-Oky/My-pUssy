@@ -109,6 +109,14 @@ class LangStorage(RedisBase):
         await self._set(CACHE_PREFIX + f"lang:{mode_key}", "1" if active else "0")
 
 
+class LangCodeStorage(RedisBase):
+    async def get(self, mode_key: str) -> str:
+        return await self._get(CACHE_PREFIX + f"lang_code:{mode_key}") or "en"
+
+    async def set(self, mode_key: str, code: str) -> None:
+        await self._set(CACHE_PREFIX + f"lang_code:{mode_key}", code)
+
+
 class ReplyCounter(RedisBase):
     async def next_index(self, user_id: int, size: int) -> int:
         key = CACHE_PREFIX + f"reply:{user_id}"
@@ -199,6 +207,10 @@ def build_adt(url: str | None) -> AdtStorage:
 
 def build_lang(url: str | None) -> LangStorage:
     return LangStorage(_redis_client(url))
+
+
+def build_lang_code(url: str | None) -> LangCodeStorage:
+    return LangCodeStorage(_redis_client(url))
 
 
 def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
