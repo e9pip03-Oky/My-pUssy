@@ -123,6 +123,7 @@ def make_handler(
         if await handle_pending_edit(message, bot, cache):
             return
 
+        # 1. التحقق من الروابط (قبل لغتي)
         url_match = URL_RE.search(text)
         if url_match:
             url = url_match.group(0)
@@ -138,27 +139,7 @@ def make_handler(
                 await _process_url(message, bot, url, current_mode)
                 return
 
-        if await lang.get(mode_key):
-            if any(c.upper() in UPPER_TARGETS for c in text) or "ss" in text.lower():
-                fixed_text = _fix_lang_text(text)
-                if fixed_text != text:
-                    await message.reply(fixed_text)
-                    return
-            else:
-                try:
-                    code = await lang_code.get(mode_key)
-                    res = await translator.translate(text, dest=code)
-                    fixed_text = _fix_lang_text(res.text)
-                    await message.reply(fixed_text)
-                    return
-                except Exception as exc:
-                    log.warning("translation failed: %s", exc)
-
-        if message.reply_to_message and message.reply_to_message.voice:
-            if text.startswith(EDIT_KEYWORDS):
-                await set_edit_state(message, bot)
-                return
-
+        # 2. التحقق من الأوامر (قبل لغتي)
         if text == ADMIN_COMMAND:
             if message.chat.type != "private":
                 if not await _is_admin(bot, chat_id, user_id, is_channel):
@@ -181,6 +162,29 @@ def make_handler(
             await process_search(message, bot, query, cache)
             return
 
+        if message.reply_to_message and message.reply_to_message.voice:
+            if text.startswith(EDIT_KEYWORDS):
+                await set_edit_state(message, bot)
+                return
+
+        # 3. ميزة لغتي (تعمل فقط على النصوص العادية)
+        if await lang.get(mode_key):
+            if any(c.upper() in UPPER_TARGETS for c in text) or "ss" in text.lower():
+                fixed_text = _fix_lang_text(text)
+                if fixed_text != text:
+                    await message.reply(fixed_text)
+                    return
+            else:
+                try:
+                    code = await lang_code.get(mode_key)
+                    res = await translator.translate(text, dest=code)
+                    fixed_text = _fix_lang_text(res.text)
+                    await message.reply(fixed_text)
+                    return
+                except Exception as exc:
+                    log.warning("translation failed: %s", exc)
+
+        # 4. الردود العشوائية
         if message.chat.type == "private":
             if is_keyword_only(text):
                 await message.reply(NO_QUERY_TEXT)
