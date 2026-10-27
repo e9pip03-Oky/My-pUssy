@@ -32,41 +32,13 @@ def make_name(info: dict) -> str:
     return name[:120].rstrip() or "audio"
 
 
-def _match_score(title: str, query: str) -> int:
-    title, query = title.lower(), query.lower().strip()
-    if query and query in title:
-        return 2
-    words = [w for w in query.split() if w]
-    return 1 if words and any(w in title for w in words) else 0
-
-
-def _pick_best(entries: list[dict], target: str) -> dict:
-    return max(
-        entries,
-        key=lambda e: (
-            _match_score(e.get("title") or "", target),
-            e.get("view_count") or 0,
-        ),
-    )
-
-
-def _get_playlist_entries(target: str) -> list[dict]:
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": False,
-        "default_search": "ytsearch3",
-        "extract_flat": True,
-        "max_filesize": MAX_FILESIZE,
-    }
+def _extract_entries(url: str) -> list[dict]:
+    opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "noplaylist": False}
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(target, download=False)
-    entries = [e for e in info.get("entries") or [] if e]
-    return (
-        entries
-        if entries
-        else ([_pick_best(info["entries"], target)] if info.get("entries") else [info])
-    )
+        info = ydl.extract_info(url, download=False)
+    if "entries" in info:
+        return [e for e in info["entries"] if e]
+    return [info]
 
 
 def _download(url: str, base: str) -> tuple[dict, str]:
@@ -75,7 +47,7 @@ def _download(url: str, base: str) -> tuple[dict, str]:
         "outtmpl": base + ".%(ext)s",
         "quiet": True,
         "no_warnings": True,
-        "noplaylist": False,
+        "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -89,7 +61,7 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
         "outtmpl": base + ".%(ext)s",
         "quiet": True,
         "no_warnings": True,
-        "noplaylist": False,
+        "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -97,8 +69,8 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
         return info, ydl.prepare_filename(info)
 
 
-async def search(target: str) -> list[dict]:
-    return await asyncio.to_thread(_get_playlist_entries, target)
+async def get_entries(url: str) -> list[dict]:
+    return await asyncio.to_thread(_extract_entries, url)
 
 
 async def download(url: str, base: str) -> tuple[dict, str]:

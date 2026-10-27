@@ -89,15 +89,7 @@ async def process_search(message: Message, bot: Bot, query: str, cache: VoiceCac
                 if not url:
                     continue
 
-                video_id = entry.get("id")
-                if not video_id:
-                    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as ydl:
-                        entry = ydl.extract_info(url, download=False)
-                    video_id = entry.get("id") or ""
-                if not video_id:
-                    continue
-
-                cache_key = f"voice_yt:{video_id}"
+                cache_key = f"voice_yt:{url}"
                 cached = await cache.get(cache_key)
                 if cached:
                     try:

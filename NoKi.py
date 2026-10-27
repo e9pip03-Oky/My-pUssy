@@ -3,7 +3,7 @@ import os
 import re
 
 from aiogram import Bot, F
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message, InputMediaDocument
 from googletrans import Translator
 import yt_dlp
 
@@ -18,7 +18,7 @@ from cAsh import (
 )
 from ediT import set_edit_state, handle_pending_edit
 from yoU import process_search, extract_query, is_keyword_only
-from yTFMe import download, download_merge, make_name, to_voice
+from yTFMe import download, download_merge, make_name, to_voice, get_entries
 
 log = logging.getLogger("voicebot")
 URL_RE = re.compile(r"https?://\S+")
@@ -80,39 +80,62 @@ def make_handler(
             failed = True
             try:
                 workdir = user_dir(chat_id, user_id, bot.id, is_private)
-                base = os.path.join(workdir, str(message.message_id))
-
-                cache_key = f"link_{mode}:{url}"
+                entries = await get_entries(url)
                 
-                cached = await cache.get(cache_key)
-                if cached:
-                    try:
-                        if mode == "voice":
-                            await message.reply_voice(cached)
-                        else:
-                            await message.reply_document(cached)
-                        failed = False
-                        return
-                    except Exception:
-                        await cache.delete(cache_key)
+                if not entries:
+                    raise RuntimeError("no results")
 
+                base_name = str(message.message_id)
+                
                 if mode == "voice":
-                    info, in_path = await download(url, base)
-                    out_path = await to_voice(in_path, workdir, make_name(info))
-                    if out_path and os.path.exists(out_path):
-                        sent = await message.reply_voice(FSInputFile(out_path))
-                        failed = False
-                        if sent.voice:
-                            await cache.set(cache_key, sent.voice.file_id)
+                    for idx, entry in enumerate(entries):
+                        entry_url = entry.get("webpage_url") or entry.get("url")
+                        if not entry_url:
+                            continue
+                        
+                        cache_key = f"link_voice:{entry_url}"
+                        cached = await cache.get(cache_key)
+                        if cached:
+                            try:
+                                await message.reply_voice(cached)
+                                failed = False
+                                continue
+                            except Exception:
+                                await cache.delete(cache_key)
+
+                        base = os.path.join(workdir, f"{base_name}_{idx}")
+                        info, in_path = await download(entry_url, base)
+                        out_path = await to_voice(in_path, workdir, make_name(info))
+                        if out_path and os.path.exists(out_path):
+                            sent = await message.reply_voice(FSInputFile(out_path))
+                            failed = False
+                            if sent.voice:
+                                await cache.set(cache_key, sent.voice.file_id)
+                            cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+                            
                 else:
-                    info, in_path = await download_merge(url, base)
-                    if in_path and os.path.exists(in_path):
-                        ext = os.path.splitext(in_path)[1]
-                        doc_name = f"{make_name(info)}{ext}"
-                        sent = await message.reply_document(FSInputFile(in_path, filename=doc_name))
-                        failed = False
-                        if sent.document:
-                            await cache.set(cache_key, sent.document.file_id)
+                    for idx, entry in enumerate(entries):
+                        entry_url = entry.get("webpage_url") or entry.get("url")
+                        if not entry_url:
+                            continue
+                            
+                        cache_key = f"link_doc:{entry_url}"
+                        cached = await cache.get(cache_key)
+                        
+                        if cached:
+                            failed = False
+                        else:
+                            base = os.path.join(workdir, f"{base_name}_{idx}")
+                            info, in_path = await download_merge(entry_url, base)
+                            if in_path and os.path.exists(in_path):
+                                ext = os.path.splitext(in_path)[1]
+                                doc_name = f"{make_name(info)}{ext}"
+                                sent = await message.reply_document(FSInputFile(in_path, filename=doc_name))
+                                failed = False
+                                if sent.document:
+                                    await cache.set(cache_key, sent.document.file_id)
+                                cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+
             except Exception as exc:
                 log.warning("link failed %s: %s", message.message_id, exc)
             finally:
