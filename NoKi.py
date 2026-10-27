@@ -9,7 +9,8 @@ from googletrans import Translator
 from Reply import (
     ADMIN_COMMAND, BOT_TRIGGER, MODE_MSG, MODE_DENIED, RANDOM_REPLIES,
     EDIT_KEYWORDS, LINK_FAIL_TEXT, BUTTON_NAMES, LOADING_TEXT, LANG_MSG,
-    NOTE_WAIT_MSG, MODE_NOTE
+    NOTE_WAIT_MSG, WAIT_VOICE_MSG, NO_AUDIO_MSG, MODE_NOTE, MODE_VOICE,
+    MEDIA_VIDEO, MEDIA_DOC
 )
 from bToN import build_mode_markup, build_specific_markup, build_lang_markup
 from cAsh import (
@@ -179,6 +180,34 @@ def make_handler(
                     pass
                 cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
             return
+
+        if message.reply_to_message and text == MODE_VOICE:
+            media = message.reply_to_message.video or message.reply_to_message.document
+            if media:
+                media_type = MEDIA_VIDEO if message.reply_to_message.video else MEDIA_DOC
+                wait_msg = await message.reply(WAIT_VOICE_MSG.format(media_type))
+                is_private = message.chat.type == "private"
+                workdir = user_dir(chat_id, user_id, bot.id, is_private)
+                in_path = os.path.join(workdir, f"{message.reply_to_message.message_id}_in")
+                out_path = os.path.join(workdir, f"{message.message_id}_out.ogg")
+                try:
+                    tg_file = await bot.get_file(media.file_id)
+                    await bot.download_file(tg_file.file_path, in_path)
+                    success = await to_voice(in_path, workdir, str(message.message_id))
+                    if success and os.path.exists(out_path):
+                        await message.reply_voice(FSInputFile(out_path))
+                    else:
+                        await message.reply(NO_AUDIO_MSG.format(media_type))
+                except Exception as exc:
+                    log.warning("voice failed %s: %s", message.message_id, exc)
+                    await message.reply(LINK_FAIL_TEXT)
+                finally:
+                    try:
+                        await wait_msg.delete()
+                    except Exception:
+                        pass
+                    cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+                return
 
         url_match = URL_RE.search(text)
         if url_match:
