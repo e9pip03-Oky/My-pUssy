@@ -3,13 +3,12 @@ import os
 import re
 
 from aiogram import Bot, F
-from aiogram.types import CallbackQuery, FSInputFile, Message, InputMediaDocument
+from aiogram.types import CallbackQuery, FSInputFile, Message
 from googletrans import Translator
-import yt_dlp
 
 from Reply import (
     ADMIN_COMMAND, BOT_TRIGGER, MODE_MSG, MODE_DENIED, RANDOM_REPLIES,
-    EDIT_KEYWORDS, LINK_FAIL_TEXT, BUTTON_NAMES, NO_QUERY_TEXT, LOADING_TEXT, LANG_MSG
+    EDIT_KEYWORDS, LINK_FAIL_TEXT, BUTTON_NAMES, LOADING_TEXT, LANG_MSG
 )
 from bToN import build_mode_markup, build_specific_markup, build_lang_markup
 from cAsh import (
@@ -17,7 +16,6 @@ from cAsh import (
     ButtonCycleStorage, cleanup, queue, user_dir,
 )
 from ediT import set_edit_state, handle_pending_edit
-from yoU import process_search, extract_query, is_keyword_only
 from yTFMe import download, download_merge, make_name, to_voice, get_entries
 
 log = logging.getLogger("voicebot")
@@ -162,23 +160,15 @@ def make_handler(
         if await handle_pending_edit(message, bot, cache):
             return
 
-        if text.startswith("يوت"):
-            query = extract_query(text)
-            if query and URL_RE.match(query):
-                url = URL_RE.search(query).group(0)
-                await _process_url(message, bot, url, "voice")
-                return
-
         url_match = URL_RE.search(text)
         if url_match:
             url = url_match.group(0)
             if "t.me/" in url or "telegram.me/" in url:
-                if not extract_query(text) and not is_keyword_only(text):
-                    if message.chat.type == "private":
-                        idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-                        markup = await _get_random_reply_markup(chat_id)
-                        await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
-                    return
+                if message.chat.type == "private":
+                    idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
+                    markup = await _get_random_reply_markup(chat_id)
+                    await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
+                return
             else:
                 current_mode = await modes.get(mode_key)
                 await _process_url(message, bot, url, current_mode)
@@ -200,10 +190,6 @@ def make_handler(
                         pass
                 old_msgs.append(sent_msg.message_id)
                 await adt.save_messages(mode_key, old_msgs)
-            return
-
-        if query := extract_query(text):
-            await process_search(message, bot, query, cache)
             return
 
         if message.reply_to_message and message.reply_to_message.voice:
@@ -228,12 +214,9 @@ def make_handler(
                     log.warning("translation failed: %s", exc)
 
         if message.chat.type == "private":
-            if is_keyword_only(text):
-                await message.reply(NO_QUERY_TEXT)
-            else:
-                idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-                markup = await _get_random_reply_markup(chat_id)
-                await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
+            idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
+            markup = await _get_random_reply_markup(chat_id)
+            await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
         elif text == BOT_TRIGGER:
             idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
             markup = await _get_random_reply_markup(chat_id)

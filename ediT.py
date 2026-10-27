@@ -6,7 +6,7 @@ from aiogram import Bot
 from aiogram.types import FSInputFile, Message
 
 from Reply import (
-    EDIT_KEYWORDS, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG, EDIT_FAIL_MSG,
+    EDIT_KEYWORDS, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG, EDIT_FAIL_MSG, EDIT_END_TOO_LONG_MSG
 )
 from cAsh import cleanup, user_dir
 from yTFMe import trim_voice
@@ -66,16 +66,20 @@ async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
     voice_msg = state["voice"]
     prompt_msg = state["prompt_msg"]
     text_val = message.text.strip()
+    voice_duration = voice_msg.voice.duration if voice_msg.voice else 0
 
-    # استبدال أي فاصل (/, -, أو مسافة) بمسافة واحدة
     clean_text = re.sub(r"[/\-]", " ", text_val)
     segments = [s for s in clean_text.split() if s]
 
     if len(segments) == 1:
         start_val = "0"
         end_val = segments[0].strip()
-        if _parse_time(end_val) is None:
+        e_val = _parse_time(end_val)
+        if e_val is None:
             await message.reply(EDIT_SEPARATOR_MSG)
+            return True
+        if e_val > voice_duration:
+            await message.reply(EDIT_END_TOO_LONG_MSG)
             return True
     elif len(segments) == 2:
         start_val, end_val = segments[0].strip(), segments[1].strip()
@@ -85,6 +89,9 @@ async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
             return True
         if s_val >= e_val:
             await message.reply(EDIT_START_BIGGER_MSG)
+            return True
+        if e_val > voice_duration:
+            await message.reply(EDIT_END_TOO_LONG_MSG)
             return True
     else:
         await message.reply(EDIT_SEPARATOR_MSG)
