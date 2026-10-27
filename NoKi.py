@@ -82,7 +82,7 @@ def make_handler(
                 base = os.path.join(workdir, str(message.message_id))
 
                 if mode == "voice":
-                    info, in_path = await download({"url": url}, base)
+                    info, in_path = await download(url, base)
                     out_path = await to_voice(in_path, workdir, make_name(info))
                     if out_path and os.path.exists(out_path):
                         sent = await message.reply_voice(FSInputFile(out_path))
@@ -90,7 +90,7 @@ def make_handler(
                         if sent.voice and info.get("id"):
                             await cache.set(f"link_voice:{info['id']}", sent.voice.file_id)
                 else:
-                    info, in_path = await download_merge({"url": url}, base)
+                    info, in_path = await download_merge(url, base)
                     if in_path and os.path.exists(in_path):
                         doc_name = os.path.basename(in_path)
                         sent = await message.reply_document(FSInputFile(in_path, filename=doc_name))
@@ -123,7 +123,6 @@ def make_handler(
         if await handle_pending_edit(message, bot, cache):
             return
 
-        # 1. التحقق من الروابط (قبل لغتي)
         url_match = URL_RE.search(text)
         if url_match:
             url = url_match.group(0)
@@ -139,7 +138,6 @@ def make_handler(
                 await _process_url(message, bot, url, current_mode)
                 return
 
-        # 2. التحقق من الأوامر (قبل لغتي)
         if text == ADMIN_COMMAND:
             if message.chat.type != "private":
                 if not await _is_admin(bot, chat_id, user_id, is_channel):
@@ -167,7 +165,6 @@ def make_handler(
                 await set_edit_state(message, bot)
                 return
 
-        # 3. ميزة لغتي (تعمل فقط على النصوص العادية)
         if await lang.get(mode_key):
             if any(c.upper() in UPPER_TARGETS for c in text) or "ss" in text.lower():
                 fixed_text = _fix_lang_text(text)
@@ -184,7 +181,6 @@ def make_handler(
                 except Exception as exc:
                     log.warning("translation failed: %s", exc)
 
-        # 4. الردود العشوائية
         if message.chat.type == "private":
             if is_keyword_only(text):
                 await message.reply(NO_QUERY_TEXT)

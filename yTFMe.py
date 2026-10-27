@@ -97,18 +97,34 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
         return info, ydl.prepare_filename(info)
 
 
+def _download_yt(url: str, base: str) -> tuple[dict, str]:
+    opts = {
+        "format": "ba/b",
+        "outtmpl": base + ".%(ext)s",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "max_filesize": MAX_FILESIZE,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return info, ydl.prepare_filename(info)
+
+
 async def search(target: str) -> list[dict]:
     return await asyncio.to_thread(_get_playlist_entries, target)
 
 
-async def download(entry: dict, base: str) -> tuple[dict, str]:
-    url = entry.get("webpage_url") or entry.get("url")
+async def download(url: str, base: str) -> tuple[dict, str]:
     return await asyncio.to_thread(_download, url, base)
 
 
-async def download_merge(entry: dict, base: str) -> tuple[dict, str]:
-    url = entry.get("webpage_url") or entry.get("url")
+async def download_merge(url: str, base: str) -> tuple[dict, str]:
     return await asyncio.to_thread(_download_merge, url, base)
+
+
+async def download_yt(url: str, base: str) -> tuple[dict, str]:
+    return await asyncio.to_thread(_download_yt, url, base)
 
 
 async def to_voice(in_path: str, workdir: str, name: str) -> str | None:

@@ -11,7 +11,7 @@ from Reply import (
     FAIL_TEXT, KEYWORD, LOADING_TEXT, NO_QUERY_TEXT, WAIT_TEXT,
 )
 from cAsh import VoiceCache, cleanup, queue, user_dir
-from yTFMe import download, make_name, to_voice
+from yTFMe import download_yt, make_name, to_voice
 
 log = logging.getLogger("voicebot")
 MAX_FILESIZE = 48 * 1024 * 1024
@@ -33,7 +33,7 @@ def _get_playlist_entries(target: str) -> list[dict]:
     opts = {
         "quiet": True,
         "no_warnings": True,
-        "noplaylist": False,
+        "noplaylist": True,
         "default_search": "ytsearch3",
         "extract_flat": True,
         "max_filesize": MAX_FILESIZE,
@@ -108,7 +108,7 @@ async def process_search(message: Message, bot: Bot, query: str, cache: VoiceCac
                         await cache.delete(cache_key)
 
                 base = os.path.join(workdir, f"{base_name}_{idx}")
-                info, in_path = await download(entry, base)
+                info, in_path = await download_yt(url, base)
                 out_path = await to_voice(in_path, workdir, make_name(info))
 
                 if out_path and os.path.exists(out_path):
