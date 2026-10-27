@@ -11,7 +11,7 @@ from Reply import (
     MODE_MSG, MODE_DENIED, NO_QUERY_TEXT, RANDOM_REPLIES, WAIT_TEXT, EDIT_KEYWORDS,
     LINK_FAIL_TEXT
 )
-from bToN import build_mode_markup
+from bToN import build_mode_markup, build_buttons, build_markup, parse_ids
 from cAsh import AdtStorage, LangStorage, ModeStorage, ReplyCounter, VoiceCache, cleanup, queue, user_dir
 from ediT import handle_edit
 from yTFMe import download, download_merge, make_name, search, to_voice
@@ -20,7 +20,7 @@ log = logging.getLogger("voicebot")
 URL_RE = re.compile(r"https?://\S+")
 
 UPPER_TARGETS = set("ATFGUJNMLБИА")
-
+BOT_NOTICE = os.environ.get("boT_NoTice", "")
 
 def _fix_lang_text(text: str) -> str:
     res = []
@@ -33,7 +33,6 @@ def _fix_lang_text(text: str) -> str:
             res.append(char)
     return "".join(res)
 
-
 def extract_query(text: str) -> str | None:
     text = text.strip()
     if not text.startswith(KEYWORD):
@@ -41,10 +40,8 @@ def extract_query(text: str) -> str | None:
     rest = text[len(KEYWORD):]
     return rest.strip() or None if (not rest or rest[0].isspace()) else None
 
-
 def is_keyword_only(text: str) -> bool:
     return text.strip().startswith(KEYWORD) and not text.strip()[len(KEYWORD):].strip()
-
 
 async def _is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> bool:
     if is_channel:
@@ -55,7 +52,6 @@ async def _is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> b
         return member.status in ("administrator", "creator")
     except Exception:
         return False
-
 
 def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, adt: AdtStorage, lang: LangStorage):
     
@@ -69,7 +65,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
             return
             
         try:
-            status = await message.answer(LOADING_TEXT)
+            status = await message.reply(LOADING_TEXT)
             failed = True
             try:
                 workdir = user_dir(chat_id, user_id, bot.id, is_private)
@@ -96,7 +92,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
             finally:
                 try: await status.delete()
                 except Exception: pass
-                if failed: await message.answer(LINK_FAIL_TEXT)
+                if failed: await message.reply(LINK_FAIL_TEXT)
         finally:
             cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
             await queue.release(chat_id)
@@ -115,13 +111,13 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
             wait_msg = None
             if event:
                 if not is_channel:
-                    wait_msg = await message.answer(WAIT_TEXT)
+                    wait_msg = await message.reply(WAIT_TEXT)
                 await queue.wait_turn(event)
                 if wait_msg:
                     try: await wait_msg.delete()
                     except Exception: pass
 
-            status = await message.answer(LOADING_TEXT)
+            status = await message.reply(LOADING_TEXT)
             failed = True
             try:
                 entries = await search(query[:200])
@@ -167,7 +163,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
             finally:
                 try: await status.delete()
                 except Exception: pass
-                if failed: await message.answer(FAIL_TEXT)
+                if failed: await message.reply(FAIL_TEXT)
         finally:
             cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
             await queue.release(chat_id)
@@ -201,7 +197,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
                     return
 
             markup = build_mode_markup(await modes.get(mode_key), await lang.get(mode_key), user_id, mode_key)
-            sent_msg = await message.answer(MODE_MSG, reply_markup=markup)
+            sent_msg = await message.reply(MODE_MSG, reply_markup=markup)
 
             if message.chat.type != "private":
                 old_msgs = await adt.get_messages(mode_key)
@@ -234,13 +230,17 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
 
         if message.chat.type == "private":
             if is_keyword_only(text):
-                await message.answer(NO_QUERY_TEXT)
+                await message.reply(NO_QUERY_TEXT)
             else:
                 idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-                await message.reply(RANDOM_REPLIES[idx])
+                entries = build_buttons(parse_ids(BOT_NOTICE))
+                markup = build_markup(*entries[0]) if entries else None
+                await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
         elif text == BOT_TRIGGER:
             idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-            await message.reply(RANDOM_REPLIES[idx])
+            entries = build_buttons(parse_ids(BOT_NOTICE))
+            markup = build_markup(*entries[0]) if entries else None
+            await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
 
     async def on_callback(callback: CallbackQuery):
         data = callback.data
@@ -274,7 +274,6 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
         await callback.answer()
 
     return on_message, on_callback
-
 
 def register(dispatcher, cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, adt: AdtStorage, lang: LangStorage):
     handler, callback = make_handler(cache, counter, modes, adt, lang)
