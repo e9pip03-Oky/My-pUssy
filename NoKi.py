@@ -123,6 +123,14 @@ def make_handler(
         if await handle_pending_edit(message, bot, cache):
             return
 
+        if text.startswith("يوت"):
+            query = extract_query(text)
+            if query and URL_RE.match(query):
+                url = URL_RE.search(query).group(0)
+                current_mode = await modes.get(mode_key)
+                await _process_url(message, bot, url, current_mode)
+                return
+
         url_match = URL_RE.search(text)
         if url_match:
             url = url_match.group(0)
