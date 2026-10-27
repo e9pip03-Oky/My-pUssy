@@ -1,68 +1,26 @@
-COMMAND_SETTINGS = "ادت"
-COMMAND_BOT = "بوت"
-COMMAND_EDIT = "تعديل"
-COMMAND_AUDIO_START = "بدء"
-
+KEYWORD = "يوت"
+BOT_TRIGGER = "بوت"
+ADMIN_COMMAND = "ادت"
 MODE_VOICE = "فويس"
-MODE_NORMAL = "نورمال"
-MODE_STICKER = "ستيكر"
+MODE_DEFAULT = "افتراضي"
+MODE_LANG = "لغتي"
+MODE_MSG = "تستطيع تغيير وضع عمل البوت\nمن هنا"
+MODE_DENIED = "ليس مسموح لك القيام\nبهذا التغيير"
 
-STICKER_LANDSCAPE = "🔄"
-STICKER_PORTRAIT = "🔃"
-STICKER_FLIP_HORIZONTAL = "↪️"
-STICKER_FLIP_VERTICAL = "↩️"
-STICKER_ENABLE = "تفعيل"
-STICKER_DISABLE = "تعطيل"
+EDIT_KEYWORDS = ("تعديل", "قص")
+EDIT_SEPARATOR_MSG = "الفواصل الزمنيه مابين التوقيتان\nيقبل / و - ويلزم ان يكون ماقبلهم وبعدهم disTANce"
+EDIT_START_BIGGER_MSG = "مدة البدايه اكبر من مدة النهايه\nمرفوض"
+EDIT_FAIL_MSG = "المدة غير مدعومه او ان الفويس غير صالح\nالمعذرة"
 
-BUTTON_LANGUAGE = "لغتي"
-BUTTON_CHANGE_LANGUAGE = "تبديل لغتي"
-BUTTON_LANGUAGE_ENGLISH = "eNG"
-BUTTON_LANGUAGE_RUSSIAN = "rUS"
-BUTTON_LANGUAGE_BACK = "عودة"
+LOADING_TEXT = "كوسي امور كوسي شطور\nكوسي ولهان كوسي عشقان"
+FAIL_TEXT = "اليوت غير مدعوم او اليوتيوب ميريد يتعاون\nالعق عيري يلا"
+WAIT_TEXT = "انتظر دورك ليس هناك مكان\nشاغر الآن"
+NO_QUERY_TEXT = "يوت وعنوان\nوسوف ارسل لك ما تريد"
+BOOT_TEXT = "اشتغل البوت مرتلخ اوف\nالعق عيرك"
 
-DYNAMIC_BUTTON_NAMES = ("المنشئ", "المطور", "المالك")
+BUTTON_NAMES = ("المنشئ", "المالك", "المطور")
 
-SETTINGS_TEXT = "تستطيع تغيير وضع عمل البوت\nمن هنا"
-SETTINGS_UNAUTHORIZED = "ليس مسموح لك القيام\nبهذا التغيير"
-
-STARTUP_TEXT = "اشتغل البوت مرتلخ\nتع امص"
-
-DOWNLOAD_STARTED = "تدلل دامص بعيرك مولاي\nاروح فدوا"
-DOWNLOAD_FAILED = "الرابط غير مدعوم او الموقع مو راضي يتعاون\nالعق عيري يلا"
-
-AUDIO_START_TEXT = (
-    "يتم البدء بالعمل\n"
-    "على ارسال الصوت ك فويس"
-)
-
-AUDIO_START_FAILED = (
-    "الصوت غير مدعوم او لم يتمكن البوت\n"
-    "من التعرف عليه"
-)
-
-EDIT_WAITING = (
-    "الفواصل الزمنيه مابين التوقيتان\n"
-    "يقبل / و - ويلزم ان يكون ماقبلهم وبعدهم مسافة"
-)
-
-EDIT_INVALID_FORMAT = (
-    "صيغ التعديل\n"
-    "مثلا 00:00 او 0:0 او 00:0\n"
-    "وللساعات 00:00:00\n"
-    "ويقبل الصيغ دون كتابة بداية صفرية للأرقام الفردية"
-)
-
-EDIT_REJECTED = (
-    "مدة البدايه اكبر من مدة النهايه\n"
-    "مرفوض"
-)
-
-EDIT_ERROR = (
-    "المدة غير مدعومه او ان الفويس غير صالح\n"
-    "المعذرة"
-)
-
-ROTATING_RESPONSES = (
+RANDOM_REPLIES = (
     "اهلين وسهلين\nاستاذ/ة",
     "مو ناوي تستعملني مثل البوتات ترى بس اضوج\nينتفخ ديسي",
     "ترى يمكن انطيك بلوك\nواعوفك ملبوس",

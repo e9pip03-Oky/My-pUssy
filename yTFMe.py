@@ -1,282 +1,120 @@
 import asyncio
-import subprocess
-from dataclasses import dataclass
-from pathlib import Path
+import os
+import re
 
 import yt_dlp
 
-import bToN
+MAX_FILESIZE = 48 * 1024 * 1024
+UPPER_LETTERS = set("ATFGUJNML")
 
 
-@dataclass
-class DownloadResult:
-    path: Path
-    info: dict
+def _fix_english_case(text: str) -> str:
+    res = []
+    for char in text:
+        if 'a' <= char.lower() <= 'z':
+            if char.upper() in UPPER_LETTERS:
+                res.append(char.upper())
+            else:
+                res.append(char.lower())
+        else:
+            res.append(char)
+    return "".join(res)
 
 
-def _base_options():
-    options = {
+def make_name(info: dict) -> str:
+    uploader = info.get("uploader") or info.get("channel") or ""
+    pub = re.sub(r"[^\w]", "", re.sub(r"\s+", "_", uploader.strip()))
+    title = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", (info.get("title") or "").strip()).replace("_", "")).strip()
+    
+    pub = _fix_english_case(pub)
+    title = _fix_english_case(title)
+    
+    name = f"{pub} - {title}" if pub and title else (title or pub or "audio")
+    return name[:120].rstrip() or "audio"
+
+
+def _match_score(title: str, query: str) -> int:
+    title, query = title.lower(), query.lower().strip()
+    if query and query in title:
+        return 2
+    words = [w for w in query.split() if w]
+    return 1 if words and any(w in title for w in words) else 0
+
+
+def _pick_best(entries: list[dict], target: str) -> dict:
+    return max(entries, key=lambda e: (_match_score(e.get("title") or "", target), e.get("view_count") or 0))
+
+
+def _get_playlist_entries(target: str) -> list[dict]:
+    opts = {"quiet": True, "no_warnings": True, "noplaylist": False, "default_search": "ytsearch3", "extract_flat": True, "max_filesize": MAX_FILESIZE}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(target, download=False)
+    entries = [e for e in info.get("entries") or [] if e]
+    return entries if entries else ([_pick_best(info["entries"], target)] if info.get("entries") else [info])
+
+
+def _download(url: str, base: str) -> tuple[dict, str]:
+    opts = {
+        "format": "ba/b",
+        "outtmpl": base + ".%(ext)s",
         "quiet": True,
         "no_warnings": True,
-        "noplaylist": False,
+        "noplaylist": True,
+        "max_filesize": MAX_FILESIZE,
     }
-
-    ffmpeg_path = bToN.get_ffmpeg_path()
-
-    if ffmpeg_path:
-        options["ffmpeg_location"] = ffmpeg_path
-
-    return options
-
-
-def _extract_entries_sync(url):
-    options = _base_options()
-    options["extract_flat"] = True
-
-    with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(url, download=False)
-
-    entries = info.get("entries")
-
-    if entries is not None:
-        return [entry for entry in entries if entry]
-
-    return [info]
-
-
-async def get_entries(url):
-    return await asyncio.to_thread(
-        _extract_entries_sync,
-        url,
-    )
-
-
-def entry_url(entry):
-    return (
-        entry.get("webpage_url")
-        or entry.get("original_url")
-        or entry.get("url")
-    )
-
-
-def entry_identity(entry):
-    extractor = (
-        entry.get("extractor_key")
-        or entry.get("ie_key")
-        or entry.get("extractor")
-        or ""
-    )
-
-    identifier = entry.get("id")
-
-    if identifier:
-        return f"{extractor}:{identifier}"
-
-    return entry_url(entry) or ""
-
-
-def _find_downloaded_file(directory, info):
-    requested = info.get("requested_downloads") or []
-
-    for item in requested:
-        filepath = item.get("filepath")
-
-        if filepath:
-            path = Path(filepath)
-
-            if path.exists():
-                return path
-
-    with yt_dlp.YoutubeDL(_base_options()) as ydl:
-        prepared = Path(ydl.prepare_filename(info))
-
-    if prepared.exists():
-        return prepared
-
-    identifier = info.get("id")
-
-    if identifier:
-        matches = list(Path(directory).glob(f"{identifier}.*"))
-
-        if matches:
-            return matches[0]
-
-    raise FileNotFoundError("Downloaded file was not found")
-
-
-def _download_sync(url, mode, directory):
-    options = _base_options()
-    options["outtmpl"] = str(Path(directory) / "%(id)s.%(ext)s")
-
-    if mode == bToN.MODE_VOICE:
-        options["format"] = "bestaudio/best"
-    else:
-        options["format"] = "bv+ba/b"
-
-    with yt_dlp.YoutubeDL(options) as ydl:
+    with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
-
-    path = _find_downloaded_file(directory, info)
-
-    return DownloadResult(path=path, info=info)
+        return info, ydl.prepare_filename(info)
 
 
-def _prepare_voice_sync(path):
-    output = path.with_name(f"{path.stem}.voice.ogg")
-    ffmpeg_path = bToN.get_ffmpeg_path() or "ffmpeg"
+def _download_merge(url: str, base: str) -> tuple[dict, str]:
+    opts = {
+        "format": "bv+ba/b",
+        "outtmpl": base + ".%(ext)s",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "max_filesize": MAX_FILESIZE,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return info, ydl.prepare_filename(info)
 
-    command = [
-        ffmpeg_path,
-        "-y",
-        "-i",
-        str(path),
-        "-vn",
-        "-c:a",
-        "libopus",
-        "-f",
-        "ogg",
-        str(output),
-    ]
 
-    subprocess.run(
-        command,
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+async def search(target: str) -> list[dict]:
+    return await asyncio.to_thread(_get_playlist_entries, target)
+
+
+async def download(entry: dict, base: str) -> tuple[dict, str]:
+    url = entry.get("webpage_url") or entry.get("url")
+    return await asyncio.to_thread(_download, url, base)
+
+
+async def download_merge(entry: dict, base: str) -> tuple[dict, str]:
+    url = entry.get("webpage_url") or entry.get("url")
+    return await asyncio.to_thread(_download_merge, url, base)
+
+
+async def to_voice(in_path: str, workdir: str, name: str) -> str | None:
+    out_path = os.path.join(workdir, f"{name}.ogg")
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y", "-i", in_path, "-vn", "-c:a", "libopus", "-f", "ogg", out_path,
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
     )
-
-    path.unlink()
-
-    final_path = path.with_suffix(".ogg")
-    output.replace(final_path)
-
-    return final_path
+    await proc.wait()
+    return out_path if proc.returncode == 0 else None
 
 
-def _prepare_sticker_sync(path, sticker_options):
-    orientation, flip = sticker_options
-    output = path.with_name(f"{path.stem}.sticker.mp4")
-    filters = []
-
-    if orientation == bToN.STICKER_LANDSCAPE:
-        filters.append("transpose=clock:passthrough=landscape")
-    elif orientation == bToN.STICKER_PORTRAIT:
-        filters.append("transpose=clock:passthrough=portrait")
-
-    if flip == bToN.STICKER_FLIP_HORIZONTAL:
-        filters.append("hflip")
-    elif flip == bToN.STICKER_FLIP_VERTICAL:
-        filters.append("vflip")
-
-    command = [
-        bToN.get_ffmpeg_path() or "ffmpeg",
-        "-y",
-        "-i",
-        str(path),
-        "-map",
-        "0:v:0",
-        "-an",
-    ]
-
-    if filters:
-        command.extend(["-vf", ",".join(filters)])
-
-    command.extend(
-        [
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-            str(output),
-        ]
-    )
-
-    try:
-        subprocess.run(
-            command,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        if not output.is_file() or output.stat().st_size == 0:
-            raise RuntimeError("Sticker conversion produced no output")
-
-    except Exception:
-        output.unlink(missing_ok=True)
-        raise
-
-    path.unlink(missing_ok=True)
-    return output
-
-
-async def download_one(
-    url,
-    mode,
-    directory,
-    sticker_options=(
-        bToN.STICKER_OPTION_NONE,
-        bToN.STICKER_OPTION_NONE,
-    ),
-):
-    directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-
-    result = await asyncio.to_thread(
-        _download_sync,
-        url,
-        mode,
-        directory,
-    )
-
-    if mode == bToN.MODE_VOICE:
-        voice_path = await asyncio.to_thread(
-            _prepare_voice_sync,
-            result.path,
-        )
-
-        return DownloadResult(
-            path=voice_path,
-            info=result.info,
-        )
-
-    if mode == bToN.MODE_STICKER:
-        sticker_path = await asyncio.to_thread(
-            _prepare_sticker_sync,
-            result.path,
-            sticker_options,
-        )
-
-        return DownloadResult(
-            path=sticker_path,
-            info=result.info,
-        )
-
-    return result
-
-
-async def cut_voice(input_path, output_path, start, end):
-    ffmpeg_path = bToN.get_ffmpeg_path() or "ffmpeg"
-
-    process = await asyncio.create_subprocess_exec(
-        ffmpeg_path,
-        "-y",
-        "-ss",
-        str(start),
-        "-i",
-        str(input_path),
-        "-to",
-        str(end - start),
-        "-c",
-        "copy",
-        str(output_path),
+async def trim_voice(in_path: str, out_path: str, start: str, end: str | None = None) -> bool:
+    cmd = ["ffmpeg", "-y", "-ss", start]
+    if end:
+        cmd.extend(["-to", end])
+    cmd.extend(["-i", in_path, "-c:a", "libopus", "-f", "ogg", out_path])
+    
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
     )
-
-    await process.communicate()
-
-    if process.returncode != 0:
-        raise RuntimeError("FFmpeg failed")
+    await proc.wait()
+    return proc.returncode == 0
