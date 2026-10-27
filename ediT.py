@@ -50,8 +50,11 @@ def _parse_time(t: str) -> float | None:
 
 
 async def set_edit_state(message: Message, bot: Bot):
-    EDIT_STATE[message.from_user.id] = message.reply_to_message
-    await message.reply(EDIT_SEPARATOR_MSG)
+    reply_msg = await message.reply(EDIT_SEPARATOR_MSG)
+    EDIT_STATE[message.from_user.id] = {
+        "voice": message.reply_to_message,
+        "prompt_msg": reply_msg
+    }
 
 
 async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
@@ -59,7 +62,9 @@ async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
     if user_id not in EDIT_STATE:
         return False
 
-    voice_msg = EDIT_STATE.pop(user_id)
+    state = EDIT_STATE.pop(user_id)
+    voice_msg = state["voice"]
+    prompt_msg = state["prompt_msg"]
     text_val = message.text.strip()
 
     if re.search(r"(?<!\s)[/-](?!\s)|(?<!\s)[/-]|[/-](?!\s)", text_val):
@@ -68,8 +73,9 @@ async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
 
     segments = re.split(r"\s+[/\-]\s+", text_val)
     if len(segments) == 1:
-        start_val, end_val = segments[0].strip(), None
-        if _parse_time(start_val) is None:
+        start_val = "0"
+        end_val = segments[0].strip()
+        if _parse_time(end_val) is None:
             await message.reply(EDIT_SEPARATOR_MSG)
             return True
     elif len(segments) == 2:
@@ -100,6 +106,10 @@ async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
             sent = await message.reply_voice(FSInputFile(out_path))
             if sent.voice:
                 await cache.set(f"trim:{voice_msg.message_id}", sent.voice.file_id)
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
         else:
             await message.reply(EDIT_FAIL_MSG)
     except Exception:
