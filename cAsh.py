@@ -131,6 +131,18 @@ class AdtStorage(RedisBase):
         await self._set(key, ",".join(map(str, msg_ids)))
 
 
+class ButtonCycleStorage(RedisBase):
+    async def get_index(self, chat_id: int) -> int:
+        key = CACHE_PREFIX + f"btn_cycle:{chat_id}"
+        val = await self._get(key)
+        return int(val) if val else 0
+
+    async def advance(self, chat_id: int, total: int) -> None:
+        key = CACHE_PREFIX + f"btn_cycle:{chat_id}"
+        idx = await self.get_index(chat_id)
+        await self._set(key, str((idx + 1) % total))
+
+
 def _root(chat_id: int, bot_id: int, is_private: bool) -> str:
     return str(bot_id) if is_private else str(chat_id).removeprefix("-")
 
@@ -187,6 +199,10 @@ def build_adt(url: str | None) -> AdtStorage:
 
 def build_lang(url: str | None) -> LangStorage:
     return LangStorage(_redis_client(url))
+
+
+def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
+    return ButtonCycleStorage(_redis_client(url))
 
 
 queue = ChatQueue()

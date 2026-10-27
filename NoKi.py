@@ -9,10 +9,10 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 from Reply import (
     ADMIN_COMMAND, BOT_TRIGGER, FAIL_TEXT, KEYWORD, LOADING_TEXT,
     MODE_MSG, MODE_DENIED, NO_QUERY_TEXT, RANDOM_REPLIES, WAIT_TEXT, EDIT_KEYWORDS,
-    LINK_FAIL_TEXT
+    LINK_FAIL_TEXT, BUTTON_NAMES
 )
-from bToN import build_mode_markup, build_buttons, build_markup, parse_ids
-from cAsh import AdtStorage, LangStorage, ModeStorage, ReplyCounter, VoiceCache, cleanup, queue, user_dir
+from bToN import build_mode_markup, build_specific_markup
+from cAsh import AdtStorage, LangStorage, ModeStorage, ReplyCounter, VoiceCache, ButtonCycleStorage, cleanup, queue, user_dir
 from ediT import handle_edit
 from yTFMe import download, download_merge, make_name, search, to_voice
 
@@ -53,8 +53,15 @@ async def _is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> b
     except Exception:
         return False
 
-def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, adt: AdtStorage, lang: LangStorage):
+def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, adt: AdtStorage, lang: LangStorage, btn_cycle: ButtonCycleStorage):
     
+    async def _get_random_reply_markup(chat_id: int):
+        total = len(BUTTON_NAMES)
+        idx = await btn_cycle.get_index(chat_id)
+        markup = build_specific_markup(idx)
+        await btn_cycle.advance(chat_id, total)
+        return markup
+
     async def _process_url(message: Message, bot: Bot, url: str, mode: str):
         chat_id = message.chat.id
         user_id = message.from_user.id if message.from_user else 0
@@ -75,7 +82,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
                     info, in_path = await download({"url": url}, base)
                     out_path = await to_voice(in_path, workdir, make_name(info))
                     if out_path and os.path.exists(out_path):
-                        sent = await message.answer_voice(FSInputFile(out_path))
+                        sent = await message.reply_voice(FSInputFile(out_path))
                         failed = False
                         if sent.voice and info.get("id"):
                             await cache.set(f"link_voice:{info['id']}", sent.voice.file_id)
@@ -83,7 +90,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
                     info, in_path = await download_merge({"url": url}, base)
                     if in_path and os.path.exists(in_path):
                         doc_name = f"{make_name(info)}{os.path.splitext(in_path)[1]}"
-                        sent = await message.answer_document(FSInputFile(in_path, filename=doc_name))
+                        sent = await message.reply_document(FSInputFile(in_path, filename=doc_name))
                         failed = False
                         if info.get("id"):
                             await cache.set(f"link_doc:{info['id']}", sent.document.file_id)
@@ -141,7 +148,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
                     cached = await cache.get(f"youtube:{video_id}")
                     if cached:
                         try:
-                            await message.answer_voice(cached)
+                            await message.reply_voice(cached)
                             sent_count += 1
                             continue
                         except Exception:
@@ -152,7 +159,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
                     out_path = await to_voice(in_path, workdir, make_name(info))
                     
                     if out_path and os.path.exists(out_path):
-                        sent = await message.answer_voice(FSInputFile(out_path))
+                        sent = await message.reply_voice(FSInputFile(out_path))
                         sent_count += 1
                         if sent.voice: 
                             await cache.set(f"youtube:{video_id}", sent.voice.file_id)
@@ -217,7 +224,8 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
                 if not extract_query(text) and not is_keyword_only(text):
                     if message.chat.type == "private":
                         idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-                        await message.reply(RANDOM_REPLIES[idx])
+                        markup = await _get_random_reply_markup(chat_id)
+                        await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
                     return
             else:
                 current_mode = await modes.get(mode_key)
@@ -233,13 +241,11 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
                 await message.reply(NO_QUERY_TEXT)
             else:
                 idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-                entries = build_buttons(parse_ids(BOT_NOTICE))
-                markup = build_markup(*entries[0]) if entries else None
+                markup = await _get_random_reply_markup(chat_id)
                 await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
         elif text == BOT_TRIGGER:
             idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
-            entries = build_buttons(parse_ids(BOT_NOTICE))
-            markup = build_markup(*entries[0]) if entries else None
+            markup = await _get_random_reply_markup(chat_id)
             await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
 
     async def on_callback(callback: CallbackQuery):
@@ -275,7 +281,7 @@ def make_handler(cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, a
 
     return on_message, on_callback
 
-def register(dispatcher, cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, adt: AdtStorage, lang: LangStorage):
-    handler, callback = make_handler(cache, counter, modes, adt, lang)
+def register(dispatcher, cache: VoiceCache, counter: ReplyCounter, modes: ModeStorage, adt: AdtStorage, lang: LangStorage, btn_cycle: ButtonCycleStorage):
+    handler, callback = make_handler(cache, counter, modes, adt, lang, btn_cycle)
     dispatcher.message.register(handler, F.text)
     dispatcher.callback_query.register(callback)

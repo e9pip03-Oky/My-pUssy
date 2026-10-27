@@ -95,7 +95,7 @@ async def handle_edit(message: Message, bot: Bot, cache):
         await bot.download_file(voice_file.file_path, in_path)
         success = await trim_voice(in_path, out_path, start_val, end_val)
         if success:
-            sent = await message.answer_voice(FSInputFile(out_path))
+            sent = await message.reply_voice(FSInputFile(out_path))
             if sent.voice:
                 await cache.set(f"trim:{message.reply_to_message.message_id}", sent.voice.file_id)
         else:

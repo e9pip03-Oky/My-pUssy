@@ -7,7 +7,10 @@ from aiogram import Bot, Dispatcher
 
 import NoKi
 from bToN import build_buttons, build_markup, parse_ids
-from cAsh import build_adt, build_cache, build_counter, build_lang, build_modes, build_storage
+from cAsh import (
+    build_adt, build_cache, build_counter, build_lang, 
+    build_modes, build_storage, build_btn_cycle
+)
 from Reply import BOOT_TEXT
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
@@ -37,7 +40,8 @@ async def main() -> None:
         build_counter(REDIS_URL), 
         build_modes(REDIS_URL),
         build_adt(REDIS_URL),
-        build_lang(REDIS_URL)
+        build_lang(REDIS_URL),
+        build_btn_cycle(REDIS_URL)
     )
     await send_boot_notice(bot)
     await dispatcher.start_polling(bot, drop_pending_updates=True)

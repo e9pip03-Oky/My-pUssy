@@ -27,6 +27,27 @@ def build_markup(name: str, user_id: int, style: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
 
+def build_specific_markup(index: int) -> InlineKeyboardMarkup | None:
+    from Reply import BUTTON_NAMES
+    from cAsh import ButtonCycleStorage
+    import os
+    
+    raw_ids = os.environ.get("boT_NoTice", "")
+    ids = parse_ids(raw_ids)
+    if not ids:
+        return None
+        
+    unique_ids = list(dict.fromkeys(ids))
+    if not unique_ids:
+        return None
+        
+    user_id = unique_ids[index % len(unique_ids)]
+    name = BUTTON_NAMES[index % len(BUTTON_NAMES)]
+    style = BUTTON_STYLES[index % len(BUTTON_STYLES)]
+    
+    return build_markup(name, user_id, style)
+
+
 def build_mode_markup(current_mode: str, lang_active: bool, owner_id: int, mode_key: str) -> InlineKeyboardMarkup:
     voice_style = "primary" if current_mode == "voice" else "danger"
     default_style = "primary" if current_mode == "default" else "danger"
