@@ -14,7 +14,7 @@ from cAsh import (
     AdtStorage, LangStorage, ModeStorage, ReplyCounter, VoiceCache,
     ButtonCycleStorage, cleanup, queue, user_dir,
 )
-from ediT import handle_edit
+from ediT import set_edit_state, handle_pending_edit
 from yoU import process_search, extract_query, is_keyword_only
 from yTFMe import download, download_merge, make_name, to_voice
 
@@ -112,6 +112,9 @@ def make_handler(
         thread_id = message.message_thread_id
         mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
 
+        if await handle_pending_edit(message, bot, cache):
+            return
+
         if await lang.get(mode_key):
             if any(c.upper() in UPPER_TARGETS for c in text):
                 fixed_text = _fix_lang_text(text)
@@ -121,7 +124,7 @@ def make_handler(
 
         if message.reply_to_message and message.reply_to_message.voice:
             if text.startswith(EDIT_KEYWORDS):
-                await handle_edit(message, bot, cache)
+                await set_edit_state(message, bot)
                 return
 
         if text == ADMIN_COMMAND:

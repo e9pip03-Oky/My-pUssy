@@ -13,6 +13,8 @@ from yTFMe import trim_voice
 
 log = logging.getLogger("voicebot")
 
+EDIT_STATE = {}
+
 
 def _parse_time(t: str) -> float | None:
     micro_val = 0.0
@@ -47,58 +49,61 @@ def _parse_time(t: str) -> float | None:
     return None
 
 
-async def handle_edit(message: Message, bot: Bot, cache):
-    if not message.reply_to_message or not message.reply_to_message.voice:
-        return
+async def set_edit_state(message: Message, bot: Bot):
+    EDIT_STATE[message.from_user.id] = message.reply_to_message
+    await message.reply(EDIT_SEPARATOR_MSG)
 
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.reply(EDIT_SEPARATOR_MSG)
-        return
 
-    text_val = parts[1].strip()
+async def handle_pending_edit(message: Message, bot: Bot, cache) -> bool:
+    user_id = message.from_user.id
+    if user_id not in EDIT_STATE:
+        return False
+
+    voice_msg = EDIT_STATE.pop(user_id)
+    text_val = message.text.strip()
+
     if re.search(r"(?<!\s)[/-](?!\s)|(?<!\s)[/-]|[/-](?!\s)", text_val):
         await message.reply(EDIT_SEPARATOR_MSG)
-        return
+        return True
 
     segments = re.split(r"\s+[/\-]\s+", text_val)
     if len(segments) == 1:
         start_val, end_val = segments[0].strip(), None
         if _parse_time(start_val) is None:
             await message.reply(EDIT_SEPARATOR_MSG)
-            return
+            return True
     elif len(segments) == 2:
         start_val, end_val = segments[0].strip(), segments[1].strip()
         s_val, e_val = _parse_time(start_val), _parse_time(end_val)
         if s_val is None or e_val is None:
             await message.reply(EDIT_SEPARATOR_MSG)
-            return
+            return True
         if s_val >= e_val:
             await message.reply(EDIT_START_BIGGER_MSG)
-            return
+            return True
     else:
         await message.reply(EDIT_SEPARATOR_MSG)
-        return
+        return True
 
     chat_id = message.chat.id
-    user_id = message.from_user.id if message.from_user else 0
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
 
-    in_path = os.path.join(workdir, f"{message.reply_to_message.message_id}_in.ogg")
+    in_path = os.path.join(workdir, f"{voice_msg.message_id}_in.ogg")
     out_path = os.path.join(workdir, f"{message.message_id}_out.ogg")
 
     try:
-        voice_file = await bot.get_file(message.reply_to_message.voice.file_id)
+        voice_file = await bot.get_file(voice_msg.voice.file_id)
         await bot.download_file(voice_file.file_path, in_path)
         success = await trim_voice(in_path, out_path, start_val, end_val)
         if success:
             sent = await message.reply_voice(FSInputFile(out_path))
             if sent.voice:
-                await cache.set(f"trim:{message.reply_to_message.message_id}", sent.voice.file_id)
+                await cache.set(f"trim:{voice_msg.message_id}", sent.voice.file_id)
         else:
             await message.reply(EDIT_FAIL_MSG)
     except Exception:
         await message.reply(EDIT_FAIL_MSG)
     finally:
         cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+    return True
