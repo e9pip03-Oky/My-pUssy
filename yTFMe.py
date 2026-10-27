@@ -106,7 +106,7 @@ async def to_note(in_path: str, out_path: str) -> bool:
         "ffmpeg", "-y", "-i", in_path,
         "-t", "60",
         "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=640:640",
-        "-c:v", "libx264", "-c:a", "aac",
+        "-c:v", "libx264",
         out_path,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
