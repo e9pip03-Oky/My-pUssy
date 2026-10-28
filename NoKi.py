@@ -77,7 +77,9 @@ def make_handler(
         await btn_cycle.advance(chat_id, total)
         return markup
 
-    async def _process_entry(entry: dict, message: Message, workdir: str, mode: str) -> bool:
+    async def _process_entry(
+        entry: dict, message: Message, workdir: str, mode: str
+    ) -> bool:
         entry_url = entry.get("webpage_url") or entry.get("url")
         if not entry_url:
             return False
@@ -132,7 +134,9 @@ def make_handler(
                 for entry in entries:
                     if await _process_entry(entry, message, workdir, mode):
                         sent_count += 1
-                        cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+                        cleanup(
+                            chat_id, user_id, bot.id, is_private, message.message_id
+                        )
 
                 if sent_count > 0:
                     failed = False
