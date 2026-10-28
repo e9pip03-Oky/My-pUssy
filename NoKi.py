@@ -144,6 +144,7 @@ def make_handler(
         action = parts[0]
         user_id = callback.from_user.id
         chat_id = callback.message.chat.id
+
         if action == "toggle_state":
             section = parts[1]
             owner_id, mode_key = int(parts[2]), parts[3]
@@ -164,12 +165,18 @@ def make_handler(
                 settings = await sticker.get(mode_key)
                 settings["enabled"] = not settings["enabled"]
                 await sticker.set(mode_key, settings)
-                await modes.set(
-                    mode_key, "sticker" if settings["enabled"] else "voice"
-                )
+                
+                # عند تفعيل الستيكر، نجعل الوضع الحالي ستيكر. وعند تعطيله نعيده لفويس (الافتراضي)
+                if settings["enabled"]:
+                    await modes.set(mode_key, "sticker")
+                else:
+                    if await modes.get(mode_key) == "sticker":
+                        await modes.set(mode_key, "voice")
+                        
                 await callback.message.edit_reply_markup(
                     reply_markup=build_sticker_markup(settings, owner_id, mode_key)
                 )
+
         elif action == "back":
             section = parts[1]
             owner_id, mode_key = int(parts[2]), parts[3]
@@ -189,24 +196,32 @@ def make_handler(
                     sticker_state["enabled"],
                 ),
             )
+
         elif action == "toggle":
             mode_chosen = parts[1]
             owner_id, mode_key = int(parts[2]), parts[3]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
+            
+            # إذا تم اختيار وضع آخر، يتم تعطيل الستيكر تلقائياً
+            settings = await sticker.get(mode_key)
+            if settings["enabled"] and mode_chosen != "sticker":
+                settings["enabled"] = False
+                await sticker.set(mode_key, settings)
+                
             await modes.set(mode_key, mode_chosen)
             new_lang = await lang.get(mode_key)
-            sticker_state = await sticker.get(mode_key)
             await callback.message.edit_reply_markup(
                 reply_markup=build_mode_markup(
                     mode_chosen,
                     new_lang,
                     owner_id,
                     mode_key,
-                    sticker_state["enabled"],
+                    settings["enabled"],
                 )
             )
+
         elif action == "lang":
             owner_id, mode_key = int(parts[1]), parts[2]
             if user_id != owner_id:
@@ -220,6 +235,7 @@ def make_handler(
                     lang_active, current_code, owner_id, mode_key
                 ),
             )
+
         elif action == "setlang":
             code, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
             if user_id != owner_id:
@@ -230,6 +246,7 @@ def make_handler(
             await callback.message.edit_reply_markup(
                 reply_markup=build_lang_markup(lang_active, code, owner_id, mode_key)
             )
+
         elif action == "sticker_menu":
             owner_id, mode_key = int(parts[1]), parts[2]
             if user_id != owner_id:
@@ -240,6 +257,7 @@ def make_handler(
                 STICKER_MSG,
                 reply_markup=build_sticker_markup(settings, owner_id, mode_key),
             )
+
         elif action == "sticker_set":
             field, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
             if user_id != owner_id:

@@ -70,10 +70,13 @@ def build_mode_markup(
     mode_key: str,
     sticker_enabled: bool = False,
 ) -> InlineKeyboardMarkup:
-    voice_style = "primary" if current_mode == "voice" else "danger"
-    default_style = "primary" if current_mode == "default" else "danger"
-    sticker_style = "primary" if sticker_enabled else "danger"
-    note_style = "primary" if current_mode == "note" else "danger"
+    # إذا كان الستيكر مفعلاً، فهو الوضع الحصري. وإلا نستخدم الوضع الحالي.
+    effective_mode = "sticker" if sticker_enabled else current_mode
+
+    voice_style = "primary" if effective_mode == "voice" else "danger"
+    default_style = "primary" if effective_mode == "default" else "danger"
+    sticker_style = "primary" if effective_mode == "sticker" else "danger"
+    note_style = "primary" if effective_mode == "note" else "danger"
     lang_style = "success" if lang_active else "danger"
 
     btn_voice = InlineKeyboardButton(
@@ -103,9 +106,8 @@ def build_mode_markup(
     )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_voice, btn_note],
             [btn_sticker],
-            [btn_default],
+            [btn_voice, btn_note, btn_default],
             [btn_lang],
         ]
     )
