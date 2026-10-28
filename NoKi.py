@@ -167,10 +167,14 @@ def make_handler(
                 await sticker.set(mode_key, settings)
 
                 if settings["enabled"]:
-                    await modes.set(mode_key, "sticker")
+                    current_mode = await modes.get(mode_key)
+                    if current_mode != "sticker":
+                        await modes.set_previous(mode_key, current_mode)
+                        await modes.set(mode_key, "sticker")
                 else:
                     if await modes.get(mode_key) == "sticker":
-                        await modes.set(mode_key, "voice")
+                        prev = await modes.get_previous(mode_key)
+                        await modes.set(mode_key, prev)
 
                 await callback.message.edit_reply_markup(
                     reply_markup=build_sticker_markup(settings, owner_id, mode_key)
@@ -204,19 +208,28 @@ def make_handler(
                 return
 
             settings = await sticker.get(mode_key)
-            if settings["enabled"] and mode_chosen != "sticker":
+            current_mode = await modes.get(mode_key)
+            
+            if settings["enabled"]:
                 settings["enabled"] = False
                 await sticker.set(mode_key, settings)
 
-            await modes.set(mode_key, mode_chosen)
+            if current_mode == mode_chosen:
+                prev = await modes.get_previous(mode_key)
+                await modes.set(mode_key, prev)
+            else:
+                await modes.set_previous(mode_key, current_mode)
+                await modes.set(mode_key, mode_chosen)
+
+            new_mode = await modes.get(mode_key)
             new_lang = await lang.get(mode_key)
             await callback.message.edit_reply_markup(
                 reply_markup=build_mode_markup(
-                    mode_chosen,
+                    new_mode,
                     new_lang,
                     owner_id,
                     mode_key,
-                    settings["enabled"],
+                    False,
                 )
             )
 

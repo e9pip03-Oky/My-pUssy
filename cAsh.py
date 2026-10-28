@@ -93,6 +93,12 @@ class ModeStorage(RedisBase):
     async def set(self, mode_key: str, mode: str) -> None:
         await self._set(CACHE_PREFIX + f"mode:{mode_key}", mode)
 
+    async def get_previous(self, mode_key: str) -> str:
+        return await self._get(CACHE_PREFIX + f"prev_mode:{mode_key}") or "voice"
+
+    async def set_previous(self, mode_key: str, mode: str) -> None:
+        await self._set(CACHE_PREFIX + f"prev_mode:{mode_key}", mode)
+
 
 class LangStorage(RedisBase):
     async def get(self, mode_key: str) -> bool:
