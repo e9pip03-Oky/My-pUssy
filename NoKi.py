@@ -165,14 +165,13 @@ def make_handler(
                 settings = await sticker.get(mode_key)
                 settings["enabled"] = not settings["enabled"]
                 await sticker.set(mode_key, settings)
-                
-                # عند تفعيل الستيكر، نجعل الوضع الحالي ستيكر. وعند تعطيله نعيده لفويس (الافتراضي)
+
                 if settings["enabled"]:
                     await modes.set(mode_key, "sticker")
                 else:
                     if await modes.get(mode_key) == "sticker":
                         await modes.set(mode_key, "voice")
-                        
+
                 await callback.message.edit_reply_markup(
                     reply_markup=build_sticker_markup(settings, owner_id, mode_key)
                 )
@@ -203,13 +202,12 @@ def make_handler(
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            
-            # إذا تم اختيار وضع آخر، يتم تعطيل الستيكر تلقائياً
+
             settings = await sticker.get(mode_key)
             if settings["enabled"] and mode_chosen != "sticker":
                 settings["enabled"] = False
                 await sticker.set(mode_key, settings)
-                
+
             await modes.set(mode_key, mode_chosen)
             new_lang = await lang.get(mode_key)
             await callback.message.edit_reply_markup(
@@ -264,8 +262,24 @@ def make_handler(
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             settings = await sticker.get(mode_key)
-            if field in ("landscape", "portrait", "flip_left", "flip_right"):
-                settings[field] = not settings[field]
+
+            if field == "landscape":
+                settings["landscape"] = not settings["landscape"]
+                if settings["landscape"]:
+                    settings["portrait"] = False
+            elif field == "portrait":
+                settings["portrait"] = not settings["portrait"]
+                if settings["portrait"]:
+                    settings["landscape"] = False
+            elif field == "flip_left":
+                settings["flip_left"] = not settings["flip_left"]
+                if settings["flip_left"]:
+                    settings["flip_right"] = False
+            elif field == "flip_right":
+                settings["flip_right"] = not settings["flip_right"]
+                if settings["flip_right"]:
+                    settings["flip_left"] = False
+
             await sticker.set(mode_key, settings)
             await callback.message.edit_reply_markup(
                 reply_markup=build_sticker_markup(settings, owner_id, mode_key)

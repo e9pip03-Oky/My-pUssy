@@ -70,7 +70,6 @@ def build_mode_markup(
     mode_key: str,
     sticker_enabled: bool = False,
 ) -> InlineKeyboardMarkup:
-    # إذا كان الستيكر مفعلاً، فهو الوضع الحصري. وإلا نستخدم الوضع الحالي.
     effective_mode = "sticker" if sticker_enabled else current_mode
 
     voice_style = "primary" if effective_mode == "voice" else "danger"
