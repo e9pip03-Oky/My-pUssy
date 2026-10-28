@@ -7,7 +7,12 @@ MAX_FILESIZE = 48 * 1024 * 1024
 
 
 def _extract_entries(url: str) -> list[dict]:
-    opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "noplaylist": False}
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "noplaylist": False,
+    }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     if "entries" in info:
@@ -26,7 +31,10 @@ def _download(url: str, base: str) -> tuple[dict, str]:
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        return info, ydl.prepare_filename(info)
+        path = ydl.prepare_filename(info)
+        if os.path.exists(path) and os.path.getsize(path) > MAX_FILESIZE:
+            raise RuntimeError(f"file too large: {os.path.getsize(path)}")
+        return info, path
 
 
 def _download_merge(url: str, base: str) -> tuple[dict, str]:
@@ -40,7 +48,10 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        return info, ydl.prepare_filename(info)
+        path = ydl.prepare_filename(info)
+        if os.path.exists(path) and os.path.getsize(path) > MAX_FILESIZE:
+            raise RuntimeError(f"file too large: {os.path.getsize(path)}")
+        return info, path
 
 
 async def get_entries(url: str) -> list[dict]:
@@ -74,12 +85,13 @@ async def to_voice(in_path: str, out_path: str) -> bool:
     return proc.returncode == 0
 
 
-async def trim_voice(in_path: str, out_path: str, start: str, end: str | None = None) -> bool:
+async def trim_voice(
+    in_path: str, out_path: str, start: str, end: str | None = None
+) -> bool:
     cmd = ["ffmpeg", "-y", "-ss", start]
     if end:
         cmd.extend(["-to", end])
     cmd.extend(["-i", in_path, "-c:a", "libopus", "-f", "ogg", out_path])
-
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,
@@ -89,7 +101,9 @@ async def trim_voice(in_path: str, out_path: str, start: str, end: str | None = 
     return proc.returncode == 0
 
 
-async def to_note_trim(in_path: str, out_path: str, start: str = "0", end: str | None = None) -> bool:
+async def to_note_trim(
+    in_path: str, out_path: str, start: str = "0", end: str | None = None
+) -> bool:
     cmd = ["ffmpeg", "-y", "-ss", start]
     if end:
         cmd.extend(["-to", end])
@@ -100,13 +114,66 @@ async def to_note_trim(in_path: str, out_path: str, start: str = "0", end: str |
             "-t",
             "60",
             "-vf",
-            "crop='min(iw,ih)':'min(iw,ih)'",
+            "crop='min(iw,ih)':'min(iw,ih)',scale=640:640",
             "-c:v",
             "libx264",
             out_path,
         ]
     )
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    return proc.returncode == 0
 
+
+async def trim_video(
+    in_path: str, out_path: str, start: str, end: str | None = None
+) -> bool:
+    cmd = ["ffmpeg", "-y", "-ss", start]
+    if end:
+        cmd.extend(["-to", end])
+    cmd.extend(
+        [
+            "-i",
+            in_path,
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            out_path,
+        ]
+    )
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    return proc.returncode == 0
+
+
+async def to_sticker(
+    in_path: str, out_path: str, settings: dict | None = None
+) -> bool:
+    settings = settings or {}
+    vf_parts = []
+    if settings.get("landscape"):
+        vf_parts.append("transpose=1")
+    elif settings.get("portrait"):
+        vf_parts.append("transpose=2")
+    if settings.get("flip_left") or settings.get("flip_right"):
+        vf_parts.append("hflip")
+    cmd = ["ffmpeg", "-y", "-i", in_path, "-an", "-c:v", "libx264"]
+    if vf_parts:
+        cmd.extend(["-vf", ",".join(vf_parts)])
+    cmd.extend(["-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path])
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,

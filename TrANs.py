@@ -36,7 +36,6 @@ def make_name(info: dict) -> str:
         " ",
         re.sub(r"[^\w\s]", "", (info.get("title") or "").strip()).replace("_", ""),
     ).strip()
-
     pub = fix_format(pub)
     title = fix_format(title)
     name = f"{pub} - {title}" if pub and title else (title or pub or "audio")

@@ -11,9 +11,11 @@ from cAsh import (
     build_adt,
     build_btn_cycle,
     build_counter,
+    build_file_cache,
     build_lang,
     build_lang_code,
     build_modes,
+    build_sticker,
     build_storage,
 )
 from Reply import BOOT_TEXT
@@ -47,6 +49,8 @@ async def main() -> None:
         build_lang(REDIS_URL),
         build_lang_code(REDIS_URL),
         build_btn_cycle(REDIS_URL),
+        build_sticker(REDIS_URL),
+        build_file_cache(REDIS_URL),
     )
     await send_boot_notice(bot)
     await dispatcher.start_polling(bot, drop_pending_updates=True)
