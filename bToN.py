@@ -15,6 +15,13 @@ from Reply import (
     MODE_NOTE,
     MODE_STICKER,
     MODE_VOICE,
+    STICKER_DIMENSIONS,
+    STICKER_DIM_3_2,
+    STICKER_DIM_3_4,
+    STICKER_DIM_9_16,
+    STICKER_DIM_LENGTH,
+    STICKER_DIM_NONE,
+    STICKER_DIM_WIDTH,
     STICKER_DISABLE,
     STICKER_ENABLE,
     STICKER_FLIP_LEFT,
@@ -154,6 +161,12 @@ def build_sticker_markup(
             style="danger",
         )
 
+    btn_dimensions = InlineKeyboardButton(
+        text=STICKER_DIMENSIONS,
+        callback_data=f"dimensions_menu:{owner_id}:{mode_key}",
+        style="success",
+    )
+
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
         callback_data=f"back:sticker:{owner_id}:{mode_key}",
@@ -162,9 +175,69 @@ def build_sticker_markup(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [btn_toggle],
             [btn_landscape, btn_portrait],
             [btn_flip_left, btn_flip_right],
-            [btn_toggle],
+            [btn_dimensions],
+            [btn_back],
+        ]
+    )
+
+
+def build_dimensions_markup(
+    settings: dict, owner_id: int, mode_key: str
+) -> InlineKeyboardMarkup:
+    crop_type = settings.get("crop_type", "none")
+    crop_ratio = settings.get("crop_ratio", "none")
+
+    if crop_type == "none":
+        type_text = STICKER_DIM_NONE
+        type_style = "success"
+    elif crop_type == "width":
+        type_text = STICKER_DIM_WIDTH
+        type_style = "primary"
+    else:
+        type_text = STICKER_DIM_LENGTH
+        type_style = "primary"
+
+    btn_type = InlineKeyboardButton(
+        text=type_text,
+        callback_data=f"dim_type:{owner_id}:{mode_key}",
+        style=type_style,
+    )
+
+    ratio_9_16_style = "primary" if crop_ratio == "9:16" else "danger"
+    ratio_3_2_style = "primary" if crop_ratio == "3:2" else "danger"
+    ratio_3_4_style = "primary" if crop_ratio == "3:4" else "danger"
+
+    btn_9_16 = InlineKeyboardButton(
+        text=STICKER_DIM_9_16,
+        callback_data=f"dim_ratio:9:16:{owner_id}:{mode_key}",
+        style=ratio_9_16_style,
+    )
+    btn_3_2 = InlineKeyboardButton(
+        text=STICKER_DIM_3_2,
+        callback_data=f"dim_ratio:3:2:{owner_id}:{mode_key}",
+        style=ratio_3_2_style,
+    )
+    btn_3_4 = InlineKeyboardButton(
+        text=STICKER_DIM_3_4,
+        callback_data=f"dim_ratio:3:4:{owner_id}:{mode_key}",
+        style=ratio_3_4_style,
+    )
+
+    btn_back = InlineKeyboardButton(
+        text=LANG_BACK,
+        callback_data=f"sticker_menu:{owner_id}:{mode_key}",
+        style="success",
+    )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [btn_type],
+            [btn_9_16],
+            [btn_3_2],
+            [btn_3_4],
             [btn_back],
         ]
     )
@@ -207,5 +280,9 @@ def build_lang_markup(
     )
 
     return InlineKeyboardMarkup(
-        inline_keyboard=[[btn_eng, btn_rus], [btn_toggle], [btn_back]]
+        inline_keyboard=[
+            [btn_toggle],
+            [btn_eng, btn_rus],
+            [btn_back],
+        ]
     )

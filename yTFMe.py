@@ -164,16 +164,37 @@ async def to_sticker(
 ) -> bool:
     settings = settings or {}
     vf_parts = []
+
     if settings.get("landscape"):
         vf_parts.append("transpose=1")
     elif settings.get("portrait"):
         vf_parts.append("transpose=2")
+
     if settings.get("flip_left") or settings.get("flip_right"):
         vf_parts.append("hflip")
+
+    crop_ratio = settings.get("crop_ratio", "none")
+    crop_type = settings.get("crop_type", "none")
+
+    if crop_ratio != "none":
+        try:
+            r_w, r_h = map(int, crop_ratio.split(":"))
+            if crop_type == "width":
+                vf_parts.append(f"crop='iw':'iw*{r_h}/{r_w}'")
+            elif crop_type == "length":
+                vf_parts.append(f"crop='ih*{r_w}/{r_h}':'ih'")
+            else:
+                vf_parts.append(
+                    f"crop='min(iw,ih*{r_w}/{r_h})':'min(ih,iw*{r_h}/{r_w})'"
+                )
+        except Exception:
+            pass
+
     cmd = ["ffmpeg", "-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if vf_parts:
         cmd.extend(["-vf", ",".join(vf_parts)])
     cmd.extend(["-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path])
+
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,

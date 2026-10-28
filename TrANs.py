@@ -46,7 +46,8 @@ async def process_translation(text: str, dest: str) -> str | None:
     try:
         async with Translator() as translator:
             res = await translator.translate(text, dest=dest)
-            return fix_format(res.text)
+            translated = res.text.replace(".", "").strip()
+            return fix_format(translated)
     except Exception as exc:
         log.warning("translation failed: %s", exc)
         return None

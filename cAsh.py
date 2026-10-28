@@ -154,6 +154,8 @@ class StickerSettings(RedisBase):
                 "portrait": False,
                 "flip_left": False,
                 "flip_right": False,
+                "crop_ratio": "none",
+                "crop_type": "none",
             }
         parts = val.split(",")
         return {
@@ -162,12 +164,21 @@ class StickerSettings(RedisBase):
             "portrait": parts[2] == "1",
             "flip_left": parts[3] == "1",
             "flip_right": parts[4] == "1",
+            "crop_ratio": parts[5] if len(parts) > 5 else "none",
+            "crop_type": parts[6] if len(parts) > 6 else "none",
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
         val = ",".join(
-            "1" if settings[k] else "0"
-            for k in ("enabled", "landscape", "portrait", "flip_left", "flip_right")
+            [
+                "1" if settings["enabled"] else "0",
+                "1" if settings["landscape"] else "0",
+                "1" if settings["portrait"] else "0",
+                "1" if settings["flip_left"] else "0",
+                "1" if settings["flip_right"] else "0",
+                settings.get("crop_ratio", "none"),
+                settings.get("crop_type", "none"),
+            ]
         )
         await self._set(CACHE_PREFIX + f"sticker:{mode_key}", val)
 
@@ -180,7 +191,9 @@ class FileIdCache(RedisBase):
                 "1" if settings.get(k) else "0"
                 for k in ("landscape", "portrait", "flip_left", "flip_right")
             ]
-            return f"sticker:{''.join(parts)}"
+            parts.append(settings.get("crop_ratio", "none"))
+            parts.append(settings.get("crop_type", "none"))
+            return f"sticker:{'_'.join(parts)}"
         return mode
 
     @staticmethod
