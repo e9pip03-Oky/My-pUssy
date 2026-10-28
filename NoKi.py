@@ -38,7 +38,7 @@ from cAsh import (
     user_dir,
 )
 from ediT import handle_pending_edit, set_edit_state
-from TrANs import fix_format, process_translation, make_name
+from TrANs import fix_format, make_name, process_translation
 from yTFMe import (
     download,
     download_merge,
@@ -244,7 +244,8 @@ def make_handler(
             return
         text = message.text.strip()
         chat_id = message.chat.id
-        user_id = message.from_user.id if message.from_user else 0        thread_id = message.message_thread_id
+        user_id = message.from_user.id if message.from_user else 0
+        thread_id = message.message_thread_id
         mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
 
         if await handle_pending_edit(message, bot):
