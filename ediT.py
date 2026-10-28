@@ -11,7 +11,7 @@ from Reply import (
     EDIT_SEPARATOR_MSG,
     EDIT_START_BIGGER_MSG,
 )
-from cAsh import cleanup, user_dir
+from cAsh import FileIdCache, cleanup, user_dir
 from yTFMe import MAX_FILESIZE, to_note_trim, trim_video, trim_voice
 
 log = logging.getLogger("voicebot")
@@ -57,7 +57,9 @@ async def set_edit_state(message: Message, bot: Bot):
     }
 
 
-async def handle_pending_edit(message: Message, bot: Bot) -> bool:
+async def handle_pending_edit(
+    message: Message, bot: Bot, file_cache: FileIdCache
+) -> bool:
     user_id = message.from_user.id
     if user_id not in EDIT_STATE:
         return False
@@ -106,6 +108,25 @@ async def handle_pending_edit(message: Message, bot: Bot) -> bool:
     else:
         await message.reply(EDIT_SEPARATOR_MSG)
         return True
+
+    detail = f"{start_val}:{end_val}"
+    cached = await file_cache.get_by_source(file_id, f"edit_{media_type}", detail)
+    if cached:
+        try:
+            if media_type == "voice":
+                await message.reply_voice(cached)
+            elif media_type == "note":
+                await message.reply_video_note(cached)
+            else:
+                await message.reply_video(cached)
+            try:
+                await prompt_msg.delete()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            await file_cache.delete_by_source(file_id, f"edit_{media_type}", detail)
+
     chat_id = message.chat.id
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
@@ -121,17 +142,26 @@ async def handle_pending_edit(message: Message, bot: Bot) -> bool:
             out_path += ".ogg"
             success = await trim_voice(in_path, out_path, start_val, end_val)
             if success:
-                await message.reply_voice(FSInputFile(out_path))
+                sent = await message.reply_voice(FSInputFile(out_path))
+                await file_cache.set_by_source(
+                    file_id, f"edit_{media_type}", detail, sent.voice.file_id
+                )
         elif media_type == "note":
             out_path += ".mp4"
             success = await to_note_trim(in_path, out_path, start_val, end_val)
             if success:
-                await message.reply_video_note(FSInputFile(out_path))
+                sent = await message.reply_video_note(FSInputFile(out_path))
+                await file_cache.set_by_source(
+                    file_id, f"edit_{media_type}", detail, sent.video_note.file_id
+                )
         else:
             out_path += ".mp4"
             success = await trim_video(in_path, out_path, start_val, end_val)
             if success:
-                await message.reply_video(FSInputFile(out_path))
+                sent = await message.reply_video(FSInputFile(out_path))
+                await file_cache.set_by_source(
+                    file_id, f"edit_{media_type}", detail, sent.video.file_id
+                )
         if success:
             try:
                 await prompt_msg.delete()

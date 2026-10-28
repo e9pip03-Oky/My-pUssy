@@ -54,7 +54,10 @@ async def send_cached(file_id: str, message: Message, mode: str) -> bool:
         elif mode == "sticker":
             await message.reply_animation(file_id)
         else:
-            await message.reply_document(file_id)
+            try:
+                await message.reply_video(file_id)
+            except Exception:
+                await message.reply_document(file_id)
         return True
     except Exception as exc:
         log.warning("cached file_id failed: %s", exc)
@@ -116,7 +119,14 @@ async def process_entry(
                 FSInputFile(in_path, filename=doc_name)
             )
             if file_cache:
-                await file_cache.set(entry_url, mode, sent.document.file_id, settings)
+                if sent.video:
+                    await file_cache.set(
+                        entry_url, mode, sent.video.file_id, settings
+                    )
+                elif sent.document:
+                    await file_cache.set(
+                        entry_url, mode, sent.document.file_id, settings
+                    )
             return True
         return False
 
@@ -184,6 +194,7 @@ async def handle_media_request(
     bot: Bot,
     text: str,
     sticker: StickerSettings,
+    file_cache: FileIdCache,
 ) -> bool:
     reply = message.reply_to_message
     media = reply.video or reply.document or reply.audio or reply.voice
@@ -195,6 +206,21 @@ async def handle_media_request(
         return False
     is_note = text == MODE_NOTE
     is_sticker = text == MODE_STICKER
+    media_file_id = media.file_id
+    detail = "direct"
+    if not is_sticker:
+        cached = await file_cache.get_by_source(media_file_id, f"direct_{text}", detail)
+        if cached:
+            try:
+                if text == MODE_VOICE:
+                    await message.reply_voice(cached)
+                elif text == MODE_NOTE:
+                    await message.reply_video_note(cached)
+                return True
+            except Exception:
+                await file_cache.delete_by_source(
+                    media_file_id, f"direct_{text}", detail
+                )
     if reply.video:
         media_type = MEDIA_VIDEO
     elif reply.document:
@@ -230,14 +256,20 @@ async def handle_media_request(
             out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
             success = await to_note_trim(in_path, out_path, "0")
             if success:
-                await message.reply_video_note(FSInputFile(out_path))
+                sent = await message.reply_video_note(FSInputFile(out_path))
+                await file_cache.set_by_source(
+                    media_file_id, f"direct_{text}", detail, sent.video_note.file_id
+                )
             else:
                 await message.reply(LINK_FAIL_TEXT)
         else:
             out_path = os.path.join(workdir, f"{temp_id}.ogg")
             success = await to_voice(in_path, out_path)
             if success and os.path.exists(out_path):
-                await message.reply_voice(FSInputFile(out_path))
+                sent = await message.reply_voice(FSInputFile(out_path))
+                await file_cache.set_by_source(
+                    media_file_id, f"direct_{text}", detail, sent.voice.file_id
+                )
             else:
                 await message.reply(NO_AUDIO_MSG.format(media_type))
     except Exception as exc:

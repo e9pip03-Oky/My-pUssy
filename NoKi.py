@@ -82,10 +82,10 @@ def make_handler(
         user_id = message.from_user.id if message.from_user else 0
         thread_id = message.message_thread_id
         mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
-        if await handle_pending_edit(message, bot):
+        if await handle_pending_edit(message, bot, file_cache):
             return
         if message.reply_to_message and text in (MODE_NOTE, MODE_VOICE, MODE_STICKER):
-            if await handle_media_request(message, bot, text, sticker):
+            if await handle_media_request(message, bot, text, sticker, file_cache):
                 return
         if message.reply_to_message and text.startswith(EDIT_KEYWORDS):
             if (
@@ -209,7 +209,7 @@ def make_handler(
 
             settings = await sticker.get(mode_key)
             current_mode = await modes.get(mode_key)
-            
+
             if settings["enabled"]:
                 settings["enabled"] = False
                 await sticker.set(mode_key, settings)

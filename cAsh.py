@@ -200,6 +200,30 @@ class FileIdCache(RedisBase):
     async def delete(self, url: str, mode: str, settings: dict | None = None) -> None:
         await self._del(self.key(url, mode, settings))
 
+    @staticmethod
+    def source_key(source_file_id: str, action: str, detail: str) -> str:
+        raw = f"{source_file_id}|{action}|{detail}"
+        return CACHE_PREFIX + "src_id:" + _hash_key(raw)
+
+    async def get_by_source(
+        self, source_file_id: str, action: str, detail: str
+    ) -> str | None:
+        return await self._get(self.source_key(source_file_id, action, detail))
+
+    async def set_by_source(
+        self, source_file_id: str, action: str, detail: str, file_id: str
+    ) -> None:
+        await self._set(
+            self.source_key(source_file_id, action, detail),
+            file_id,
+            ttl=FILE_ID_TTL,
+        )
+
+    async def delete_by_source(
+        self, source_file_id: str, action: str, detail: str
+    ) -> None:
+        await self._del(self.source_key(source_file_id, action, detail))
+
 
 def _root(chat_id: int, bot_id: int, is_private: bool) -> str:
     return str(bot_id) if is_private else str(chat_id).removeprefix("-")
