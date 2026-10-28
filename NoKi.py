@@ -38,7 +38,7 @@ from cAsh import (
     user_dir,
 )
 from ediT import handle_pending_edit, set_edit_state
-from TrANs import fix_format, make_name, process_translation
+from TrANs import fix_format, has_formatting_chars, make_name, process_translation
 from yTFMe import (
     download,
     download_merge,
@@ -230,7 +230,7 @@ def make_handler(
         return True
 
     async def _handle_translation(message: Message, text: str, mode_key: str) -> bool:
-        if any(c.upper() in fix_format(text) for c in text) or "ss" in text.lower():
+        if has_formatting_chars(text):
             fixed_text = fix_format(text)
             if fixed_text != text:
                 await message.reply(fixed_text)
