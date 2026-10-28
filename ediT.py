@@ -6,10 +6,14 @@ from aiogram import Bot
 from aiogram.types import FSInputFile, Message
 
 from Reply import (
-    EDIT_KEYWORDS, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG, EDIT_FAIL_MSG, EDIT_END_TOO_LONG_MSG
+    EDIT_END_TOO_LONG_MSG,
+    EDIT_FAIL_MSG,
+    EDIT_KEYWORDS,
+    EDIT_SEPARATOR_MSG,
+    EDIT_START_BIGGER_MSG,
 )
 from cAsh import cleanup, user_dir
-from yTFMe import trim_voice
+from yTFMe import to_note_trim, trim_voice
 
 log = logging.getLogger("voicebot")
 
@@ -52,8 +56,8 @@ def _parse_time(t: str) -> float | None:
 async def set_edit_state(message: Message, bot: Bot):
     reply_msg = await message.reply(EDIT_SEPARATOR_MSG)
     EDIT_STATE[message.from_user.id] = {
-        "voice": message.reply_to_message,
-        "prompt_msg": reply_msg
+        "msg": message.reply_to_message,
+        "prompt": reply_msg,
     }
 
 
@@ -63,11 +67,25 @@ async def handle_pending_edit(message: Message, bot: Bot) -> bool:
         return False
 
     state = EDIT_STATE.pop(user_id)
-    voice_msg = state["voice"]
-    prompt_msg = state["prompt_msg"]
-    text_val = message.text.strip()
-    voice_duration = voice_msg.voice.duration if voice_msg.voice else 0
+    media_msg = state["msg"]
+    prompt_msg = state["prompt"]
 
+    if media_msg.voice:
+        duration = media_msg.voice.duration
+        media_type = "voice"
+        file_id = media_msg.voice.file_id
+    elif media_msg.video_note:
+        duration = media_msg.video_note.duration
+        media_type = "note"
+        file_id = media_msg.video_note.file_id
+    elif media_msg.video:
+        duration = media_msg.video.duration
+        media_type = "note"
+        file_id = media_msg.video.file_id
+    else:
+        return False
+
+    text_val = message.text.strip()
     clean_text = re.sub(r"[/\-]", " ", text_val)
     segments = [s for s in clean_text.split() if s]
 
@@ -78,7 +96,7 @@ async def handle_pending_edit(message: Message, bot: Bot) -> bool:
         if e_val is None:
             await message.reply(EDIT_SEPARATOR_MSG)
             return True
-        if e_val > voice_duration:
+        if e_val > duration:
             await message.reply(EDIT_END_TOO_LONG_MSG)
             return True
     elif len(segments) == 2:
@@ -90,7 +108,7 @@ async def handle_pending_edit(message: Message, bot: Bot) -> bool:
         if s_val >= e_val:
             await message.reply(EDIT_START_BIGGER_MSG)
             return True
-        if e_val > voice_duration:
+        if e_val > duration:
             await message.reply(EDIT_END_TOO_LONG_MSG)
             return True
     else:
@@ -101,15 +119,25 @@ async def handle_pending_edit(message: Message, bot: Bot) -> bool:
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
 
-    in_path = os.path.join(workdir, f"{voice_msg.message_id}_in.ogg")
-    out_path = os.path.join(workdir, f"{message.message_id}_out.ogg")
+    in_path = os.path.join(workdir, f"{media_msg.message_id}_in")
+    out_path = os.path.join(workdir, f"{message.message_id}_out")
 
     try:
-        voice_file = await bot.get_file(voice_msg.voice.file_id)
-        await bot.download_file(voice_file.file_path, in_path)
-        success = await trim_voice(in_path, out_path, start_val, end_val)
+        tg_file = await bot.get_file(file_id)
+        await bot.download_file(tg_file.file_path, in_path)
+
+        if media_type == "voice":
+            out_path += ".ogg"
+            success = await trim_voice(in_path, out_path, start_val, end_val)
+            if success:
+                await message.reply_voice(FSInputFile(out_path))
+        else:
+            out_path += ".mp4"
+            success = await to_note_trim(in_path, out_path, start_val, end_val)
+            if success:
+                await message.reply_video_note(FSInputFile(out_path))
+
         if success:
-            await message.reply_voice(FSInputFile(out_path))
             try:
                 await prompt_msg.delete()
             except Exception:

@@ -9,12 +9,12 @@ import NoKi
 from bToN import build_buttons, build_markup, parse_ids
 from cAsh import (
     build_adt,
+    build_btn_cycle,
     build_counter,
     build_lang,
     build_lang_code,
     build_modes,
     build_storage,
-    build_btn_cycle,
 )
 from Reply import BOOT_TEXT
 

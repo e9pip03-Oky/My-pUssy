@@ -1,46 +1,54 @@
 import logging
 import os
+import random
 import re
 
 from aiogram import Bot, F
 from aiogram.types import CallbackQuery, FSInputFile, Message
-from googletrans import Translator
 
 from Reply import (
-    ADMIN_COMMAND, BOT_TRIGGER, MODE_MSG, MODE_DENIED, RANDOM_REPLIES,
-    EDIT_KEYWORDS, LINK_FAIL_TEXT, BUTTON_NAMES, LOADING_TEXT, LANG_MSG,
-    NOTE_WAIT_MSG, WAIT_VOICE_MSG, NO_AUDIO_MSG, MODE_NOTE, MODE_VOICE,
-    MEDIA_VIDEO, MEDIA_DOC
+    ADMIN_COMMAND,
+    BOT_TRIGGER,
+    BUTTON_NAMES,
+    EDIT_KEYWORDS,
+    LANG_MSG,
+    LINK_FAIL_TEXT,
+    LOADING_TEXT,
+    MEDIA_DOC,
+    MEDIA_VIDEO,
+    MODE_DENIED,
+    MODE_MSG,
+    MODE_NOTE,
+    MODE_VOICE,
+    NO_AUDIO_MSG,
+    NOTE_WAIT_MSG,
+    RANDOM_REPLIES,
+    WAIT_VOICE_MSG,
 )
-from bToN import build_mode_markup, build_specific_markup, build_lang_markup
+from bToN import build_lang_markup, build_mode_markup, build_specific_markup
 from cAsh import (
-    AdtStorage, LangStorage, LangCodeStorage, ModeStorage, ReplyCounter,
-    ButtonCycleStorage, cleanup, queue, user_dir,
+    AdtStorage,
+    ButtonCycleStorage,
+    LangCodeStorage,
+    LangStorage,
+    ModeStorage,
+    ReplyCounter,
+    cleanup,
+    queue,
+    user_dir,
 )
-from ediT import set_edit_state, handle_pending_edit
-from yTFMe import download, download_merge, make_name, to_voice, to_note, get_entries
+from ediT import handle_pending_edit, set_edit_state
+from TrANs import fix_format, process_translation, make_name
+from yTFMe import (
+    download,
+    download_merge,
+    get_entries,
+    to_note_trim,
+    to_voice,
+)
 
 log = logging.getLogger("voicebot")
 URL_RE = re.compile(r"https?://\S+")
-UPPER_TARGETS = set("ATFGUJNMLБИА")
-
-translator = Translator()
-
-
-def _fix_lang_text(text: str) -> str:
-    res = []
-    prev_char = ""
-    for char in text:
-        if char == "s" and prev_char == "s":
-            res.append("S")
-        elif char.upper() in UPPER_TARGETS:
-            res.append(char.upper())
-        elif "a" <= char.lower() <= "z" or "а" <= char.lower() <= "я":
-            res.append(char.lower())
-        else:
-            res.append(char)
-        prev_char = char
-    return "".join(res)
 
 
 async def _is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> bool:
@@ -55,8 +63,11 @@ async def _is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> b
 
 
 def make_handler(
-    counter: ReplyCounter, modes: ModeStorage,
-    adt: AdtStorage, lang: LangStorage, lang_code: LangCodeStorage,
+    counter: ReplyCounter,
+    modes: ModeStorage,
+    adt: AdtStorage,
+    lang: LangStorage,
+    lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
 ):
     async def _get_random_reply_markup(chat_id: int):
@@ -65,6 +76,38 @@ def make_handler(
         markup = build_specific_markup(idx)
         await btn_cycle.advance(chat_id, total)
         return markup
+
+    async def _process_entry(entry: dict, message: Message, workdir: str, mode: str) -> bool:
+        entry_url = entry.get("webpage_url") or entry.get("url")
+        if not entry_url:
+            return False
+
+        temp_id = random.randint(100, 999)
+        base = os.path.join(workdir, str(temp_id))
+
+        if mode == "voice":
+            info, in_path = await download(entry_url, base)
+            out_path = os.path.join(workdir, f"{temp_id}.ogg")
+            if await to_voice(in_path, out_path) and os.path.exists(out_path):
+                await message.reply_voice(FSInputFile(out_path))
+                return True
+
+        elif mode == "note":
+            info, in_path = await download_merge(entry_url, base)
+            out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
+            if await to_note_trim(in_path, out_path, "0"):
+                await message.reply_video_note(FSInputFile(out_path))
+                return True
+
+        else:
+            info, in_path = await download_merge(entry_url, base)
+            if in_path and os.path.exists(in_path):
+                ext = os.path.splitext(in_path)[1]
+                doc_name = f"{make_name(info)}{ext}"
+                await message.reply_document(FSInputFile(in_path, filename=doc_name))
+                return True
+
+        return False
 
     async def _process_url(message: Message, bot: Bot, url: str, mode: str):
         chat_id = message.chat.id
@@ -81,54 +124,18 @@ def make_handler(
             try:
                 workdir = user_dir(chat_id, user_id, bot.id, is_private)
                 entries = await get_entries(url)
-                
+
                 if not entries:
                     raise RuntimeError("no results")
 
-                base_name = str(message.message_id)
-                
-                if mode == "voice":
-                    for idx, entry in enumerate(entries):
-                        entry_url = entry.get("webpage_url") or entry.get("url")
-                        if not entry_url:
-                            continue
-                        
-                        base = os.path.join(workdir, f"{base_name}_{idx}")
-                        info, in_path = await download(entry_url, base)
-                        out_path = await to_voice(in_path, workdir, make_name(info))
-                        if out_path and os.path.exists(out_path):
-                            await message.reply_voice(FSInputFile(out_path))
-                            failed = False
-                            cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
-                            
-                elif mode == "note":
-                    for idx, entry in enumerate(entries):
-                        entry_url = entry.get("webpage_url") or entry.get("url")
-                        if not entry_url:
-                            continue
-                        
-                        base = os.path.join(workdir, f"{base_name}_{idx}")
-                        info, in_path = await download_merge(entry_url, base)
-                        out_path = os.path.join(workdir, f"{base_name}_{idx}_note.mp4")
-                        if await to_note(in_path, out_path):
-                            await message.reply_video_note(FSInputFile(out_path))
-                            failed = False
-                            cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
-                            
-                else:
-                    for idx, entry in enumerate(entries):
-                        entry_url = entry.get("webpage_url") or entry.get("url")
-                        if not entry_url:
-                            continue
-                            
-                        base = os.path.join(workdir, f"{base_name}_{idx}")
-                        info, in_path = await download_merge(entry_url, base)
-                        if in_path and os.path.exists(in_path):
-                            ext = os.path.splitext(in_path)[1]
-                            doc_name = f"{make_name(info)}{ext}"
-                            await message.reply_document(FSInputFile(in_path, filename=doc_name))
-                            failed = False
-                            cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+                sent_count = 0
+                for entry in entries:
+                    if await _process_entry(entry, message, workdir, mode):
+                        sent_count += 1
+                        cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+
+                if sent_count > 0:
+                    failed = False
 
             except Exception as exc:
                 log.warning("link failed %s: %s", message.message_id, exc)
@@ -143,74 +150,120 @@ def make_handler(
             cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
             await queue.release(chat_id)
 
+    async def _handle_media_request(message: Message, bot: Bot, text: str) -> bool:
+        media = message.reply_to_message.video or message.reply_to_message.document
+        if text == MODE_NOTE and not message.reply_to_message.video:
+            return False
+        if text == MODE_VOICE and not media:
+            return False
+
+        is_note = text == MODE_NOTE
+        media_type = MEDIA_VIDEO if message.reply_to_message.video else MEDIA_DOC
+        wait_msg = await message.reply(
+            NOTE_WAIT_MSG if is_note else WAIT_VOICE_MSG.format(media_type)
+        )
+
+        chat_id = message.chat.id
+        user_id = message.from_user.id if message.from_user else 0
+        is_private = message.chat.type == "private"
+        workdir = user_dir(chat_id, user_id, bot.id, is_private)
+        temp_id = random.randint(100, 999)
+        in_path = os.path.join(workdir, str(temp_id))
+
+        try:
+            tg_file = await bot.get_file(media.file_id)
+            await bot.download_file(tg_file.file_path, in_path)
+
+            if is_note:
+                out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
+                success = await to_note_trim(in_path, out_path, "0")
+                if success:
+                    await message.reply_video_note(FSInputFile(out_path))
+                else:
+                    await message.reply(LINK_FAIL_TEXT)
+            else:
+                out_path = os.path.join(workdir, f"{temp_id}.ogg")
+                success = await to_voice(in_path, out_path)
+                if success and os.path.exists(out_path):
+                    await message.reply_voice(FSInputFile(out_path))
+                else:
+                    await message.reply(NO_AUDIO_MSG.format(media_type))
+        except Exception as exc:
+            log.warning("media failed %s: %s", message.message_id, exc)
+            await message.reply(LINK_FAIL_TEXT)
+        finally:
+            try:
+                await wait_msg.delete()
+            except Exception:
+                pass
+            cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+        return True
+
+    async def _handle_admin(message: Message, bot: Bot, mode_key: str) -> bool:
+        chat_id = message.chat.id
+        user_id = message.from_user.id if message.from_user else 0
+        is_channel = message.chat.type == "channel"
+
+        if message.chat.type != "private":
+            if not await _is_admin(bot, chat_id, user_id, is_channel):
+                return True
+
+        markup = build_mode_markup(
+            await modes.get(mode_key), await lang.get(mode_key), user_id, mode_key
+        )
+        sent_msg = await message.reply(MODE_MSG, reply_markup=markup)
+
+        if message.chat.type != "private":
+            old_msgs = await adt.get_messages(mode_key)
+            if len(old_msgs) >= 3:
+                old = old_msgs.pop(0)
+                try:
+                    await bot.delete_message(chat_id, old)
+                except Exception:
+                    pass
+            old_msgs.append(sent_msg.message_id)
+            await adt.save_messages(mode_key, old_msgs)
+        return True
+
+    async def _handle_translation(message: Message, text: str, mode_key: str) -> bool:
+        if any(c.upper() in fix_format(text) for c in text) or "ss" in text.lower():
+            fixed_text = fix_format(text)
+            if fixed_text != text:
+                await message.reply(fixed_text)
+                return True
+        else:
+            code = await lang_code.get(mode_key)
+            fixed_text = await process_translation(text, code)
+            if fixed_text:
+                await message.reply(fixed_text)
+                return True
+        return False
+
     async def on_message(message: Message, bot: Bot):
         if not message.text:
             return
         text = message.text.strip()
         chat_id = message.chat.id
-        user_id = message.from_user.id if message.from_user else 0
-        is_channel = message.chat.type == "channel"
-        thread_id = message.message_thread_id
+        user_id = message.from_user.id if message.from_user else 0        thread_id = message.message_thread_id
         mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
 
         if await handle_pending_edit(message, bot):
             return
 
-        if message.reply_to_message and message.reply_to_message.video and text == MODE_NOTE:
-            wait_msg = await message.reply(NOTE_WAIT_MSG)
-            is_private = message.chat.type == "private"
-            workdir = user_dir(chat_id, user_id, bot.id, is_private)
-            in_path = os.path.join(workdir, f"{message.reply_to_message.message_id}_in.mp4")
-            out_path = os.path.join(workdir, f"{message.message_id}_note.mp4")
-            try:
-                vid_file = await bot.get_file(message.reply_to_message.video.file_id)
-                await bot.download_file(vid_file.file_path, in_path)
-                success = await to_note(in_path, out_path)
-                if success:
-                    await message.reply_video_note(FSInputFile(out_path))
-                else:
-                    await message.reply(LINK_FAIL_TEXT)
-            except Exception as exc:
-                log.warning("note failed %s: %s", message.message_id, exc)
-                await message.reply(LINK_FAIL_TEXT)
-            finally:
-                try:
-                    await wait_msg.delete()
-                except Exception:
-                    pass
-                cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
-            return
-
-        if message.reply_to_message and text == MODE_VOICE:
-            media = message.reply_to_message.video or message.reply_to_message.document
-            if media:
-                media_type = MEDIA_VIDEO if message.reply_to_message.video else MEDIA_DOC
-                wait_msg = await message.reply(WAIT_VOICE_MSG.format(media_type))
-                is_private = message.chat.type == "private"
-                workdir = user_dir(chat_id, user_id, bot.id, is_private)
-                in_path = os.path.join(workdir, f"{message.reply_to_message.message_id}_in")
-                out_path = os.path.join(workdir, f"{message.message_id}_out.ogg")
-                try:
-                    tg_file = await bot.get_file(media.file_id)
-                    await bot.download_file(tg_file.file_path, in_path)
-                    success = await to_voice(in_path, workdir, str(message.message_id))
-                    if success and os.path.exists(out_path):
-                        await message.reply_voice(FSInputFile(out_path))
-                    else:
-                        await message.reply(NO_AUDIO_MSG.format(media_type))
-                except Exception as exc:
-                    log.warning("voice failed %s: %s", message.message_id, exc)
-                    await message.reply(LINK_FAIL_TEXT)
-                finally:
-                    try:
-                        await wait_msg.delete()
-                    except Exception:
-                        pass
-                    cleanup(chat_id, user_id, bot.id, is_private, message.message_id)
+        if message.reply_to_message and text in (MODE_NOTE, MODE_VOICE):
+            if await _handle_media_request(message, bot, text):
                 return
 
-        url_match = URL_RE.search(text)
-        if url_match:
+        if message.reply_to_message and text.startswith(EDIT_KEYWORDS):
+            if (
+                message.reply_to_message.voice
+                or message.reply_to_message.video_note
+                or message.reply_to_message.video
+            ):
+                await set_edit_state(message, bot)
+                return
+
+        if url_match := URL_RE.search(text):
             url = url_match.group(0)
             if "t.me/" in url or "telegram.me/" in url:
                 if message.chat.type == "private":
@@ -224,43 +277,12 @@ def make_handler(
                 return
 
         if text == ADMIN_COMMAND:
-            if message.chat.type != "private":
-                if not await _is_admin(bot, chat_id, user_id, is_channel):
-                    return
-            markup = build_mode_markup(await modes.get(mode_key), await lang.get(mode_key), user_id, mode_key)
-            sent_msg = await message.reply(MODE_MSG, reply_markup=markup)
-            if message.chat.type != "private":
-                old_msgs = await adt.get_messages(mode_key)
-                if len(old_msgs) >= 3:
-                    old = old_msgs.pop(0)
-                    try:
-                        await bot.delete_message(chat_id, old)
-                    except Exception:
-                        pass
-                old_msgs.append(sent_msg.message_id)
-                await adt.save_messages(mode_key, old_msgs)
-            return
-
-        if message.reply_to_message and message.reply_to_message.voice:
-            if text.startswith(EDIT_KEYWORDS):
-                await set_edit_state(message, bot)
+            if await _handle_admin(message, bot, mode_key):
                 return
 
         if await lang.get(mode_key):
-            if any(c.upper() in UPPER_TARGETS for c in text) or "ss" in text.lower():
-                fixed_text = _fix_lang_text(text)
-                if fixed_text != text:
-                    await message.reply(fixed_text)
-                    return
-            else:
-                try:
-                    code = await lang_code.get(mode_key)
-                    res = await translator.translate(text, dest=code)
-                    fixed_text = _fix_lang_text(res.text)
-                    await message.reply(fixed_text)
-                    return
-                except Exception as exc:
-                    log.warning("translation failed: %s", exc)
+            if await _handle_translation(message, text, mode_key):
+                return
 
         if message.chat.type == "private":
             idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
@@ -273,9 +295,11 @@ def make_handler(
 
     async def on_callback(callback: CallbackQuery):
         data = callback.data
-        if not data.startswith(("toggle:", "lang:", "setlang:", "togglelang:", "back:")):
+        if not data.startswith(
+            ("toggle:", "lang:", "setlang:", "togglelang:", "back:")
+        ):
             return
-            
+
         parts = data.split(":")
         action = parts[0]
         user_id = callback.from_user.id
@@ -289,7 +313,11 @@ def make_handler(
                 return
             await modes.set(mode_key, mode_chosen)
             new_lang = await lang.get(mode_key)
-            await callback.message.edit_reply_markup(reply_markup=build_mode_markup(mode_chosen, new_lang, owner_id, mode_key))
+            await callback.message.edit_reply_markup(
+                reply_markup=build_mode_markup(
+                    mode_chosen, new_lang, owner_id, mode_key
+                )
+            )
 
         elif action == "lang":
             owner_id, mode_key = int(parts[1]), parts[2]
@@ -298,7 +326,12 @@ def make_handler(
                 return
             lang_active = await lang.get(mode_key)
             current_code = await lang_code.get(mode_key)
-            await callback.message.edit_text(LANG_MSG, reply_markup=build_lang_markup(lang_active, current_code, owner_id, mode_key))
+            await callback.message.edit_text(
+                LANG_MSG,
+                reply_markup=build_lang_markup(
+                    lang_active, current_code, owner_id, mode_key
+                ),
+            )
 
         elif action == "setlang":
             code, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
@@ -307,7 +340,9 @@ def make_handler(
                 return
             await lang_code.set(mode_key, code)
             lang_active = await lang.get(mode_key)
-            await callback.message.edit_reply_markup(reply_markup=build_lang_markup(lang_active, code, owner_id, mode_key))
+            await callback.message.edit_reply_markup(
+                reply_markup=build_lang_markup(lang_active, code, owner_id, mode_key)
+            )
 
         elif action == "togglelang":
             owner_id, mode_key = int(parts[1]), parts[2]
@@ -318,7 +353,11 @@ def make_handler(
             await lang.set(mode_key, not current_lang)
             new_lang = await lang.get(mode_key)
             current_code = await lang_code.get(mode_key)
-            await callback.message.edit_reply_markup(reply_markup=build_lang_markup(new_lang, current_code, owner_id, mode_key))
+            await callback.message.edit_reply_markup(
+                reply_markup=build_lang_markup(
+                    new_lang, current_code, owner_id, mode_key
+                )
+            )
 
         elif action == "back":
             owner_id, mode_key = int(parts[1]), parts[2]
@@ -327,7 +366,12 @@ def make_handler(
                 return
             current_mode = await modes.get(mode_key)
             new_lang = await lang.get(mode_key)
-            await callback.message.edit_text(MODE_MSG, reply_markup=build_mode_markup(current_mode, new_lang, owner_id, mode_key))
+            await callback.message.edit_text(
+                MODE_MSG,
+                reply_markup=build_mode_markup(
+                    current_mode, new_lang, owner_id, mode_key
+                ),
+            )
 
         await callback.answer()
 
@@ -335,8 +379,12 @@ def make_handler(
 
 
 def register(
-    dispatcher, counter: ReplyCounter, modes: ModeStorage,
-    adt: AdtStorage, lang: LangStorage, lang_code: LangCodeStorage,
+    dispatcher,
+    counter: ReplyCounter,
+    modes: ModeStorage,
+    adt: AdtStorage,
+    lang: LangStorage,
+    lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
 ):
     handler, callback = make_handler(counter, modes, adt, lang, lang_code, btn_cycle)

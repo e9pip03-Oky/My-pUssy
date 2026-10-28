@@ -2,7 +2,7 @@ BOT_TRIGGER = "بوت"
 ADMIN_COMMAND = "ادت"
 MODE_VOICE = "فويس"
 MODE_DEFAULT = "افتراضي"
-MODE_NOTE = "مرئية"
+MODE_NOTE = "فيدنوت"
 MODE_LANG = "لغتي"
 MODE_MSG = "تستطيع تغيير وضع عمل البوت\nمن هنا"
 MODE_DENIED = "ليس مسموح لك القيام\nبهذا التغيير"
@@ -18,7 +18,7 @@ MEDIA_VIDEO = "الفيديو"
 MEDIA_DOC = "المستند"
 
 NO_AUDIO_MSG = "لا يتوفر صوت بهذا {} مولاي ابوس عيرك\nاعفو عني"
-NOTE_WAIT_MSG = "راح يتم ارسال الفيديو ك مرئية مولاي\nانتظر شوي"
+NOTE_WAIT_MSG = "راح يتم ارسال الفيديو ك فيدنوت مولاي\nانتظر شوي"
 WAIT_VOICE_MSG = "راح يتم ارسال {} ك فويس مولاي\nانتظر شوي"
 
 EDIT_KEYWORDS = ("تعديل", "قص")

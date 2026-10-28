@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 import os
 
@@ -10,6 +11,10 @@ MAX_CONCURRENT = 3
 MAX_WAITING = 3
 BASE_DIR = "downloads"
 CACHE_PREFIX = "voice:"
+
+
+def _hash_key(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 class ChatQueue:
@@ -30,12 +35,14 @@ class ChatQueue:
             if running < MAX_CONCURRENT:
                 self._running[chat_id] = running + 1
                 return True, None
+
             waiting = self._waiting.get(chat_id, 0)
             if waiting < MAX_WAITING:
                 self._waiting[chat_id] = waiting + 1
                 event = asyncio.Event()
                 self._events.setdefault(chat_id, []).append(event)
                 return True, event
+
             return False, None
 
     async def wait_turn(self, event: asyncio.Event) -> None:

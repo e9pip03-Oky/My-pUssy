@@ -2,4 +2,4 @@ aiogram
 yt-dlp
 redis
 aiohttp
-googletrans
+googletrans-curl
