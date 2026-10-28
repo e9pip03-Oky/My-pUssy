@@ -8,6 +8,10 @@ log = logging.getLogger("voicebot")
 UPPER_TARGETS = set("ATFGUJNMLБИА")
 
 
+def has_formatting_chars(text: str) -> bool:
+    return any(c.upper() in UPPER_TARGETS for c in text) or "ss" in text.lower()
+
+
 def fix_format(text: str) -> str:
     res = []
     prev_char = ""
