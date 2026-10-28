@@ -19,6 +19,7 @@ from Reply import (
     STICKER_MSG,
 )
 from bToN import (
+    build_dimensions_markup,
     build_lang_markup,
     build_mode_markup,
     build_specific_markup,
@@ -137,6 +138,9 @@ def make_handler(
                 "back:",
                 "sticker_menu:",
                 "sticker_set:",
+                "dimensions_menu:",
+                "dim_type:",
+                "dim_ratio:",
             )
         ):
             return
@@ -297,6 +301,47 @@ def make_handler(
             await callback.message.edit_reply_markup(
                 reply_markup=build_sticker_markup(settings, owner_id, mode_key)
             )
+
+        elif action == "dimensions_menu":
+            owner_id, mode_key = int(parts[1]), parts[2]
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            settings = await sticker.get(mode_key)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
+            )
+
+        elif action == "dim_type":
+            owner_id, mode_key = int(parts[1]), parts[2]
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            settings = await sticker.get(mode_key)
+            crop_type = settings.get("crop_type", "none")
+            if crop_type == "none":
+                settings["crop_type"] = "width"
+            elif crop_type == "width":
+                settings["crop_type"] = "length"
+            else:
+                settings["crop_type"] = "none"
+            await sticker.set(mode_key, settings)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
+            )
+
+        elif action == "dim_ratio":
+            ratio, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            settings = await sticker.get(mode_key)
+            settings["crop_ratio"] = ratio
+            await sticker.set(mode_key, settings)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
+            )
+
         await callback.answer()
 
     return on_message, on_callback
