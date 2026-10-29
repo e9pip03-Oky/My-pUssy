@@ -336,7 +336,13 @@ def make_handler(
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             settings = await sticker.get(mode_key)
-            settings["crop_ratio"] = ratio
+            
+            current_ratio = settings.get("crop_ratio", "none")
+            if current_ratio == ratio:
+                settings["crop_ratio"] = "none"
+            else:
+                settings["crop_ratio"] = ratio
+                
             await sticker.set(mode_key, settings)
             await callback.message.edit_reply_markup(
                 reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
