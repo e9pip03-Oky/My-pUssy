@@ -114,7 +114,7 @@ async def to_note_trim(
             "-t",
             "60",
             "-vf",
-            "crop='min(iw,ih)':'min(iw,ih)',scale=640:640",
+            "crop='min(iw,ih)':'min(iw,ih)',scale=640:640,setsar=1",
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -193,6 +193,8 @@ async def to_sticker(
                 )
         except Exception:
             pass
+
+    vf_parts.append("setsar=1")
 
     cmd = ["ffmpeg", "-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if vf_parts:
