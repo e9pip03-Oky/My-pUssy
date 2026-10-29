@@ -6,7 +6,6 @@ from aiogram import Bot
 from aiogram.types import FSInputFile, Message
 
 from Reply import (
-    EDIT_END_TOO_LONG_MSG,
     EDIT_FAIL_MSG,
     EDIT_SEPARATOR_MSG,
     EDIT_START_BIGGER_MSG,
