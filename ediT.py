@@ -80,18 +80,17 @@ async def handle_pending_edit(
         file_id = media_msg.video.file_id
     else:
         return False
+
     text_val = message.text.strip()
     clean_text = re.sub(r"[/\-]", " ", text_val)
     segments = [s for s in clean_text.split() if s]
+
     if len(segments) == 1:
         start_val = "0"
         end_val = segments[0].strip()
         e_val = _parse_time(end_val)
         if e_val is None:
             await message.reply(EDIT_SEPARATOR_MSG)
-            return True
-        if e_val > duration:
-            await message.reply(EDIT_END_TOO_LONG_MSG)
             return True
     elif len(segments) == 2:
         start_val, end_val = segments[0].strip(), segments[1].strip()
@@ -101,9 +100,6 @@ async def handle_pending_edit(
             return True
         if s_val >= e_val:
             await message.reply(EDIT_START_BIGGER_MSG)
-            return True
-        if e_val > duration:
-            await message.reply(EDIT_END_TOO_LONG_MSG)
             return True
     else:
         await message.reply(EDIT_SEPARATOR_MSG)
@@ -138,6 +134,7 @@ async def handle_pending_edit(
         if os.path.getsize(in_path) > MAX_FILESIZE:
             await message.reply(EDIT_FAIL_MSG)
             return True
+
         if media_type == "voice":
             out_path += ".ogg"
             success = await trim_voice(in_path, out_path, start_val, end_val)
@@ -162,6 +159,7 @@ async def handle_pending_edit(
                 await file_cache.set_by_source(
                     file_id, f"edit_{media_type}", detail, sent.video.file_id
                 )
+
         if success:
             try:
                 await prompt_msg.delete()
