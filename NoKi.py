@@ -331,7 +331,8 @@ def make_handler(
             )
 
         elif action == "dim_ratio":
-            ratio, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
+            ratio_part, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
+            ratio = ratio_part.replace("_", ":")
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return

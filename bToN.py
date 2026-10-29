@@ -212,17 +212,17 @@ def build_dimensions_markup(
 
     btn_9_16 = InlineKeyboardButton(
         text=STICKER_DIM_9_16,
-        callback_data=f"dim_ratio:9:16:{owner_id}:{mode_key}",
+        callback_data=f"dim_ratio:9_16:{owner_id}:{mode_key}",
         style=ratio_9_16_style,
     )
     btn_3_2 = InlineKeyboardButton(
         text=STICKER_DIM_3_2,
-        callback_data=f"dim_ratio:3:2:{owner_id}:{mode_key}",
+        callback_data=f"dim_ratio:3_2:{owner_id}:{mode_key}",
         style=ratio_3_2_style,
     )
     btn_3_4 = InlineKeyboardButton(
         text=STICKER_DIM_3_4,
-        callback_data=f"dim_ratio:3:4:{owner_id}:{mode_key}",
+        callback_data=f"dim_ratio:3_4:{owner_id}:{mode_key}",
         style=ratio_3_4_style,
     )
 
