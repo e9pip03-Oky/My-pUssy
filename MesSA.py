@@ -199,17 +199,22 @@ async def handle_media_request(
     file_cache: FileIdCache,
 ) -> bool:
     reply = message.reply_to_message
+    
+    is_video = bool(reply.video or (reply.document and reply.document.mime_type and "video" in reply.document.mime_type))
+    
     media = reply.video or reply.document or reply.audio or reply.voice
-    if text == MODE_NOTE and not reply.video:
+    if text == MODE_NOTE and not is_video:
         return False
-    if text == MODE_STICKER and not reply.video:
+    if text == MODE_STICKER and not is_video:
         return False
     if text == MODE_VOICE and not media:
         return False
+        
     is_note = text == MODE_NOTE
     is_sticker = text == MODE_STICKER
     media_file_id = media.file_id
     detail = "direct"
+    
     if not is_sticker:
         cached = await file_cache.get_by_source(media_file_id, f"direct_{text}", detail)
         if cached:
@@ -223,12 +228,14 @@ async def handle_media_request(
                 await file_cache.delete_by_source(
                     media_file_id, f"direct_{text}", detail
                 )
+                
     if reply.video:
         media_type = MEDIA_VIDEO
     elif reply.document:
         media_type = MEDIA_DOC
     else:
         media_type = MEDIA_AUDIO
+        
     wait_msg = await message.reply(
         NOTE_WAIT_MSG if (is_note or is_sticker) else WAIT_VOICE_MSG.format(media_type)
     )
@@ -240,12 +247,14 @@ async def handle_media_request(
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
     temp_id = random.randint(100, 999)
     in_path = os.path.join(workdir, str(temp_id))
+    
     try:
         tg_file = await bot.get_file(media.file_id)
         await bot.download_file(tg_file.file_path, in_path)
         if os.path.getsize(in_path) > MAX_FILESIZE:
             await message.reply(LINK_FAIL_TEXT)
             return True
+            
         if is_sticker:
             out_path = os.path.join(workdir, f"{temp_id}_sticker.mp4")
             settings = await sticker.get(mode_key)

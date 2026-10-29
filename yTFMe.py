@@ -117,6 +117,10 @@ async def to_note_trim(
             "crop='min(iw,ih)':'min(iw,ih)',scale=640:640",
             "-c:v",
             "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
             out_path,
         ]
     )
@@ -178,9 +182,15 @@ async def to_sticker(
     if crop_ratio != "none":
         try:
             r_w, r_h = map(int, crop_ratio.split(":"))
-            vf_parts.append(
-                f"crop='min(iw,ih*{r_w}/{r_h})':'min(ih,iw*{r_h}/{r_w})'"
-            )
+
+            if settings.get("landscape"):
+                vf_parts.append(f"crop='iw':'iw*{r_h}/{r_w}'")
+            elif settings.get("portrait"):
+                vf_parts.append(f"crop='ih*{r_w}/{r_h}':'ih'")
+            else:
+                vf_parts.append(
+                    f"crop='min(iw,ih*{r_w}/{r_h})':'min(ih,iw*{r_h}/{r_w})'"
+                )
         except Exception:
             pass
 
