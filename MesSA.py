@@ -11,12 +11,14 @@ from Reply import (
     MEDIA_AUDIO,
     MEDIA_DOC,
     MEDIA_VIDEO,
+    MODE_DEFAULT,
     MODE_MSG,
     MODE_NOTE,
     MODE_STICKER,
     MODE_VOICE,
     NO_AUDIO_MSG,
     NOTE_WAIT_MSG,
+    STATUS_MSG,
     WAIT_VOICE_MSG,
 )
 from bToN import build_mode_markup
@@ -344,3 +346,22 @@ async def handle_translation(
             await message.reply(fixed_text)
             return True
     return False
+
+
+async def handle_status(
+    message: Message, mode_key: str, modes: ModeStorage, sticker: StickerSettings
+) -> bool:
+    sticker_state = await sticker.get(mode_key)
+    current_mode = await modes.get(mode_key)
+
+    if sticker_state["enabled"]:
+        active_mode = MODE_STICKER
+    elif current_mode == "voice":
+        active_mode = MODE_VOICE
+    elif current_mode == "note":
+        active_mode = MODE_NOTE
+    else:
+        active_mode = MODE_DEFAULT
+
+    await message.reply(STATUS_MSG.format(active_mode))
+    return True

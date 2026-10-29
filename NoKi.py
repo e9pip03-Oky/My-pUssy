@@ -17,6 +17,7 @@ from Reply import (
     MODE_VOICE,
     RANDOM_REPLIES,
     STICKER_MSG,
+    STATUS_COMMAND,
 )
 from bToN import (
     build_dimensions_markup,
@@ -39,6 +40,7 @@ from ediT import handle_pending_edit, set_edit_state
 from MesSA import (
     handle_admin,
     handle_media_request,
+    handle_status,
     handle_translation,
     process_url,
 )
@@ -119,6 +121,10 @@ def make_handler(
             if await handle_admin(
                 message, bot, mode_key, modes, lang, adt, sticker, _is_admin
             ):
+                return
+
+        if text == STATUS_COMMAND:
+            if await handle_status(message, mode_key, modes, sticker):
                 return
 
         if await lang.get(mode_key):
