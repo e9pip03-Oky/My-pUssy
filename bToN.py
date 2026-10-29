@@ -177,8 +177,8 @@ def build_sticker_markup(
         inline_keyboard=[
             [btn_toggle],
             [btn_landscape, btn_portrait],
-            [btn_flip_left, btn_flip_right],
             [btn_dimensions],
+            [btn_flip_left, btn_flip_right],
             [btn_back],
         ]
     )
