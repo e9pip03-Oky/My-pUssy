@@ -23,9 +23,6 @@ STICKER_PORTRAIT = "🔃"
 STICKER_FLIP_LEFT = "↩️"
 STICKER_FLIP_RIGHT = "↪️"
 STICKER_DIMENSIONS = "الابعاد"
-STICKER_DIM_NONE = "لا شيء"
-STICKER_DIM_WIDTH = "عرض"
-STICKER_DIM_LENGTH = "طول"
 STICKER_DIM_9_16 = "9:16"
 STICKER_DIM_3_2 = "3:2"
 STICKER_DIM_3_4 = "3:4"
@@ -41,6 +38,7 @@ WAIT_VOICE_MSG = "راح يتم ارسال {} ك فويس مولاي\nانتظر
 EDIT_KEYWORDS = ("تعديل", "قص")
 EDIT_SEPARATOR_MSG = "الفواصل الزمنيه مابين التوقيتان\nيقبل / و - ويلزم ان يكون ماقبلهم وبعدهم disTANce"
 EDIT_START_BIGGER_MSG = "مدة البدايه اكبر من مدة النهايه\nمرفوض"
+EDIT_END_TOO_LONG_MSG = "مدة النهاية اقصر من المدة اللتي تريدها\nتعذر التعديل"
 EDIT_FAIL_MSG = "المدة غير مدعومه او ان الفويس غير صالح\nالمعذرة"
 
 LOADING_TEXT = "كوسي امور كوسي شطور\nكوسي ولهان كوسي عشقان"

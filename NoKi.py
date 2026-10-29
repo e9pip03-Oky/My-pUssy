@@ -83,11 +83,14 @@ def make_handler(
         user_id = message.from_user.id if message.from_user else 0
         thread_id = message.message_thread_id
         mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
+
         if await handle_pending_edit(message, bot, file_cache):
             return
+
         if message.reply_to_message and text in (MODE_NOTE, MODE_VOICE, MODE_STICKER):
             if await handle_media_request(message, bot, text, sticker, file_cache):
                 return
+
         if message.reply_to_message and text.startswith(EDIT_KEYWORDS):
             if (
                 message.reply_to_message.voice
@@ -96,6 +99,7 @@ def make_handler(
             ):
                 await set_edit_state(message, bot)
                 return
+
         if url_match := URL_RE.search(text):
             url = url_match.group(0)
             if "t.me/" in url or "telegram.me/" in url:
@@ -110,14 +114,17 @@ def make_handler(
                     message, bot, url, mode_key, current_mode, sticker, file_cache
                 )
                 return
+
         if text == ADMIN_COMMAND:
             if await handle_admin(
                 message, bot, mode_key, modes, lang, adt, sticker, _is_admin
             ):
                 return
+
         if await lang.get(mode_key):
             if await handle_translation(message, text, mode_key, lang_code):
                 return
+
         if message.chat.type == "private":
             idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
             markup = await _get_random_reply_markup(chat_id)
@@ -139,7 +146,6 @@ def make_handler(
                 "sticker_menu:",
                 "sticker_set:",
                 "dimensions_menu:",
-                "dim_type:",
                 "dim_ratio:",
             )
         ):
@@ -312,24 +318,6 @@ def make_handler(
                 reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
             )
 
-        elif action == "dim_type":
-            owner_id, mode_key = int(parts[1]), parts[2]
-            if user_id != owner_id:
-                await callback.answer(MODE_DENIED, show_alert=True)
-                return
-            settings = await sticker.get(mode_key)
-            crop_type = settings.get("crop_type", "none")
-            if crop_type == "none":
-                settings["crop_type"] = "width"
-            elif crop_type == "width":
-                settings["crop_type"] = "length"
-            else:
-                settings["crop_type"] = "none"
-            await sticker.set(mode_key, settings)
-            await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
-            )
-
         elif action == "dim_ratio":
             ratio_part, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
             ratio = ratio_part.replace("_", ":")
@@ -337,13 +325,13 @@ def make_handler(
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             settings = await sticker.get(mode_key)
-            
+
             current_ratio = settings.get("crop_ratio", "none")
             if current_ratio == ratio:
                 settings["crop_ratio"] = "none"
             else:
                 settings["crop_ratio"] = ratio
-                
+
             await sticker.set(mode_key, settings)
             await callback.message.edit_reply_markup(
                 reply_markup=build_dimensions_markup(settings, owner_id, mode_key)

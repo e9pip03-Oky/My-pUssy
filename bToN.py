@@ -19,9 +19,6 @@ from Reply import (
     STICKER_DIM_3_2,
     STICKER_DIM_3_4,
     STICKER_DIM_9_16,
-    STICKER_DIM_LENGTH,
-    STICKER_DIM_NONE,
-    STICKER_DIM_WIDTH,
     STICKER_DISABLE,
     STICKER_ENABLE,
     STICKER_FLIP_LEFT,
@@ -187,24 +184,7 @@ def build_sticker_markup(
 def build_dimensions_markup(
     settings: dict, owner_id: int, mode_key: str
 ) -> InlineKeyboardMarkup:
-    crop_type = settings.get("crop_type", "none")
     crop_ratio = settings.get("crop_ratio", "none")
-
-    if crop_type == "none":
-        type_text = STICKER_DIM_NONE
-        type_style = "success"
-    elif crop_type == "width":
-        type_text = STICKER_DIM_WIDTH
-        type_style = "primary"
-    else:
-        type_text = STICKER_DIM_LENGTH
-        type_style = "primary"
-
-    btn_type = InlineKeyboardButton(
-        text=type_text,
-        callback_data=f"dim_type:{owner_id}:{mode_key}",
-        style=type_style,
-    )
 
     ratio_9_16_style = "primary" if crop_ratio == "9:16" else "danger"
     ratio_3_2_style = "primary" if crop_ratio == "3:2" else "danger"
@@ -234,10 +214,7 @@ def build_dimensions_markup(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_type],
-            [btn_9_16],
-            [btn_3_2],
-            [btn_3_4],
+            [btn_3_4, btn_9_16, btn_3_2],
             [btn_back],
         ]
     )

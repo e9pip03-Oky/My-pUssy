@@ -174,19 +174,13 @@ async def to_sticker(
         vf_parts.append("hflip")
 
     crop_ratio = settings.get("crop_ratio", "none")
-    crop_type = settings.get("crop_type", "none")
 
     if crop_ratio != "none":
         try:
             r_w, r_h = map(int, crop_ratio.split(":"))
-            if crop_type == "width":
-                vf_parts.append(f"crop='iw':'iw*{r_h}/{r_w}'")
-            elif crop_type == "length":
-                vf_parts.append(f"crop='ih*{r_w}/{r_h}':'ih'")
-            else:
-                vf_parts.append(
-                    f"crop='min(iw,ih*{r_w}/{r_h})':'min(ih,iw*{r_h}/{r_w})'"
-                )
+            vf_parts.append(
+                f"crop='min(iw,ih*{r_w}/{r_h})':'min(ih,iw*{r_h}/{r_w})'"
+            )
         except Exception:
             pass
 
