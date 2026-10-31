@@ -195,8 +195,16 @@ async def to_sticker(
     if settings.get("flip_left") or settings.get("flip_right"):
         filters.append("hflip")
 
+    has_mode = bool(
+        settings.get("landscape")
+        or settings.get("portrait")
+        or settings.get("force_portrait")
+        or settings.get("flip_left")
+        or settings.get("flip_right")
+    )
+
     crop_ratio = settings.get("crop_ratio", "none")
-    if crop_ratio != "none":
+    if has_mode and crop_ratio != "none":
         try:
             ratio_w, ratio_h = map(int, crop_ratio.split(":"))
             if settings.get("landscape"):
@@ -209,8 +217,6 @@ async def to_sticker(
                 )
         except Exception:
             pass
-
-    filters.append("setsar=1")
 
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:
