@@ -21,8 +21,7 @@ from Reply import (
     STICKER_DIM_9_16,
     STICKER_DISABLE,
     STICKER_ENABLE,
-    STICKER_FLIP_LEFT,
-    STICKER_FLIP_RIGHT,
+    STICKER_FLIP,
     STICKER_LANDSCAPE,
     STICKER_PORTRAIT,
 )
@@ -121,8 +120,7 @@ def build_sticker_markup(
 ) -> InlineKeyboardMarkup:
     landscape_style = "primary" if settings["landscape"] else "danger"
     portrait_style = "primary" if settings["portrait"] else "danger"
-    flip_left_style = "primary" if settings["flip_left"] else "danger"
-    flip_right_style = "primary" if settings["flip_right"] else "danger"
+    flip_style = "primary" if settings["flip_left"] else "danger"
 
     btn_landscape = InlineKeyboardButton(
         text=STICKER_LANDSCAPE,
@@ -134,15 +132,10 @@ def build_sticker_markup(
         callback_data=f"sticker_set:portrait:{owner_id}:{mode_key}",
         style=portrait_style,
     )
-    btn_flip_left = InlineKeyboardButton(
-        text=STICKER_FLIP_LEFT,
-        callback_data=f"sticker_set:flip_left:{owner_id}:{mode_key}",
-        style=flip_left_style,
-    )
-    btn_flip_right = InlineKeyboardButton(
-        text=STICKER_FLIP_RIGHT,
-        callback_data=f"sticker_set:flip_right:{owner_id}:{mode_key}",
-        style=flip_right_style,
+    btn_flip = InlineKeyboardButton(
+        text=STICKER_FLIP,
+        callback_data=f"sticker_set:flip:{owner_id}:{mode_key}",
+        style=flip_style,
     )
 
     if settings["enabled"]:
@@ -174,8 +167,8 @@ def build_sticker_markup(
         inline_keyboard=[
             [btn_toggle],
             [btn_landscape, btn_portrait],
+            [btn_flip],
             [btn_dimensions],
-            [btn_flip_left, btn_flip_right],
             [btn_back],
         ]
     )

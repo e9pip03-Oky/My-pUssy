@@ -12,7 +12,6 @@ from Reply import (
     MEDIA_DOC,
     MEDIA_VIDEO,
     MODE_DEFAULT,
-    MODE_MSG,
     MODE_NOTE,
     MODE_STICKER,
     MODE_VOICE,
@@ -21,7 +20,6 @@ from Reply import (
     STATUS_MSG,
     WAIT_VOICE_MSG,
 )
-from bToN import build_mode_markup
 from cAsh import (
     AdtStorage,
     FileIdCache,
@@ -30,12 +28,15 @@ from cAsh import (
     ModeStorage,
     StickerSettings,
     cleanup,
+    get_mode_key,
     queue,
+    safe_delete,
     user_dir,
 )
 from TrANs import fix_format, has_formatting_chars, make_name, process_translation
 from yTFMe import (
     MAX_FILESIZE,
+    MAX_NOTE_FILESIZE,
     download,
     download_merge,
     get_entries,
@@ -45,6 +46,17 @@ from yTFMe import (
 )
 
 log = logging.getLogger("voicebot")
+
+
+async def check_is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> bool:
+    if is_channel:
+        chat = await bot.get_chat(chat_id)
+        return chat.type == "channel"
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in ("administrator", "creator")
+    except Exception:
+        return False
 
 
 async def send_cached(file_id: str, message: Message, mode: str) -> bool:
@@ -84,7 +96,9 @@ async def process_entry(
             if await send_cached(cached, message, mode):
                 return True
             await file_cache.delete(entry_url, mode, settings)
+            
     base = os.path.join(workdir, str(temp_id))
+    
     if mode == "voice":
         info, in_path = await download(entry_url, base)
         out_path = os.path.join(workdir, f"{temp_id}.ogg")
@@ -96,6 +110,8 @@ async def process_entry(
         return False
     elif mode == "note":
         info, in_path = await download_merge(entry_url, base)
+        if os.path.getsize(in_path) > MAX_NOTE_FILESIZE:
+            return False
         out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
         if await to_note_trim(in_path, out_path, "0"):
             sent = await message.reply_video_note(FSInputFile(out_path))
@@ -142,8 +158,7 @@ async def process_url(
     sticker: StickerSettings,
     file_cache: FileIdCache,
 ):
-    chat_id = message.chat.id
-    user_id = message.from_user.id if message.from_user else 0
+    chat_id, user_id, _ = get_mode_key(message)
     is_private = message.chat.type == "private"
     accepted, event = await queue.acquire(chat_id)
     if not accepted:
@@ -173,10 +188,7 @@ async def process_url(
         except Exception as exc:
             log.warning("link failed %s: %s", message.message_id, exc)
         finally:
-            try:
-                await status.delete()
-            except Exception:
-                pass
+            await safe_delete(status)
             if failed:
                 await message.reply(LINK_FAIL_TEXT)
     finally:
@@ -199,9 +211,7 @@ async def handle_media_request(
     file_cache: FileIdCache,
 ) -> bool:
     reply = message.reply_to_message
-    
     is_video = bool(reply.video or (reply.document and reply.document.mime_type and "video" in reply.document.mime_type))
-    
     media = reply.video or reply.document or reply.audio or reply.voice
     if text == MODE_NOTE and not is_video:
         return False
@@ -239,11 +249,8 @@ async def handle_media_request(
     wait_msg = await message.reply(
         NOTE_WAIT_MSG if (is_note or is_sticker) else WAIT_VOICE_MSG.format(media_type)
     )
-    chat_id = message.chat.id
-    user_id = message.from_user.id if message.from_user else 0
+    chat_id, user_id, mode_key = get_mode_key(message)
     is_private = message.chat.type == "private"
-    thread_id = message.message_thread_id
-    mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
     temp_id = random.randint(100, 999)
     in_path = os.path.join(workdir, str(temp_id))
@@ -251,7 +258,13 @@ async def handle_media_request(
     try:
         tg_file = await bot.get_file(media.file_id)
         await bot.download_file(tg_file.file_path, in_path)
-        if os.path.getsize(in_path) > MAX_FILESIZE:
+        
+        size = os.path.getsize(in_path)
+        if size > MAX_FILESIZE:
+            await message.reply(LINK_FAIL_TEXT)
+            return True
+            
+        if is_note and size > MAX_NOTE_FILESIZE:
             await message.reply(LINK_FAIL_TEXT)
             return True
             
@@ -287,10 +300,7 @@ async def handle_media_request(
         log.warning("media failed %s: %s", message.message_id, exc)
         await message.reply(LINK_FAIL_TEXT)
     finally:
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
+        await safe_delete(wait_msg)
         cleanup(
             chat_id,
             user_id,
@@ -302,31 +312,19 @@ async def handle_media_request(
     return True
 
 
-async def handle_admin(
+async def handle_admin_logic(
     message: Message,
     bot: Bot,
     mode_key: str,
-    modes: ModeStorage,
-    lang: LangStorage,
     adt: AdtStorage,
-    sticker: StickerSettings,
-    is_admin_func,
 ) -> bool:
     chat_id = message.chat.id
     user_id = message.from_user.id if message.from_user else 0
     is_channel = message.chat.type == "channel"
     if message.chat.type != "private":
-        if not await is_admin_func(bot, chat_id, user_id, is_channel):
-            return True
-    sticker_state = await sticker.get(mode_key)
-    markup = build_mode_markup(
-        await modes.get(mode_key),
-        await lang.get(mode_key),
-        user_id,
-        mode_key,
-        sticker_state["enabled"],
-    )
-    sent_msg = await message.reply(MODE_MSG, reply_markup=markup)
+        if not await check_is_admin(bot, chat_id, user_id, is_channel):
+            return False
+            
     if message.chat.type != "private":
         old_msgs = await adt.get_messages(mode_key)
         if len(old_msgs) >= 3:
@@ -335,42 +333,37 @@ async def handle_admin(
                 await bot.delete_message(chat_id, old)
             except Exception:
                 pass
-        old_msgs.append(sent_msg.message_id)
         await adt.save_messages(mode_key, old_msgs)
+        return True
     return True
 
 
-async def handle_translation(
-    message: Message, text: str, mode_key: str, lang_code: LangCodeStorage
-) -> bool:
+async def handle_translation_logic(
+    text: str, mode_key: str, lang_code: LangCodeStorage
+) -> str | None:
     if has_formatting_chars(text):
         fixed_text = fix_format(text)
         if fixed_text != text:
-            await message.reply(fixed_text)
-            return True
+            return fixed_text
     else:
         code = await lang_code.get(mode_key)
         fixed_text = await process_translation(text, code)
         if fixed_text:
-            await message.reply(fixed_text)
-            return True
-    return False
+            return fixed_text
+    return None
 
 
-async def handle_status(
-    message: Message, mode_key: str, modes: ModeStorage, sticker: StickerSettings
-) -> bool:
+async def get_status_mode(
+    mode_key: str, modes: ModeStorage, sticker: StickerSettings
+) -> str:
     sticker_state = await sticker.get(mode_key)
     current_mode = await modes.get(mode_key)
 
     if sticker_state["enabled"]:
-        active_mode = MODE_STICKER
+        return MODE_STICKER
     elif current_mode == "voice":
-        active_mode = MODE_VOICE
+        return MODE_VOICE
     elif current_mode == "note":
-        active_mode = MODE_NOTE
+        return MODE_NOTE
     else:
-        active_mode = MODE_DEFAULT
-
-    await message.reply(STATUS_MSG.format(active_mode))
-    return True
+        return MODE_DEFAULT

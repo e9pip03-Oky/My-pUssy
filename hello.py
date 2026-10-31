@@ -14,7 +14,6 @@ from cAsh import (
     build_file_cache,
     build_lang,
     build_lang_code,
-    build_manager,
     build_modes,
     build_sticker,
     build_storage,
@@ -31,7 +30,6 @@ log = logging.getLogger("voicebot")
 
 async def send_boot_notice(bot: Bot) -> None:
     entries = build_buttons(parse_ids(BOT_NOTICE))
-
     for user_id, name, style in entries:
         try:
             markup = build_markup(name, user_id, style)
@@ -40,58 +38,23 @@ async def send_boot_notice(bot: Bot) -> None:
             log.warning("boot notice to %s failed: %s", user_id, exc)
 
 
-async def shutdown(
-    bot: Bot,
-    manager,
-    fsm_storage,
-) -> None:
-    try:
-        await bot.session.close()
-        log.info("bot session closed")
-    except Exception as exc:
-        log.warning("bot close failed: %s", exc)
-
-    try:
-        redis_attr = getattr(fsm_storage, "redis", None) if fsm_storage else None
-        if redis_attr:
-            await redis_attr.aclose()
-            log.info("fsm redis closed")
-    except Exception as exc:
-        log.warning("fsm redis close failed: %s", exc)
-
-    try:
-        await manager.close()
-    except Exception as exc:
-        log.warning("redis manager close failed: %s", exc)
-
-
 async def main() -> None:
     bot = Bot(token=BOT_TOKEN)
-    manager = build_manager(REDIS_URL)
-    fsm_storage = build_storage(REDIS_URL)
-
-    dispatcher = Dispatcher(storage=fsm_storage)
+    dispatcher = Dispatcher(storage=build_storage(REDIS_URL))
     NoKi.register(
         dispatcher,
-        build_counter(manager),
-        build_modes(manager),
-        build_adt(manager),
-        build_lang(manager),
-        build_lang_code(manager),
-        build_btn_cycle(manager),
-        build_sticker(manager),
-        build_file_cache(manager),
+        build_counter(REDIS_URL),
+        build_modes(REDIS_URL),
+        build_adt(REDIS_URL),
+        build_lang(REDIS_URL),
+        build_lang_code(REDIS_URL),
+        build_btn_cycle(REDIS_URL),
+        build_sticker(REDIS_URL),
+        build_file_cache(REDIS_URL),
     )
-
-    try:
-        await send_boot_notice(bot)
-        await dispatcher.start_polling(bot, drop_pending_updates=True)
-    finally:
-        await shutdown(bot, manager, fsm_storage)
+    await send_boot_notice(bot)
+    await dispatcher.start_polling(bot, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        log.info("shutdown complete")
+    asyncio.run(main())

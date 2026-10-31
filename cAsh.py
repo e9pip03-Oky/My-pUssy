@@ -6,15 +6,58 @@ import time
 
 import redis.asyncio as aioredis
 from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import Message
 
 log = logging.getLogger("voicebot")
-
 MAX_CONCURRENT = 3
 MAX_WAITING = 3
 BASE_DIR = "downloads"
 CACHE_PREFIX = "voice:"
 FILE_ID_TTL = 60 * 60 * 24 * 30
-REDIS_IDLE_TIMEOUT = 60
+IDLE_TIMEOUT = 60
+
+
+async def safe_delete(msg: Message) -> None:
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+
+
+def get_mode_key(message: Message) -> tuple[int, int, str]:
+    chat_id = message.chat.id
+    user_id = message.from_user.id if message.from_user else 0
+    thread_id = message.message_thread_id
+    mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
+    return chat_id, user_id, mode_key
+
+
+class IdleManagedRedis(aioredis.Redis):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_used = time.time()
+        self._monitor_task = asyncio.create_task(self._monitor_idle())
+
+    async def _monitor_idle(self):
+        try:
+            while True:
+                await asyncio.sleep(10)
+                if time.time() - self._last_used > IDLE_TIMEOUT:
+                    await super().aclose()
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            log.warning("Error in idle monitor: %s", e)
+
+    async def execute_command(self, *args, **kwargs):
+        self._last_used = time.time()
+        return await super().execute_command(*args, **kwargs)
+
+    async def aclose(self):
+        if not self._monitor_task.done():
+            self._monitor_task.cancel()
+        await super().aclose()
 
 
 def _hash_key(value: str) -> str:
@@ -39,14 +82,12 @@ class ChatQueue:
             if running < MAX_CONCURRENT:
                 self._running[chat_id] = running + 1
                 return True, None
-
             waiting = self._waiting.get(chat_id, 0)
             if waiting < MAX_WAITING:
                 self._waiting[chat_id] = waiting + 1
                 event = asyncio.Event()
                 self._events.setdefault(chat_id, []).append(event)
                 return True, event
-
             return False, None
 
     async def wait_turn(self, event: asyncio.Event) -> None:
@@ -58,138 +99,37 @@ class ChatQueue:
             if events:
                 events.pop(0).set()
                 self._waiting[chat_id] -= 1
-                return
-
-            running = self._running.get(chat_id, 0)
-            if running > 0:
-                self._running[chat_id] = running - 1
-
-
-class RedisManager:
-    def __init__(self, url: str | None) -> None:
-        self._url = url
-        self._client: aioredis.Redis | None = None
-        self._last_used: float = 0.0
-        self._timer: asyncio.TimerHandle | None = None
-        self._lock = asyncio.Lock()
-        self._closed = False
-
-    async def get(self) -> aioredis.Redis | None:
-        if not self._url:
-            return None
-
-        async with self._lock:
-            if self._closed:
-                return None
-
-            if self._client is None:
-                self._client = aioredis.from_url(self._url)
-                log.info("redis: client created")
-
-            self._last_used = time.monotonic()
-            self._schedule_idle()
-            return self._client
-
-    def _schedule_idle(self) -> None:
-        if self._timer:
-            self._timer.cancel()
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        self._timer = loop.call_later(REDIS_IDLE_TIMEOUT, self._idle_tick)
-
-    def _idle_tick(self) -> None:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        loop.create_task(self._maybe_close())
-
-    async def _maybe_close(self) -> None:
-        async with self._lock:
-            if self._closed or self._client is None:
-                return
-
-            if time.monotonic() - self._last_used < REDIS_IDLE_TIMEOUT:
-                self._schedule_idle()
-                return
-
-            try:
-                await self._client.aclose()
-                log.info("redis: client closed (idle)")
-            except Exception as exc:
-                log.warning("redis idle close failed: %s", exc)
-            finally:
-                self._client = None
-
-    async def close(self) -> None:
-        async with self._lock:
-            self._closed = True
-
-            if self._timer:
-                self._timer.cancel()
-                self._timer = None
-
-            if self._client is not None:
-                try:
-                    await self._client.aclose()
-                    log.info("redis: client closed (shutdown)")
-                except Exception as exc:
-                    log.warning("redis shutdown close failed: %s", exc)
-                finally:
-                    self._client = None
+            else:
+                running = self._running.get(chat_id, 0)
+                if running > 0:
+                    self._running[chat_id] = running - 1
 
 
 class RedisBase:
-    def __init__(self, manager: RedisManager | None) -> None:
-        self._manager = manager
-        self._memory: dict[str, tuple[str, float | None]] = {}
-
-    async def _client(self) -> aioredis.Redis | None:
-        if self._manager is None:
-            return None
-        return await self._manager.get()
+    def __init__(self, client: aioredis.Redis | None) -> None:
+        self._client = client
+        self._memory: dict[str, str] = {}
 
     async def _get(self, key: str) -> str | None:
-        client = await self._client()
-        if client:
-            val = await client.get(key)
+        if self._client:
+            val = await self._client.get(key)
             return val.decode() if val else None
-
-        item = self._memory.get(key)
-        if not item:
-            return None
-
-        val, exp = item
-        if exp and time.monotonic() > exp:
-            self._memory.pop(key, None)
-            return None
-
-        return val
+        return self._memory.get(key)
 
     async def _set(self, key: str, value: str, ttl: int | None = None) -> None:
-        client = await self._client()
-        if client:
+        if self._client:
             if ttl:
-                await client.set(key, value, ex=ttl)
+                await self._client.set(key, value, ex=ttl)
             else:
-                await client.set(key, value)
-            return
-
-        exp = time.monotonic() + ttl if ttl else None
-        self._memory[key] = (value, exp)
+                await self._client.set(key, value)
+        else:
+            self._memory[key] = value
 
     async def _del(self, key: str) -> None:
-        client = await self._client()
-        if client:
-            await client.delete(key)
-            return
-
-        self._memory.pop(key, None)
+        if self._client:
+            await self._client.delete(key)
+        else:
+            self._memory.pop(key, None)
 
 
 class ModeStorage(RedisBase):
@@ -263,7 +203,6 @@ class StickerSettings(RedisBase):
                 "crop_ratio": "none",
                 "crop_type": "none",
             }
-
         parts = val.split(",")
         return {
             "enabled": parts[0] == "1",
@@ -309,9 +248,7 @@ class FileIdCache(RedisBase):
         raw = f"{url}|{signature}"
         return CACHE_PREFIX + "file_id:" + _hash_key(raw)
 
-    async def get(
-        self, url: str, mode: str, settings: dict | None = None
-    ) -> str | None:
+    async def get(self, url: str, mode: str, settings: dict | None = None) -> str | None:
         return await self._get(self.key(url, mode, settings))
 
     async def set(
@@ -319,9 +256,7 @@ class FileIdCache(RedisBase):
     ) -> None:
         await self._set(self.key(url, mode, settings), file_id, ttl=FILE_ID_TTL)
 
-    async def delete(
-        self, url: str, mode: str, settings: dict | None = None
-    ) -> None:
+    async def delete(self, url: str, mode: str, settings: dict | None = None) -> None:
         await self._del(self.key(url, mode, settings))
 
     @staticmethod
@@ -368,7 +303,6 @@ def cleanup(
 ) -> None:
     root = _root(chat_id, bot_id, is_private)
     user_path = os.path.join(BASE_DIR, root, str(user_id))
-
     if os.path.isdir(user_path):
         prefixes = tuple(str(mid) for mid in message_ids if mid)
         if prefixes:
@@ -383,7 +317,6 @@ def cleanup(
                         os.remove(os.path.join(user_path, fname))
                     except OSError:
                         pass
-
     for path in (user_path, os.path.join(BASE_DIR, root)):
         try:
             os.rmdir(path)
@@ -391,44 +324,46 @@ def cleanup(
             pass
 
 
+def _redis_client(url: str | None) -> aioredis.Redis | None:
+    if not url:
+        return None
+    return IdleManagedRedis.from_url(url)
+
+
 def build_storage(url: str | None) -> RedisStorage | None:
     return RedisStorage.from_url(url) if url else None
 
 
-def build_manager(url: str | None) -> RedisManager:
-    return RedisManager(url)
+def build_counter(url: str | None) -> ReplyCounter:
+    return ReplyCounter(_redis_client(url))
 
 
-def build_counter(manager: RedisManager | None) -> ReplyCounter:
-    return ReplyCounter(manager)
+def build_modes(url: str | None) -> ModeStorage:
+    return ModeStorage(_redis_client(url))
 
 
-def build_modes(manager: RedisManager | None) -> ModeStorage:
-    return ModeStorage(manager)
+def build_adt(url: str | None) -> AdtStorage:
+    return AdtStorage(_redis_client(url))
 
 
-def build_adt(manager: RedisManager | None) -> AdtStorage:
-    return AdtStorage(manager)
+def build_lang(url: str | None) -> LangStorage:
+    return LangStorage(_redis_client(url))
 
 
-def build_lang(manager: RedisManager | None) -> LangStorage:
-    return LangStorage(manager)
+def build_lang_code(url: str | None) -> LangCodeStorage:
+    return LangCodeStorage(_redis_client(url))
 
 
-def build_lang_code(manager: RedisManager | None) -> LangCodeStorage:
-    return LangCodeStorage(manager)
+def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
+    return ButtonCycleStorage(_redis_client(url))
 
 
-def build_btn_cycle(manager: RedisManager | None) -> ButtonCycleStorage:
-    return ButtonCycleStorage(manager)
+def build_sticker(url: str | None) -> StickerSettings:
+    return StickerSettings(_redis_client(url))
 
 
-def build_sticker(manager: RedisManager | None) -> StickerSettings:
-    return StickerSettings(manager)
-
-
-def build_file_cache(manager: RedisManager | None) -> FileIdCache:
-    return FileIdCache(manager)
+def build_file_cache(url: str | None) -> FileIdCache:
+    return FileIdCache(_redis_client(url))
 
 
 queue = ChatQueue()

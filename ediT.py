@@ -10,7 +10,7 @@ from Reply import (
     EDIT_SEPARATOR_MSG,
     EDIT_START_BIGGER_MSG,
 )
-from cAsh import FileIdCache, cleanup, user_dir
+from cAsh import FileIdCache, cleanup, safe_delete, user_dir
 from yTFMe import MAX_FILESIZE, to_note_trim, trim_video, trim_voice
 
 log = logging.getLogger("voicebot")
@@ -114,13 +114,12 @@ async def handle_pending_edit(
                 await message.reply_video_note(cached)
             else:
                 await message.reply_video(cached)
-            try:
-                await prompt_msg.delete()
-            except Exception:
-                pass
+            await safe_delete(prompt_msg)
             return True
         except Exception:
             await file_cache.delete_by_source(file_id, f"edit_{media_type}", detail)
+
+    await safe_delete(prompt_msg)
 
     chat_id = message.chat.id
     is_private = message.chat.type == "private"
@@ -158,13 +157,7 @@ async def handle_pending_edit(
                 await file_cache.set_by_source(
                     file_id, f"edit_{media_type}", detail, sent.video.file_id
                 )
-
-        if success:
-            try:
-                await prompt_msg.delete()
-            except Exception:
-                pass
-        else:
+        if not success:
             await message.reply(EDIT_FAIL_MSG)
     except Exception:
         await message.reply(EDIT_FAIL_MSG)
