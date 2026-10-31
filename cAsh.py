@@ -255,6 +255,24 @@ class StickerSettings(RedisBase):
         await self._set(CACHE_PREFIX + f"sticker:{mode_key}", value)
 
 
+class DefaultSettings(RedisBase):
+    async def get(self, mode_key: str) -> dict:
+        enabled = await self._get(CACHE_PREFIX + f"default_enabled:{mode_key}")
+        send_as = await self._get(CACHE_PREFIX + f"default_send:{mode_key}")
+        return {
+            "enabled": enabled == "1",
+            "send_as": send_as if send_as in ("document", "video") else "document",
+        }
+
+    async def set_enabled(self, mode_key: str, enabled: bool) -> None:
+        await self._set(
+            CACHE_PREFIX + f"default_enabled:{mode_key}", "1" if enabled else "0"
+        )
+
+    async def set_send_as(self, mode_key: str, send_as: str) -> None:
+        await self._set(CACHE_PREFIX + f"default_send:{mode_key}", send_as)
+
+
 class FileIdCache(RedisBase):
     @staticmethod
     def _signature(mode: str, settings: dict | None) -> str:
@@ -272,6 +290,8 @@ class FileIdCache(RedisBase):
             parts.append(settings.get("crop_ratio", "none"))
             parts.append(settings.get("crop_type", "none"))
             return f"sticker:{'_'.join(parts)}"
+        if mode == "default" and settings:
+            return f"default:{settings.get('send_as', 'document')}"
         return mode
 
     @staticmethod
@@ -396,6 +416,10 @@ def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
 
 def build_sticker(url: str | None) -> StickerSettings:
     return StickerSettings(_redis_client(url))
+
+
+def build_default(url: str | None) -> DefaultSettings:
+    return DefaultSettings(_redis_client(url))
 
 
 def build_file_cache(url: str | None) -> FileIdCache:

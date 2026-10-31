@@ -21,6 +21,7 @@ from Reply import (
     STICKER_MSG,
 )
 from bToN import (
+    build_default_markup,
     build_dimensions_markup,
     build_lang_markup,
     build_mode_markup,
@@ -30,6 +31,7 @@ from bToN import (
 from cAsh import (
     AdtStorage,
     ButtonCycleStorage,
+    DefaultSettings,
     FileIdCache,
     LangCodeStorage,
     LangStorage,
@@ -59,6 +61,7 @@ def make_handler(
     lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
     sticker: StickerSettings,
+    default: DefaultSettings,
     file_cache: FileIdCache,
 ):
     async def _get_random_reply_markup(chat_id: int):
@@ -100,7 +103,14 @@ def make_handler(
                 return
             current_mode = await modes.get(mode_key)
             await process_url(
-                message, bot, url, mode_key, current_mode, sticker, file_cache
+                message,
+                bot,
+                url,
+                mode_key,
+                current_mode,
+                sticker,
+                default,
+                file_cache,
             )
             return
 
@@ -108,12 +118,14 @@ def make_handler(
             allowed = await handle_admin_logic(message, bot, mode_key, adt)
             if allowed:
                 sticker_state = await sticker.get(mode_key)
+                default_state = await default.get(mode_key)
                 markup = build_mode_markup(
                     await modes.get(mode_key),
                     await lang.get(mode_key),
                     user_id,
                     mode_key,
                     sticker_state["enabled"],
+                    default_state["enabled"],
                 )
                 sent_message = await message.reply(MODE_MSG, reply_markup=markup)
                 if message.chat.type != "private":
@@ -184,14 +196,75 @@ def make_handler(
                 await callback.message.edit_reply_markup(
                     reply_markup=build_sticker_markup(settings, owner_id, mode_key)
                 )
+            elif field == "default":
+                settings = await default.get(mode_key)
+                new_enabled = not settings["enabled"]
+                await default.set_enabled(mode_key, new_enabled)
+                if new_enabled:
+                    current_mode = await modes.get(mode_key)
+                    if current_mode != "default":
+                        await modes.set_previous(mode_key, current_mode)
+                        await modes.set(mode_key, "default")
+                    sticker_settings = await sticker.get(mode_key)
+                    if sticker_settings["enabled"]:
+                        sticker_settings["enabled"] = False
+                        await sticker.set(mode_key, sticker_settings)
+                else:
+                    if await modes.get(mode_key) == "default":
+                        previous = await modes.get_previous(mode_key)
+                        await modes.set(mode_key, previous)
+                new_settings = await default.get(mode_key)
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_default_markup(
+                        new_settings, owner_id, mode_key
+                    )
+                )
+
+        elif action == "default_menu":
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            settings = await default.get(mode_key)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_default_markup(settings, owner_id, mode_key)
+            )
+
+        elif action == "default_set":
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            settings = await default.get(mode_key)
+            new_send_as = "video" if settings["send_as"] == "document" else "document"
+            await default.set_send_as(mode_key, new_send_as)
+            new_settings = await default.get(mode_key)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_default_markup(new_settings, owner_id, mode_key)
+            )
 
         elif action == "back":
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
+            if field == "default":
+                current_mode = await modes.get(mode_key)
+                new_lang = await lang.get(mode_key)
+                sticker_state = await sticker.get(mode_key)
+                default_state = await default.get(mode_key)
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_mode_markup(
+                        current_mode,
+                        new_lang,
+                        owner_id,
+                        mode_key,
+                        sticker_state["enabled"],
+                        default_state["enabled"],
+                    )
+                )
+                return
             current_mode = await modes.get(mode_key)
             new_lang = await lang.get(mode_key)
             sticker_state = await sticker.get(mode_key)
+            default_state = await default.get(mode_key)
             await callback.message.edit_text(
                 MODE_MSG,
                 reply_markup=build_mode_markup(
@@ -200,6 +273,7 @@ def make_handler(
                     owner_id,
                     mode_key,
                     sticker_state["enabled"],
+                    default_state["enabled"],
                 ),
             )
 
@@ -220,6 +294,7 @@ def make_handler(
                 await modes.set(mode_key, field)
             new_mode = await modes.get(mode_key)
             new_lang = await lang.get(mode_key)
+            default_state = await default.get(mode_key)
             await callback.message.edit_reply_markup(
                 reply_markup=build_mode_markup(
                     new_mode,
@@ -227,6 +302,7 @@ def make_handler(
                     owner_id,
                     mode_key,
                     False,
+                    default_state["enabled"],
                 )
             )
 
@@ -331,10 +407,19 @@ def register(
     lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
     sticker: StickerSettings,
+    default: DefaultSettings,
     file_cache: FileIdCache,
 ):
     handler, callback = make_handler(
-        counter, modes, adt, lang, lang_code, btn_cycle, sticker, file_cache
+        counter,
+        modes,
+        adt,
+        lang,
+        lang_code,
+        btn_cycle,
+        sticker,
+        default,
+        file_cache,
     )
     dispatcher.message.register(handler, F.text)
     dispatcher.callback_query.register(callback)

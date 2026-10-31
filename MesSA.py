@@ -23,6 +23,7 @@ from Reply import (
 )
 from cAsh import (
     AdtStorage,
+    DefaultSettings,
     FileIdCache,
     LangCodeStorage,
     ModeStorage,
@@ -61,7 +62,9 @@ async def check_is_admin(
         return False
 
 
-async def send_cached(file_id: str, message: Message, mode: str) -> bool:
+async def send_cached(
+    file_id: str, message: Message, mode: str, send_as: str = "document"
+) -> bool:
     try:
         if mode == "voice":
             await message.reply_voice(file_id)
@@ -69,6 +72,11 @@ async def send_cached(file_id: str, message: Message, mode: str) -> bool:
             await message.reply_video_note(file_id)
         elif mode == "sticker":
             await message.reply_animation(file_id)
+        elif mode == "default":
+            if send_as == "video":
+                await message.reply_video(file_id)
+            else:
+                await message.reply_document(file_id)
         else:
             try:
                 await message.reply_video(file_id)
@@ -88,16 +96,18 @@ async def process_entry(
     temp_id: int,
     settings: dict | None = None,
     file_cache: FileIdCache | None = None,
+    send_as: str = "document",
 ) -> bool:
     entry_url = entry.get("webpage_url") or entry.get("url")
     if not entry_url:
         return False
+    cache_settings = {"send_as": send_as} if mode == "default" else settings
     if file_cache:
-        cached = await file_cache.get(entry_url, mode, settings)
+        cached = await file_cache.get(entry_url, mode, cache_settings)
         if cached:
-            if await send_cached(cached, message, mode):
+            if await send_cached(cached, message, mode, send_as):
                 return True
-            await file_cache.delete(entry_url, mode, settings)
+            await file_cache.delete(entry_url, mode, cache_settings)
 
     base = os.path.join(workdir, str(temp_id))
 
@@ -130,16 +140,28 @@ async def process_entry(
                 await file_cache.set(entry_url, mode, sent.animation.file_id, settings)
             return True
         return False
-    info, in_path = await download_merge(entry_url, base)
-    if in_path and os.path.exists(in_path):
+    if mode == "default":
+        info, in_path = await download_merge(entry_url, base)
+        if not in_path or not os.path.exists(in_path):
+            return False
         ext = os.path.splitext(in_path)[1]
         doc_name = f"{make_name(info)}{ext}"
-        sent = await message.reply_document(FSInputFile(in_path, filename=doc_name))
+        if send_as == "video":
+            sent = await message.reply_video(FSInputFile(in_path))
+        else:
+            sent = await message.reply_document(
+                FSInputFile(in_path, filename=doc_name),
+                disable_content_type_detection=True,
+            )
         if file_cache:
             if sent.video:
-                await file_cache.set(entry_url, mode, sent.video.file_id, settings)
+                await file_cache.set(
+                    entry_url, mode, sent.video.file_id, cache_settings
+                )
             elif sent.document:
-                await file_cache.set(entry_url, mode, sent.document.file_id, settings)
+                await file_cache.set(
+                    entry_url, mode, sent.document.file_id, cache_settings
+                )
         return True
     return False
 
@@ -151,6 +173,7 @@ async def process_url(
     mode_key: str,
     mode: str,
     sticker: StickerSettings,
+    default: DefaultSettings,
     file_cache: FileIdCache,
 ) -> None:
     chat_id, user_id, _ = get_mode_key(message)
@@ -164,6 +187,10 @@ async def process_url(
         if waited:
             wait_message = await message.reply(WAIT_TEXT)
         settings = await sticker.get(mode_key) if mode == "sticker" else None
+        send_as = "document"
+        if mode == "default":
+            default_settings = await default.get(mode_key)
+            send_as = default_settings["send_as"]
         status = await message.reply(LOADING_TEXT)
         failed = True
         try:
@@ -176,7 +203,14 @@ async def process_url(
                 temp_id = random.randint(100, 999)
                 used_ids.append(temp_id)
                 if await process_entry(
-                    entry, message, workdir, mode, temp_id, settings, file_cache
+                    entry,
+                    message,
+                    workdir,
+                    mode,
+                    temp_id,
+                    settings,
+                    file_cache,
+                    send_as,
                 ):
                     sent_count += 1
             if sent_count > 0:
