@@ -10,6 +10,9 @@ MODE_MSG = "تستطيع تغيير وضع عمل البوت\nمن هنا"
 MODE_DENIED = "ليس مسموح لك القيام\nبهذا التغيير"
 STATUS_MSG = "يعمل البوت الان بوضع {}\nبدون مشاكل"
 
+DEFAULT_SEND_DOCUMENT = "مستند"
+DEFAULT_SEND_VIDEO = "فيديو"
+
 LANG_ENG = "eNG"
 LANG_RUS = "rUS"
 LANG_ENABLE = "تفعيل"

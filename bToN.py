@@ -5,8 +5,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from Reply import (
     BUTTON_NAMES,
-    DEFAULT_DOCUMENT,
-    DEFAULT_VIDEO,
+    DEFAULT_SEND_DOCUMENT,
+    DEFAULT_SEND_VIDEO,
     LANG_BACK,
     LANG_DISABLE,
     LANG_ENABLE,
@@ -76,12 +76,11 @@ def build_mode_markup(
     owner_id: int,
     mode_key: str,
     sticker_enabled: bool = False,
-    default_enabled: bool = False,
 ) -> InlineKeyboardMarkup:
     effective_mode = "sticker" if sticker_enabled else current_mode
 
     voice_style = "primary" if effective_mode == "voice" else "danger"
-    default_style = "primary" if default_enabled else "danger"
+    default_style = "primary" if effective_mode == "default" else "danger"
     sticker_style = "primary" if effective_mode == "sticker" else "danger"
     note_style = "primary" if effective_mode == "note" else "danger"
     lang_style = "success" if lang_active else "danger"
@@ -123,32 +122,34 @@ def build_mode_markup(
 def build_default_markup(
     settings: dict, owner_id: int, mode_key: str
 ) -> InlineKeyboardMarkup:
-    document_style = "primary" if settings["send_as"] == "document" else "danger"
-    video_style = "primary" if settings["send_as"] == "video" else "danger"
+    send_as = settings.get("send_as", "document")
+    document_style = "primary" if send_as == "document" else "danger"
+    video_style = "primary" if send_as == "video" else "danger"
+
+    btn_document = InlineKeyboardButton(
+        text=DEFAULT_SEND_DOCUMENT,
+        callback_data=f"default_set:document|{owner_id}|{mode_key}",
+        style=document_style,
+    )
+    btn_video = InlineKeyboardButton(
+        text=DEFAULT_SEND_VIDEO,
+        callback_data=f"default_set:video|{owner_id}|{mode_key}",
+        style=video_style,
+    )
 
     if settings["enabled"]:
         btn_toggle = InlineKeyboardButton(
-            text=STICKER_DISABLE,
+            text=LANG_DISABLE,
             callback_data=f"toggle_state:default|{owner_id}|{mode_key}",
             style="primary",
         )
     else:
         btn_toggle = InlineKeyboardButton(
-            text=STICKER_ENABLE,
+            text=LANG_ENABLE,
             callback_data=f"toggle_state:default|{owner_id}|{mode_key}",
             style="danger",
         )
 
-    btn_document = InlineKeyboardButton(
-        text=DEFAULT_DOCUMENT,
-        callback_data=f"default_set:document|{owner_id}|{mode_key}",
-        style=document_style,
-    )
-    btn_video = InlineKeyboardButton(
-        text=DEFAULT_VIDEO,
-        callback_data=f"default_set:video|{owner_id}|{mode_key}",
-        style=video_style,
-    )
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
         callback_data=f"back:default|{owner_id}|{mode_key}",

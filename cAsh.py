@@ -257,20 +257,25 @@ class StickerSettings(RedisBase):
 
 class DefaultSettings(RedisBase):
     async def get(self, mode_key: str) -> dict:
-        enabled = await self._get(CACHE_PREFIX + f"default_enabled:{mode_key}")
-        send_as = await self._get(CACHE_PREFIX + f"default_send:{mode_key}")
+        value = await self._get(CACHE_PREFIX + f"default:{mode_key}")
+        if not value:
+            return {"enabled": False, "send_as": "document"}
+        parts = value.split(",")
         return {
-            "enabled": enabled == "1",
-            "send_as": send_as if send_as in ("document", "video") else "document",
+            "enabled": parts[0] == "1",
+            "send_as": parts[1]
+            if len(parts) > 1 and parts[1] in ("document", "video")
+            else "document",
         }
 
-    async def set_enabled(self, mode_key: str, enabled: bool) -> None:
-        await self._set(
-            CACHE_PREFIX + f"default_enabled:{mode_key}", "1" if enabled else "0"
+    async def set(self, mode_key: str, settings: dict) -> None:
+        value = ",".join(
+            [
+                "1" if settings["enabled"] else "0",
+                "video" if settings.get("send_as") == "video" else "document",
+            ]
         )
-
-    async def set_send_as(self, mode_key: str, send_as: str) -> None:
-        await self._set(CACHE_PREFIX + f"default_send:{mode_key}", send_as)
+        await self._set(CACHE_PREFIX + f"default:{mode_key}", value)
 
 
 class FileIdCache(RedisBase):
@@ -290,8 +295,6 @@ class FileIdCache(RedisBase):
             parts.append(settings.get("crop_ratio", "none"))
             parts.append(settings.get("crop_type", "none"))
             return f"sticker:{'_'.join(parts)}"
-        if mode == "default" and settings:
-            return f"default:{settings.get('send_as', 'document')}"
         return mode
 
     @staticmethod
