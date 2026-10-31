@@ -75,14 +75,11 @@ def build_mode_markup(
     lang_active: bool,
     owner_id: int,
     mode_key: str,
-    sticker_enabled: bool = False,
 ) -> InlineKeyboardMarkup:
-    effective_mode = "sticker" if sticker_enabled else current_mode
-
-    voice_style = "primary" if effective_mode == "voice" else "danger"
-    default_style = "primary" if effective_mode == "default" else "danger"
-    sticker_style = "primary" if effective_mode == "sticker" else "danger"
-    note_style = "primary" if effective_mode == "note" else "danger"
+    voice_style = "primary" if current_mode == "voice" else "danger"
+    default_style = "primary" if current_mode == "default" else "danger"
+    sticker_style = "primary" if current_mode == "sticker" else "danger"
+    note_style = "primary" if current_mode == "note" else "danger"
     lang_style = "success" if lang_active else "danger"
 
     btn_voice = InlineKeyboardButton(
@@ -120,7 +117,7 @@ def build_mode_markup(
 
 
 def build_default_markup(
-    settings: dict, owner_id: int, mode_key: str
+    settings: dict, owner_id: int, mode_key: str, is_active: bool
 ) -> InlineKeyboardMarkup:
     send_as = settings.get("send_as", "document")
     document_style = "primary" if send_as == "document" else "danger"
@@ -137,7 +134,7 @@ def build_default_markup(
         style=video_style,
     )
 
-    if settings["enabled"]:
+    if is_active:
         btn_toggle = InlineKeyboardButton(
             text=LANG_DISABLE,
             callback_data=f"toggle_state:default|{owner_id}|{mode_key}",
@@ -166,7 +163,7 @@ def build_default_markup(
 
 
 def build_sticker_markup(
-    settings: dict, owner_id: int, mode_key: str
+    settings: dict, owner_id: int, mode_key: str, is_active: bool
 ) -> InlineKeyboardMarkup:
     landscape_style = "primary" if settings["landscape"] else "danger"
     portrait_style = "primary" if settings["portrait"] else "danger"
@@ -194,7 +191,7 @@ def build_sticker_markup(
         style=flip_style,
     )
 
-    if settings["enabled"]:
+    if is_active:
         btn_toggle = InlineKeyboardButton(
             text=STICKER_DISABLE,
             callback_data=f"toggle_state:sticker|{owner_id}|{mode_key}",

@@ -117,13 +117,11 @@ def make_handler(
         if text == ADMIN_COMMAND:
             allowed = await handle_admin_logic(message, bot, mode_key, adt)
             if allowed:
-                sticker_state = await sticker.get(mode_key)
                 markup = build_mode_markup(
                     await modes.get(mode_key),
                     await lang.get(mode_key),
                     user_id,
                     mode_key,
-                    sticker_state["enabled"],
                 )
                 sent_message = await message.reply(MODE_MSG, reply_markup=markup)
                 if message.chat.type != "private":
@@ -179,36 +177,34 @@ def make_handler(
                     )
                 )
             elif field == "sticker":
-                settings = await sticker.get(mode_key)
-                settings["enabled"] = not settings["enabled"]
-                await sticker.set(mode_key, settings)
-                if settings["enabled"]:
-                    current_mode = await modes.get(mode_key)
-                    if current_mode != "sticker":
-                        await modes.set_previous(mode_key, current_mode)
-                        await modes.set(mode_key, "sticker")
+                current_mode = await modes.get(mode_key)
+                if current_mode != "sticker":
+                    await modes.set_previous(mode_key, current_mode)
+                    await modes.set(mode_key, "sticker")
                 else:
-                    if await modes.get(mode_key) == "sticker":
-                        previous = await modes.get_previous(mode_key)
-                        await modes.set(mode_key, previous)
+                    previous = await modes.get_previous(mode_key)
+                    await modes.set(mode_key, previous)
+                new_mode = await modes.get(mode_key)
+                settings = await sticker.get(mode_key)
                 await callback.message.edit_reply_markup(
-                    reply_markup=build_sticker_markup(settings, owner_id, mode_key)
+                    reply_markup=build_sticker_markup(
+                        settings, owner_id, mode_key, new_mode == "sticker"
+                    )
                 )
             elif field == "default":
-                settings = await default.get(mode_key)
-                settings["enabled"] = not settings["enabled"]
-                await default.set(mode_key, settings)
-                if settings["enabled"]:
-                    current_mode = await modes.get(mode_key)
-                    if current_mode != "default":
-                        await modes.set_previous(mode_key, current_mode)
-                        await modes.set(mode_key, "default")
+                current_mode = await modes.get(mode_key)
+                if current_mode != "default":
+                    await modes.set_previous(mode_key, current_mode)
+                    await modes.set(mode_key, "default")
                 else:
-                    if await modes.get(mode_key) == "default":
-                        previous = await modes.get_previous(mode_key)
-                        await modes.set(mode_key, previous)
+                    previous = await modes.get_previous(mode_key)
+                    await modes.set(mode_key, previous)
+                new_mode = await modes.get(mode_key)
+                settings = await default.get(mode_key)
                 await callback.message.edit_reply_markup(
-                    reply_markup=build_default_markup(settings, owner_id, mode_key)
+                    reply_markup=build_default_markup(
+                        settings, owner_id, mode_key, new_mode == "default"
+                    )
                 )
 
         elif action == "back":
@@ -216,31 +212,23 @@ def make_handler(
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             if field == "default":
-                current_mode = await modes.get(mode_key)
-                new_lang = await lang.get(mode_key)
-                sticker_state = await sticker.get(mode_key)
                 await callback.message.edit_reply_markup(
                     reply_markup=build_mode_markup(
-                        current_mode,
-                        new_lang,
+                        await modes.get(mode_key),
+                        await lang.get(mode_key),
                         owner_id,
                         mode_key,
-                        sticker_state["enabled"],
                     )
                 )
                 await callback.answer()
                 return
-            current_mode = await modes.get(mode_key)
-            new_lang = await lang.get(mode_key)
-            sticker_state = await sticker.get(mode_key)
             await callback.message.edit_text(
                 MODE_MSG,
                 reply_markup=build_mode_markup(
-                    current_mode,
-                    new_lang,
+                    await modes.get(mode_key),
+                    await lang.get(mode_key),
                     owner_id,
                     mode_key,
-                    sticker_state["enabled"],
                 ),
             )
 
@@ -248,11 +236,7 @@ def make_handler(
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            settings = await sticker.get(mode_key)
             current_mode = await modes.get(mode_key)
-            if settings["enabled"]:
-                settings["enabled"] = False
-                await sticker.set(mode_key, settings)
             if current_mode == field:
                 previous = await modes.get_previous(mode_key)
                 await modes.set(mode_key, previous)
@@ -267,7 +251,6 @@ def make_handler(
                     new_lang,
                     owner_id,
                     mode_key,
-                    False,
                 )
             )
 
@@ -276,8 +259,11 @@ def make_handler(
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             settings = await default.get(mode_key)
+            current_mode = await modes.get(mode_key)
             await callback.message.edit_reply_markup(
-                reply_markup=build_default_markup(settings, owner_id, mode_key)
+                reply_markup=build_default_markup(
+                    settings, owner_id, mode_key, current_mode == "default"
+                )
             )
 
         elif action == "default_set":
@@ -287,8 +273,11 @@ def make_handler(
             settings = await default.get(mode_key)
             settings["send_as"] = "video" if field == "video" else "document"
             await default.set(mode_key, settings)
+            current_mode = await modes.get(mode_key)
             await callback.message.edit_reply_markup(
-                reply_markup=build_default_markup(settings, owner_id, mode_key)
+                reply_markup=build_default_markup(
+                    settings, owner_id, mode_key, current_mode == "default"
+                )
             )
 
         elif action == "lang":
@@ -321,9 +310,12 @@ def make_handler(
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             settings = await sticker.get(mode_key)
+            current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
                 STICKER_MSG,
-                reply_markup=build_sticker_markup(settings, owner_id, mode_key),
+                reply_markup=build_sticker_markup(
+                    settings, owner_id, mode_key, current_mode == "sticker"
+                ),
             )
 
         elif action == "sticker_set":
@@ -349,8 +341,11 @@ def make_handler(
             elif field == "flip":
                 settings["flip_left"] = not settings["flip_left"]
             await sticker.set(mode_key, settings)
+            current_mode = await modes.get(mode_key)
             await callback.message.edit_reply_markup(
-                reply_markup=build_sticker_markup(settings, owner_id, mode_key)
+                reply_markup=build_sticker_markup(
+                    settings, owner_id, mode_key, current_mode == "sticker"
+                )
             )
 
         elif action == "dimensions_menu":
