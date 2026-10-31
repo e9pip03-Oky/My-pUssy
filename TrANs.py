@@ -22,8 +22,8 @@ def fix_format(text: str) -> str:
     length = len(text)
     for i, char in enumerate(text):
         is_end_of_word = (i == length - 1) or not text[i + 1].isalnum()
-        
-        if char == "s":
+
+        if char.lower() == "s":
             if prev_char == "s":
                 res.append("S")
             else:
@@ -36,10 +36,10 @@ def fix_format(text: str) -> str:
             res.append(char.lower())
         else:
             res.append(char)
-            
+
         if res:
             prev_char = res[-1]
-            
+
     return "".join(res)
 
 

@@ -18,6 +18,7 @@ from Reply import (
     RANDOM_REPLIES,
     STICKER_MSG,
     STATUS_COMMAND,
+    STATUS_MSG,
 )
 from bToN import (
     build_dimensions_markup,
@@ -35,29 +36,19 @@ from cAsh import (
     ModeStorage,
     ReplyCounter,
     StickerSettings,
+    get_mode_key,
 )
 from ediT import handle_pending_edit, set_edit_state
 from MesSA import (
-    handle_admin,
+    get_status_mode,
+    handle_admin_logic,
     handle_media_request,
-    handle_status,
-    handle_translation,
+    handle_translation_logic,
     process_url,
 )
 
 log = logging.getLogger("voicebot")
 URL_RE = re.compile(r"https?://\S+")
-
-
-async def _is_admin(bot: Bot, chat_id: int, user_id: int, is_channel: bool) -> bool:
-    if is_channel:
-        chat = await bot.get_chat(chat_id)
-        return chat.type == "channel"
-    try:
-        member = await bot.get_chat_member(chat_id, user_id)
-        return member.status in ("administrator", "creator")
-    except Exception:
-        return False
 
 
 def make_handler(
@@ -81,10 +72,7 @@ def make_handler(
         if not message.text:
             return
         text = message.text.strip()
-        chat_id = message.chat.id
-        user_id = message.from_user.id if message.from_user else 0
-        thread_id = message.message_thread_id
-        mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
+        chat_id, user_id, mode_key = get_mode_key(message)
 
         if await handle_pending_edit(message, bot, file_cache):
             return
@@ -118,17 +106,32 @@ def make_handler(
                 return
 
         if text == ADMIN_COMMAND:
-            if await handle_admin(
-                message, bot, mode_key, modes, lang, adt, sticker, _is_admin
-            ):
+            allowed = await handle_admin_logic(message, bot, mode_key, adt)
+            if allowed:
+                sticker_state = await sticker.get(mode_key)
+                markup = build_mode_markup(
+                    await modes.get(mode_key),
+                    await lang.get(mode_key),
+                    user_id,
+                    mode_key,
+                    sticker_state["enabled"],
+                )
+                sent_msg = await message.reply(MODE_MSG, reply_markup=markup)
+                if message.chat.type != "private":
+                    old_msgs = await adt.get_messages(mode_key)
+                    old_msgs.append(sent_msg.message_id)
+                    await adt.save_messages(mode_key, old_msgs)
                 return
 
         if text == STATUS_COMMAND:
-            if await handle_status(message, mode_key, modes, sticker):
-                return
+            active_mode = await get_status_mode(mode_key, modes, sticker)
+            await message.reply(STATUS_MSG.format(active_mode))
+            return
 
         if await lang.get(mode_key):
-            if await handle_translation(message, text, mode_key, lang_code):
+            translated = await handle_translation_logic(text, mode_key, lang_code)
+            if translated:
+                await message.reply(translated)
                 return
 
         if message.chat.type == "private":
@@ -300,14 +303,8 @@ def make_handler(
                 settings["portrait"] = not settings["portrait"]
                 if settings["portrait"]:
                     settings["landscape"] = False
-            elif field == "flip_left":
+            elif field == "flip":
                 settings["flip_left"] = not settings["flip_left"]
-                if settings["flip_left"]:
-                    settings["flip_right"] = False
-            elif field == "flip_right":
-                settings["flip_right"] = not settings["flip_right"]
-                if settings["flip_right"]:
-                    settings["flip_left"] = False
 
             await sticker.set(mode_key, settings)
             await callback.message.edit_reply_markup(
