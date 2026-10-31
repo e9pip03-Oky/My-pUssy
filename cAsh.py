@@ -17,9 +17,9 @@ FILE_ID_TTL = 60 * 60 * 24 * 30
 IDLE_TIMEOUT = 60
 
 
-async def safe_delete(msg: Message) -> None:
+async def safe_delete(message: Message) -> None:
     try:
-        await msg.delete()
+        await message.delete()
     except Exception:
         pass
 
@@ -36,9 +36,14 @@ class IdleManagedRedis(aioredis.Redis):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._last_used = time.time()
-        self._monitor_task = asyncio.create_task(self._monitor_idle())
+        self._monitor_task: asyncio.Task | None = None
+        self._start_monitor()
 
-    async def _monitor_idle(self):
+    def _start_monitor(self) -> None:
+        if self._monitor_task is None or self._monitor_task.done():
+            self._monitor_task = asyncio.create_task(self._monitor_idle())
+
+    async def _monitor_idle(self) -> None:
         try:
             while True:
                 await asyncio.sleep(10)
@@ -47,15 +52,16 @@ class IdleManagedRedis(aioredis.Redis):
                     break
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            log.warning("Error in idle monitor: %s", e)
+        except Exception as exc:
+            log.warning("Error in idle monitor: %s", exc)
 
     async def execute_command(self, *args, **kwargs):
         self._last_used = time.time()
+        self._start_monitor()
         return await super().execute_command(*args, **kwargs)
 
-    async def aclose(self):
-        if not self._monitor_task.done():
+    async def aclose(self) -> None:
+        if self._monitor_task and not self._monitor_task.done():
             self._monitor_task.cancel()
         await super().aclose()
 
@@ -66,43 +72,45 @@ def _hash_key(value: str) -> str:
 
 class ChatQueue:
     def __init__(self) -> None:
-        self._locks: dict[int, asyncio.Lock] = {}
-        self._running: dict[int, int] = {}
+        self._slots: dict[int, asyncio.Queue[None]] = {}
         self._waiting: dict[int, int] = {}
-        self._events: dict[int, list[asyncio.Event]] = {}
+        self._locks: dict[int, asyncio.Lock] = {}
 
     def _lock(self, chat_id: int) -> asyncio.Lock:
         if chat_id not in self._locks:
             self._locks[chat_id] = asyncio.Lock()
         return self._locks[chat_id]
 
-    async def acquire(self, chat_id: int) -> tuple[bool, asyncio.Event | None]:
-        async with self._lock(chat_id):
-            running = self._running.get(chat_id, 0)
-            if running < MAX_CONCURRENT:
-                self._running[chat_id] = running + 1
-                return True, None
-            waiting = self._waiting.get(chat_id, 0)
-            if waiting < MAX_WAITING:
-                self._waiting[chat_id] = waiting + 1
-                event = asyncio.Event()
-                self._events.setdefault(chat_id, []).append(event)
-                return True, event
-            return False, None
+    def _queue(self, chat_id: int) -> asyncio.Queue[None]:
+        if chat_id not in self._slots:
+            queue: asyncio.Queue[None] = asyncio.Queue()
+            for _ in range(MAX_CONCURRENT):
+                queue.put_nowait(None)
+            self._slots[chat_id] = queue
+        return self._slots[chat_id]
 
-    async def wait_turn(self, event: asyncio.Event) -> None:
-        await event.wait()
+    async def acquire(self, chat_id: int) -> tuple[bool, bool]:
+        async with self._lock(chat_id):
+            queue = self._queue(chat_id)
+            if not queue.empty():
+                queue.get_nowait()
+                return True, False
+            if self._waiting.get(chat_id, 0) >= MAX_WAITING:
+                return False, False
+            self._waiting[chat_id] = self._waiting.get(chat_id, 0) + 1
+        try:
+            await queue.get()
+        except asyncio.CancelledError:
+            async with self._lock(chat_id):
+                self._waiting[chat_id] = max(0, self._waiting[chat_id] - 1)
+            raise
+        async with self._lock(chat_id):
+            self._waiting[chat_id] = max(0, self._waiting[chat_id] - 1)
+        return True, True
 
     async def release(self, chat_id: int) -> None:
-        async with self._lock(chat_id):
-            events = self._events.get(chat_id, [])
-            if events:
-                events.pop(0).set()
-                self._waiting[chat_id] -= 1
-            else:
-                running = self._running.get(chat_id, 0)
-                if running > 0:
-                    self._running[chat_id] = running - 1
+        queue = self._queue(chat_id)
+        queue.put_nowait(None)
 
 
 class RedisBase:
@@ -112,8 +120,8 @@ class RedisBase:
 
     async def _get(self, key: str) -> str | None:
         if self._client:
-            val = await self._client.get(key)
-            return val.decode() if val else None
+            value = await self._client.get(key)
+            return value.decode() if value else None
         return self._memory.get(key)
 
     async def _set(self, key: str, value: str, ttl: int | None = None) -> None:
@@ -165,68 +173,86 @@ class LangCodeStorage(RedisBase):
 class ReplyCounter(RedisBase):
     async def next_index(self, user_id: int, size: int) -> int:
         key = CACHE_PREFIX + f"reply:{user_id}"
-        val = await self._get(key)
-        index = int(val) if val else 0
+        value = await self._get(key)
+        index = int(value) if value else 0
         await self._set(key, str((index + 1) % size))
         return index
 
 
 class AdtStorage(RedisBase):
     async def get_messages(self, mode_key: str) -> list[int]:
-        val = await self._get(CACHE_PREFIX + f"adt:{mode_key}")
-        return [int(x) for x in val.split(",") if x] if val else []
+        value = await self._get(CACHE_PREFIX + f"adt:{mode_key}")
+        return [int(item) for item in value.split(",") if item] if value else []
 
-    async def save_messages(self, mode_key: str, msg_ids: list[int]) -> None:
-        await self._set(CACHE_PREFIX + f"adt:{mode_key}", ",".join(map(str, msg_ids)))
+    async def save_messages(self, mode_key: str, message_ids: list[int]) -> None:
+        await self._set(
+            CACHE_PREFIX + f"adt:{mode_key}", ",".join(map(str, message_ids))
+        )
 
 
 class ButtonCycleStorage(RedisBase):
     async def get_index(self, chat_id: int) -> int:
-        val = await self._get(CACHE_PREFIX + f"btn_cycle:{chat_id}")
-        return int(val) if val else 0
+        value = await self._get(CACHE_PREFIX + f"btn_cycle:{chat_id}")
+        return int(value) if value else 0
 
     async def advance(self, chat_id: int, total: int) -> None:
-        idx = await self.get_index(chat_id)
-        await self._set(CACHE_PREFIX + f"btn_cycle:{chat_id}", str((idx + 1) % total))
+        index = await self.get_index(chat_id)
+        await self._set(
+            CACHE_PREFIX + f"btn_cycle:{chat_id}", str((index + 1) % total)
+        )
 
 
 class StickerSettings(RedisBase):
     async def get(self, mode_key: str) -> dict:
-        val = await self._get(CACHE_PREFIX + f"sticker:{mode_key}")
-        if not val:
+        value = await self._get(CACHE_PREFIX + f"sticker:{mode_key}")
+        if not value:
             return {
                 "enabled": False,
                 "landscape": False,
                 "portrait": False,
                 "flip_left": False,
                 "flip_right": False,
+                "force_portrait": False,
                 "crop_ratio": "none",
                 "crop_type": "none",
             }
-        parts = val.split(",")
+        parts = value.split(",")
+        if len(parts) == 7:
+            return {
+                "enabled": parts[0] == "1",
+                "landscape": parts[1] == "1",
+                "portrait": parts[2] == "1",
+                "flip_left": parts[3] == "1",
+                "flip_right": parts[4] == "1",
+                "force_portrait": False,
+                "crop_ratio": parts[5] if parts[5] != "none" else "none",
+                "crop_type": parts[6] if parts[6] != "none" else "none",
+            }
         return {
             "enabled": parts[0] == "1",
             "landscape": parts[1] == "1",
             "portrait": parts[2] == "1",
             "flip_left": parts[3] == "1",
             "flip_right": parts[4] == "1",
-            "crop_ratio": parts[5] if len(parts) > 5 else "none",
-            "crop_type": parts[6] if len(parts) > 6 else "none",
+            "force_portrait": parts[5] == "1",
+            "crop_ratio": parts[6] if len(parts) > 6 else "none",
+            "crop_type": parts[7] if len(parts) > 7 else "none",
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
-        val = ",".join(
+        value = ",".join(
             [
                 "1" if settings["enabled"] else "0",
                 "1" if settings["landscape"] else "0",
                 "1" if settings["portrait"] else "0",
                 "1" if settings["flip_left"] else "0",
                 "1" if settings["flip_right"] else "0",
+                "1" if settings.get("force_portrait") else "0",
                 settings.get("crop_ratio", "none"),
                 settings.get("crop_type", "none"),
             ]
         )
-        await self._set(CACHE_PREFIX + f"sticker:{mode_key}", val)
+        await self._set(CACHE_PREFIX + f"sticker:{mode_key}", value)
 
 
 class FileIdCache(RedisBase):
@@ -234,8 +260,14 @@ class FileIdCache(RedisBase):
     def _signature(mode: str, settings: dict | None) -> str:
         if mode == "sticker" and settings:
             parts = [
-                "1" if settings.get(k) else "0"
-                for k in ("landscape", "portrait", "flip_left", "flip_right")
+                "1" if settings.get(key) else "0"
+                for key in (
+                    "landscape",
+                    "portrait",
+                    "flip_left",
+                    "flip_right",
+                    "force_portrait",
+                )
             ]
             parts.append(settings.get("crop_ratio", "none"))
             parts.append(settings.get("crop_type", "none"))
@@ -248,7 +280,9 @@ class FileIdCache(RedisBase):
         raw = f"{url}|{signature}"
         return CACHE_PREFIX + "file_id:" + _hash_key(raw)
 
-    async def get(self, url: str, mode: str, settings: dict | None = None) -> str | None:
+    async def get(
+        self, url: str, mode: str, settings: dict | None = None
+    ) -> str | None:
         return await self._get(self.key(url, mode, settings))
 
     async def set(
@@ -256,7 +290,9 @@ class FileIdCache(RedisBase):
     ) -> None:
         await self._set(self.key(url, mode, settings), file_id, ttl=FILE_ID_TTL)
 
-    async def delete(self, url: str, mode: str, settings: dict | None = None) -> None:
+    async def delete(
+        self, url: str, mode: str, settings: dict | None = None
+    ) -> None:
         await self._del(self.key(url, mode, settings))
 
     @staticmethod
@@ -304,17 +340,17 @@ def cleanup(
     root = _root(chat_id, bot_id, is_private)
     user_path = os.path.join(BASE_DIR, root, str(user_id))
     if os.path.isdir(user_path):
-        prefixes = tuple(str(mid) for mid in message_ids if mid)
+        prefixes = tuple(str(message_id) for message_id in message_ids if message_id)
         if prefixes:
-            for fname in os.listdir(user_path):
+            for filename in os.listdir(user_path):
                 if any(
-                    fname == p
-                    or fname.startswith(p + ".")
-                    or fname.startswith(p + "_")
-                    for p in prefixes
+                    filename == prefix
+                    or filename.startswith(prefix + ".")
+                    or filename.startswith(prefix + "_")
+                    for prefix in prefixes
                 ):
                     try:
-                        os.remove(os.path.join(user_path, fname))
+                        os.remove(os.path.join(user_path, filename))
                     except OSError:
                         pass
     for path in (user_path, os.path.join(BASE_DIR, root)):

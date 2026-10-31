@@ -10,58 +10,59 @@ UPPER_TARGETS = set("ATFGUJNMLБИА")
 
 def has_formatting_chars(text: str) -> bool:
     return (
-        any(c.upper() in UPPER_TARGETS for c in text)
+        any(char.upper() in UPPER_TARGETS for char in text)
         or "ss" in text.lower()
         or "h" in text.lower()
     )
 
 
 def fix_format(text: str) -> str:
-    res = []
-    prev_char = ""
+    result: list[str] = []
+    previous = ""
     length = len(text)
-    for i, char in enumerate(text):
-        is_end_of_word = (i == length - 1) or not text[i + 1].isalnum()
+    for index, char in enumerate(text):
+        is_word_end = (index == length - 1) or not text[index + 1].isalnum()
 
         if char.lower() == "s":
-            if prev_char == "s":
-                res.append("S")
-            else:
-                res.append("s")
-        elif char == "h" and is_end_of_word:
-            res.append("H")
+            result.append("S" if previous == "s" else "s")
+        elif char == "h" and is_word_end:
+            result.append("H")
         elif char.upper() in UPPER_TARGETS:
-            res.append(char.upper())
+            result.append(char.upper())
         elif "a" <= char.lower() <= "z" or "а" <= char.lower() <= "я":
-            res.append(char.lower())
+            result.append(char.lower())
         else:
-            res.append(char)
+            result.append(char)
 
-        if res:
-            prev_char = res[-1]
+        if result:
+            previous = result[-1]
 
-    return "".join(res)
+    return "".join(result)
 
 
 def make_name(info: dict) -> str:
     uploader = info.get("uploader") or info.get("channel") or ""
-    pub = re.sub(r"[^\w]", "", re.sub(r"\s+", "_", uploader.strip()))
+    publisher = re.sub(r"[^\w]", "", re.sub(r"\s+", "_", uploader.strip()))
     title = re.sub(
         r"\s+",
         " ",
         re.sub(r"[^\w\s]", "", (info.get("title") or "").strip()).replace("_", ""),
     ).strip()
-    pub = fix_format(pub)
+    publisher = fix_format(publisher)
     title = fix_format(title)
-    name = f"{pub} - {title}" if pub and title else (title or pub or "audio")
+    name = (
+        f"{publisher} - {title}"
+        if publisher and title
+        else (title or publisher or "audio")
+    )
     return name[:120].rstrip() or "audio"
 
 
 async def process_translation(text: str, dest: str) -> str | None:
     try:
         async with Translator() as translator:
-            res = await translator.translate(text, dest=dest)
-            translated = res.text.replace(".", "").strip()
+            response = await translator.translate(text, dest=dest)
+            translated = response.text.replace(".", "").strip()
             return fix_format(translated)
     except Exception as exc:
         log.warning("translation failed: %s", exc)

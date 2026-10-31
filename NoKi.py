@@ -16,9 +16,9 @@ from Reply import (
     MODE_STICKER,
     MODE_VOICE,
     RANDOM_REPLIES,
-    STICKER_MSG,
     STATUS_COMMAND,
     STATUS_MSG,
+    STICKER_MSG,
 )
 from bToN import (
     build_dimensions_markup,
@@ -63,8 +63,8 @@ def make_handler(
 ):
     async def _get_random_reply_markup(chat_id: int):
         total = len(BUTTON_NAMES)
-        idx = await btn_cycle.get_index(chat_id)
-        markup = build_specific_markup(idx)
+        index = await btn_cycle.get_index(chat_id)
+        markup = build_specific_markup(index)
         await btn_cycle.advance(chat_id, total)
         return markup
 
@@ -94,16 +94,15 @@ def make_handler(
             url = url_match.group(0)
             if "t.me/" in url or "telegram.me/" in url:
                 if message.chat.type == "private":
-                    idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
+                    index = await counter.next_index(user_id, len(RANDOM_REPLIES))
                     markup = await _get_random_reply_markup(chat_id)
-                    await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
+                    await message.reply(RANDOM_REPLIES[index], reply_markup=markup)
                 return
-            else:
-                current_mode = await modes.get(mode_key)
-                await process_url(
-                    message, bot, url, mode_key, current_mode, sticker, file_cache
-                )
-                return
+            current_mode = await modes.get(mode_key)
+            await process_url(
+                message, bot, url, mode_key, current_mode, sticker, file_cache
+            )
+            return
 
         if text == ADMIN_COMMAND:
             allowed = await handle_admin_logic(message, bot, mode_key, adt)
@@ -116,11 +115,11 @@ def make_handler(
                     mode_key,
                     sticker_state["enabled"],
                 )
-                sent_msg = await message.reply(MODE_MSG, reply_markup=markup)
+                sent_message = await message.reply(MODE_MSG, reply_markup=markup)
                 if message.chat.type != "private":
-                    old_msgs = await adt.get_messages(mode_key)
-                    old_msgs.append(sent_msg.message_id)
-                    await adt.save_messages(mode_key, old_msgs)
+                    old_messages = await adt.get_messages(mode_key)
+                    old_messages.append(sent_message.message_id)
+                    await adt.save_messages(mode_key, old_messages)
                 return
 
         if text == STATUS_COMMAND:
@@ -135,42 +134,31 @@ def make_handler(
                 return
 
         if message.chat.type == "private":
-            idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
+            index = await counter.next_index(user_id, len(RANDOM_REPLIES))
             markup = await _get_random_reply_markup(chat_id)
-            await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
+            await message.reply(RANDOM_REPLIES[index], reply_markup=markup)
         elif text == BOT_TRIGGER:
-            idx = await counter.next_index(user_id, len(RANDOM_REPLIES))
+            index = await counter.next_index(user_id, len(RANDOM_REPLIES))
             markup = await _get_random_reply_markup(chat_id)
-            await message.reply(RANDOM_REPLIES[idx], reply_markup=markup)
+            await message.reply(RANDOM_REPLIES[index], reply_markup=markup)
 
     async def on_callback(callback: CallbackQuery):
         data = callback.data
-        if not data.startswith(
-            (
-                "toggle:",
-                "toggle_state:",
-                "lang:",
-                "setlang:",
-                "back:",
-                "sticker_menu:",
-                "sticker_set:",
-                "dimensions_menu:",
-                "dim_ratio:",
-            )
-        ):
+        if not data or "|" not in data:
             return
-        parts = data.split(":")
-        action = parts[0]
+        head, owner_part, mode_key = data.split("|", 2)
+        if ":" in head:
+            action, field = head.split(":", 1)
+        else:
+            action, field = head, None
         user_id = callback.from_user.id
-        chat_id = callback.message.chat.id
+        owner_id = int(owner_part)
 
         if action == "toggle_state":
-            section = parts[1]
-            owner_id, mode_key = int(parts[2]), parts[3]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            if section == "lang":
+            if field == "lang":
                 current_lang = await lang.get(mode_key)
                 await lang.set(mode_key, not current_lang)
                 new_lang = await lang.get(mode_key)
@@ -180,11 +168,10 @@ def make_handler(
                         new_lang, current_code, owner_id, mode_key
                     )
                 )
-            elif section == "sticker":
+            elif field == "sticker":
                 settings = await sticker.get(mode_key)
                 settings["enabled"] = not settings["enabled"]
                 await sticker.set(mode_key, settings)
-
                 if settings["enabled"]:
                     current_mode = await modes.get(mode_key)
                     if current_mode != "sticker":
@@ -192,16 +179,13 @@ def make_handler(
                         await modes.set(mode_key, "sticker")
                 else:
                     if await modes.get(mode_key) == "sticker":
-                        prev = await modes.get_previous(mode_key)
-                        await modes.set(mode_key, prev)
-
+                        previous = await modes.get_previous(mode_key)
+                        await modes.set(mode_key, previous)
                 await callback.message.edit_reply_markup(
                     reply_markup=build_sticker_markup(settings, owner_id, mode_key)
                 )
 
         elif action == "back":
-            section = parts[1]
-            owner_id, mode_key = int(parts[2]), parts[3]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
@@ -220,26 +204,20 @@ def make_handler(
             )
 
         elif action == "toggle":
-            mode_chosen = parts[1]
-            owner_id, mode_key = int(parts[2]), parts[3]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-
             settings = await sticker.get(mode_key)
             current_mode = await modes.get(mode_key)
-
             if settings["enabled"]:
                 settings["enabled"] = False
                 await sticker.set(mode_key, settings)
-
-            if current_mode == mode_chosen:
-                prev = await modes.get_previous(mode_key)
-                await modes.set(mode_key, prev)
+            if current_mode == field:
+                previous = await modes.get_previous(mode_key)
+                await modes.set(mode_key, previous)
             else:
                 await modes.set_previous(mode_key, current_mode)
-                await modes.set(mode_key, mode_chosen)
-
+                await modes.set(mode_key, field)
             new_mode = await modes.get(mode_key)
             new_lang = await lang.get(mode_key)
             await callback.message.edit_reply_markup(
@@ -253,7 +231,6 @@ def make_handler(
             )
 
         elif action == "lang":
-            owner_id, mode_key = int(parts[1]), parts[2]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
@@ -267,18 +244,18 @@ def make_handler(
             )
 
         elif action == "setlang":
-            code, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            await lang_code.set(mode_key, code)
+            await lang_code.set(mode_key, field)
             lang_active = await lang.get(mode_key)
             await callback.message.edit_reply_markup(
-                reply_markup=build_lang_markup(lang_active, code, owner_id, mode_key)
+                reply_markup=build_lang_markup(
+                    lang_active, field, owner_id, mode_key
+                )
             )
 
         elif action == "sticker_menu":
-            owner_id, mode_key = int(parts[1]), parts[2]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
@@ -289,30 +266,33 @@ def make_handler(
             )
 
         elif action == "sticker_set":
-            field, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             settings = await sticker.get(mode_key)
-
             if field == "landscape":
                 settings["landscape"] = not settings["landscape"]
                 if settings["landscape"]:
                     settings["portrait"] = False
+                    settings["force_portrait"] = False
             elif field == "portrait":
                 settings["portrait"] = not settings["portrait"]
                 if settings["portrait"]:
                     settings["landscape"] = False
+                    settings["force_portrait"] = False
+            elif field == "force_portrait":
+                settings["force_portrait"] = not settings["force_portrait"]
+                if settings["force_portrait"]:
+                    settings["landscape"] = False
+                    settings["portrait"] = False
             elif field == "flip":
                 settings["flip_left"] = not settings["flip_left"]
-
             await sticker.set(mode_key, settings)
             await callback.message.edit_reply_markup(
                 reply_markup=build_sticker_markup(settings, owner_id, mode_key)
             )
 
         elif action == "dimensions_menu":
-            owner_id, mode_key = int(parts[1]), parts[2]
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
@@ -322,19 +302,16 @@ def make_handler(
             )
 
         elif action == "dim_ratio":
-            ratio_part, owner_id, mode_key = parts[1], int(parts[2]), parts[3]
-            ratio = ratio_part.replace("_", ":")
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
+            ratio = field.replace("_", ":")
             settings = await sticker.get(mode_key)
-
             current_ratio = settings.get("crop_ratio", "none")
             if current_ratio == ratio:
                 settings["crop_ratio"] = "none"
             else:
                 settings["crop_ratio"] = ratio
-
             await sticker.set(mode_key, settings)
             await callback.message.edit_reply_markup(
                 reply_markup=build_dimensions_markup(settings, owner_id, mode_key)

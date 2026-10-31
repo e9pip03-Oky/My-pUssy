@@ -24,6 +24,7 @@ from Reply import (
     STICKER_FLIP,
     STICKER_LANDSCAPE,
     STICKER_PORTRAIT,
+    STICKER_PORTRAIT_FORCE,
 )
 
 log = logging.getLogger("voicebot")
@@ -31,13 +32,16 @@ BUTTON_STYLES = ("primary", "success", "danger")
 
 
 def parse_ids(raw: str) -> list[int]:
-    return [int(p.strip()) for p in raw.split("/") if p.strip().isdigit()]
+    return [int(part.strip()) for part in raw.split("/") if part.strip().isdigit()]
 
 
 def build_buttons(ids: list[int]) -> list[tuple[int, str, str]]:
     result = []
-    seen = set()
-    for index, user_id in enumerate([u for u in ids if u not in seen and not seen.add(u)]):
+    seen: set[int] = set()
+    for index, user_id in enumerate(ids):
+        if user_id in seen:
+            continue
+        seen.add(user_id)
         result.append(
             (
                 user_id,
@@ -58,8 +62,6 @@ def build_specific_markup(index: int) -> InlineKeyboardMarkup | None:
     if not ids:
         return None
     unique_ids = list(dict.fromkeys(ids))
-    if not unique_ids:
-        return None
     user_id = unique_ids[index % len(unique_ids)]
     name = BUTTON_NAMES[index % len(BUTTON_NAMES)]
     style = BUTTON_STYLES[index % len(BUTTON_STYLES)]
@@ -83,27 +85,27 @@ def build_mode_markup(
 
     btn_voice = InlineKeyboardButton(
         text=MODE_VOICE,
-        callback_data=f"toggle:voice:{owner_id}:{mode_key}",
+        callback_data=f"toggle:voice|{owner_id}|{mode_key}",
         style=voice_style,
     )
     btn_default = InlineKeyboardButton(
         text=MODE_DEFAULT,
-        callback_data=f"toggle:default:{owner_id}:{mode_key}",
+        callback_data=f"toggle:default|{owner_id}|{mode_key}",
         style=default_style,
     )
     btn_sticker = InlineKeyboardButton(
         text=MODE_STICKER,
-        callback_data=f"sticker_menu:{owner_id}:{mode_key}",
+        callback_data=f"sticker_menu|{owner_id}|{mode_key}",
         style=sticker_style,
     )
     btn_note = InlineKeyboardButton(
         text=MODE_NOTE,
-        callback_data=f"toggle:note:{owner_id}:{mode_key}",
+        callback_data=f"toggle:note|{owner_id}|{mode_key}",
         style=note_style,
     )
     btn_lang = InlineKeyboardButton(
         text=MODE_LANG,
-        callback_data=f"lang:{owner_id}:{mode_key}",
+        callback_data=f"lang|{owner_id}|{mode_key}",
         style=lang_style,
     )
     return InlineKeyboardMarkup(
@@ -120,55 +122,60 @@ def build_sticker_markup(
 ) -> InlineKeyboardMarkup:
     landscape_style = "primary" if settings["landscape"] else "danger"
     portrait_style = "primary" if settings["portrait"] else "danger"
+    force_portrait_style = "primary" if settings.get("force_portrait") else "danger"
     flip_style = "primary" if settings["flip_left"] else "danger"
 
     btn_landscape = InlineKeyboardButton(
         text=STICKER_LANDSCAPE,
-        callback_data=f"sticker_set:landscape:{owner_id}:{mode_key}",
+        callback_data=f"sticker_set:landscape|{owner_id}|{mode_key}",
         style=landscape_style,
     )
     btn_portrait = InlineKeyboardButton(
         text=STICKER_PORTRAIT,
-        callback_data=f"sticker_set:portrait:{owner_id}:{mode_key}",
+        callback_data=f"sticker_set:portrait|{owner_id}|{mode_key}",
         style=portrait_style,
+    )
+    btn_force_portrait = InlineKeyboardButton(
+        text=STICKER_PORTRAIT_FORCE,
+        callback_data=f"sticker_set:force_portrait|{owner_id}|{mode_key}",
+        style=force_portrait_style,
     )
     btn_flip = InlineKeyboardButton(
         text=STICKER_FLIP,
-        callback_data=f"sticker_set:flip:{owner_id}:{mode_key}",
+        callback_data=f"sticker_set:flip|{owner_id}|{mode_key}",
         style=flip_style,
     )
 
     if settings["enabled"]:
         btn_toggle = InlineKeyboardButton(
             text=STICKER_DISABLE,
-            callback_data=f"toggle_state:sticker:{owner_id}:{mode_key}",
+            callback_data=f"toggle_state:sticker|{owner_id}|{mode_key}",
             style="primary",
         )
     else:
         btn_toggle = InlineKeyboardButton(
             text=STICKER_ENABLE,
-            callback_data=f"toggle_state:sticker:{owner_id}:{mode_key}",
+            callback_data=f"toggle_state:sticker|{owner_id}|{mode_key}",
             style="danger",
         )
 
     btn_dimensions = InlineKeyboardButton(
         text=STICKER_DIMENSIONS,
-        callback_data=f"dimensions_menu:{owner_id}:{mode_key}",
+        callback_data=f"dimensions_menu|{owner_id}|{mode_key}",
         style="success",
     )
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
-        callback_data=f"back:sticker:{owner_id}:{mode_key}",
+        callback_data=f"back:sticker|{owner_id}|{mode_key}",
         style="success",
     )
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_toggle],
-            [btn_landscape, btn_portrait],
-            [btn_flip],
             [btn_dimensions],
+            [btn_portrait, btn_toggle, btn_landscape],
+            [btn_force_portrait, btn_flip],
             [btn_back],
         ]
     )
@@ -185,23 +192,23 @@ def build_dimensions_markup(
 
     btn_9_16 = InlineKeyboardButton(
         text=STICKER_DIM_9_16,
-        callback_data=f"dim_ratio:9_16:{owner_id}:{mode_key}",
+        callback_data=f"dim_ratio:9_16|{owner_id}|{mode_key}",
         style=ratio_9_16_style,
     )
     btn_3_2 = InlineKeyboardButton(
         text=STICKER_DIM_3_2,
-        callback_data=f"dim_ratio:3_2:{owner_id}:{mode_key}",
+        callback_data=f"dim_ratio:3_2|{owner_id}|{mode_key}",
         style=ratio_3_2_style,
     )
     btn_3_4 = InlineKeyboardButton(
         text=STICKER_DIM_3_4,
-        callback_data=f"dim_ratio:3_4:{owner_id}:{mode_key}",
+        callback_data=f"dim_ratio:3_4|{owner_id}|{mode_key}",
         style=ratio_3_4_style,
     )
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
-        callback_data=f"sticker_menu:{owner_id}:{mode_key}",
+        callback_data=f"sticker_menu|{owner_id}|{mode_key}",
         style="success",
     )
 
@@ -221,31 +228,31 @@ def build_lang_markup(
 
     btn_eng = InlineKeyboardButton(
         text=LANG_ENG,
-        callback_data=f"setlang:en:{owner_id}:{mode_key}",
+        callback_data=f"setlang:en|{owner_id}|{mode_key}",
         style=eng_style,
     )
     btn_rus = InlineKeyboardButton(
         text=LANG_RUS,
-        callback_data=f"setlang:ru:{owner_id}:{mode_key}",
+        callback_data=f"setlang:ru|{owner_id}|{mode_key}",
         style=rus_style,
     )
 
     if lang_active:
         btn_toggle = InlineKeyboardButton(
             text=LANG_DISABLE,
-            callback_data=f"toggle_state:lang:{owner_id}:{mode_key}",
+            callback_data=f"toggle_state:lang|{owner_id}|{mode_key}",
             style="primary",
         )
     else:
         btn_toggle = InlineKeyboardButton(
             text=LANG_ENABLE,
-            callback_data=f"toggle_state:lang:{owner_id}:{mode_key}",
+            callback_data=f"toggle_state:lang|{owner_id}|{mode_key}",
             style="danger",
         )
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
-        callback_data=f"back:lang:{owner_id}:{mode_key}",
+        callback_data=f"back:lang|{owner_id}|{mode_key}",
         style="success",
     )
 
