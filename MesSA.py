@@ -132,6 +132,7 @@ async def process_entry(
                 await file_cache.set(entry_url, mode, sent.animation.file_id, settings)
             return True
         return False
+    
     info, in_path = await download_merge(entry_url, base)
     if in_path and os.path.exists(in_path):
         chat_id, user_id, mode_key = get_mode_key(message)
@@ -145,7 +146,8 @@ async def process_entry(
             ext = os.path.splitext(in_path)[1]
             doc_name = f"{make_name(info)}{ext}"
             sent = await message.reply_document(
-                FSInputFile(in_path, filename=doc_name)
+                FSInputFile(in_path, filename=doc_name),
+                disable_content_type_detection=True,
             )
             if file_cache and sent.document:
                 await file_cache.set(entry_url, mode, sent.document.file_id, settings)
