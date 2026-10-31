@@ -145,8 +145,6 @@ async def to_note_trim(
             "crop='min(iw,ih)':'min(iw,ih)',scale=640:640,setsar=1",
             "-c:v",
             "libx264",
-            "-pix_fmt",
-            "yuv420p",
             "-movflags",
             "+faststart",
             out_path,
@@ -167,8 +165,6 @@ async def trim_video(
             in_path,
             "-c:v",
             "libx264",
-            "-pix_fmt",
-            "yuv420p",
             "-movflags",
             "+faststart",
             out_path,
@@ -221,6 +217,6 @@ async def to_sticker(
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:
         args.extend(["-vf", ",".join(filters)])
-    args.extend(["-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path])
+    args.extend(["-movflags", "+faststart", out_path])
 
     return await _run_ffmpeg(*args)
