@@ -142,7 +142,7 @@ async def to_note_trim(
             "-t",
             "60",
             "-vf",
-            "crop='min(iw,ih)':'min(iw,ih)',scale=640:640,setsar=1",
+            "crop='min(iw,ih)':'min(iw,ih)',scale=640:640,setsar=1/1",
             "-c:v",
             "libx264",
             "-movflags",
@@ -183,19 +183,19 @@ async def to_sticker(
 
     if settings.get("landscape"):
         if double_rot:
-            filters.append("transpose=1,transpose=1")
+            filters.append("transpose=1,transpose=1,transpose=1")
         else:
             filters.append("transpose=1")
     elif settings.get("portrait"):
         if double_rot:
-            filters.append("transpose=2,transpose=2")
+            filters.append("transpose=2,transpose=2,transpose=2")
         else:
             filters.append("transpose=2")
     elif settings.get("force_portrait"):
         width, height = await _probe_dimensions(in_path)
         if width > height:
             if double_rot:
-                filters.append("transpose=1,transpose=1")
+                filters.append("transpose=1,transpose=1,transpose=1")
             else:
                 filters.append("transpose=1")
 
@@ -225,9 +225,6 @@ async def to_sticker(
                 )
         except Exception:
             pass
-
-    if not filters:
-        filters.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
 
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:

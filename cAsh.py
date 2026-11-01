@@ -312,6 +312,11 @@ class FileIdCache(RedisBase):
             parts.append(settings.get("crop_ratio", "none"))
             parts.append(settings.get("crop_type", "none"))
             return f"sticker:{'_'.join(parts)}"
+        
+        if mode == "default" and settings:
+            send_as = settings.get("send_as", "document")
+            return f"default:{send_as}"
+            
         return mode
 
     @staticmethod

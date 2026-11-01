@@ -99,12 +99,18 @@ async def process_entry(
     entry_url = entry.get("webpage_url") or entry.get("url")
     if not entry_url:
         return False
+        
+    cache_settings = settings
+    if mode == "default":
+        chat_id, user_id, mode_key = get_mode_key(message)
+        cache_settings = await default.get(mode_key)
+
     if file_cache:
-        cached = await file_cache.get(entry_url, mode, settings)
+        cached = await file_cache.get(entry_url, mode, cache_settings)
         if cached:
             if await send_cached(cached, message, mode):
                 return True
-            await file_cache.delete(entry_url, mode, settings)
+            await file_cache.delete(entry_url, mode, cache_settings)
 
     base = os.path.join(workdir, str(temp_id))
 
@@ -146,7 +152,7 @@ async def process_entry(
         if send_as == "video":
             sent = await message.reply_video(FSInputFile(in_path))
             if file_cache and sent.video:
-                await file_cache.set(entry_url, mode, sent.video.file_id, settings)
+                await file_cache.set(entry_url, mode, sent.video.file_id, cache_settings)
         else:
             ext = os.path.splitext(in_path)[1]
             doc_name = f"{make_name(info)}{ext}"
@@ -155,7 +161,7 @@ async def process_entry(
                 disable_content_type_detection=True,
             )
             if file_cache and sent.document:
-                await file_cache.set(entry_url, mode, sent.document.file_id, settings)
+                await file_cache.set(entry_url, mode, sent.document.file_id, cache_settings)
         return True
     return False
 
