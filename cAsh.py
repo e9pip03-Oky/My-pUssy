@@ -2,7 +2,6 @@ import asyncio
 import hashlib
 import logging
 import os
-import time
 
 import redis.asyncio as aioredis
 from aiogram.fsm.storage.redis import RedisStorage
@@ -14,7 +13,6 @@ MAX_WAITING = 3
 BASE_DIR = "downloads"
 CACHE_PREFIX = "voice:"
 FILE_ID_TTL = 60 * 60 * 24 * 30
-IDLE_TIMEOUT = 60
 
 
 async def safe_delete(message: Message) -> None:
@@ -30,40 +28,6 @@ def get_mode_key(message: Message) -> tuple[int, int, str]:
     thread_id = message.message_thread_id
     mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
     return chat_id, user_id, mode_key
-
-
-class IdleManagedRedis(aioredis.Redis):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._last_used = time.time()
-        self._monitor_task: asyncio.Task | None = None
-        self._start_monitor()
-
-    def _start_monitor(self) -> None:
-        if self._monitor_task is None or self._monitor_task.done():
-            self._monitor_task = asyncio.create_task(self._monitor_idle())
-
-    async def _monitor_idle(self) -> None:
-        try:
-            while True:
-                await asyncio.sleep(10)
-                if time.time() - self._last_used > IDLE_TIMEOUT:
-                    await super().aclose()
-                    break
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            log.warning("Error in idle monitor: %s", exc)
-
-    async def execute_command(self, *args, **kwargs):
-        self._last_used = time.time()
-        self._start_monitor()
-        return await super().execute_command(*args, **kwargs)
-
-    async def aclose(self) -> None:
-        if self._monitor_task and not self._monitor_task.done():
-            self._monitor_task.cancel()
-        await super().aclose()
 
 
 def _hash_key(value: str) -> str:
@@ -408,11 +372,17 @@ def cleanup(
 def _redis_client(url: str | None) -> aioredis.Redis | None:
     if not url:
         return None
-    return IdleManagedRedis.from_url(url)
+    return aioredis.from_url(
+        url,
+        health_check_interval=48,
+        socket_keepalive=True,
+    )
 
 
 def build_storage(url: str | None) -> RedisStorage | None:
-    return RedisStorage.from_url(url) if url else None
+    return RedisStorage.from_url(
+        url, health_check_interval=48, socket_keepalive=True
+    ) if url else None
 
 
 def build_counter(url: str | None) -> ReplyCounter:
