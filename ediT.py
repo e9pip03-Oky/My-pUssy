@@ -20,7 +20,9 @@ def _parse_time(value: str) -> float | None:
         main_part, micro_part = value.split(".", 1)
         if not micro_part.isdigit():
             return None
-        microseconds = float(f"0.{micro_part}")
+        if int(micro_part) > 60:
+            return None
+        microseconds = int(micro_part) / 60.0
     else:
         main_part = value
     parts = main_part.split(":")
@@ -31,15 +33,15 @@ def _parse_time(value: str) -> float | None:
     except ValueError:
         return None
     if len(numbers) == 3:
-        if numbers[0] >= 24 or numbers[1] >= 60 or numbers[2] >= 60:
+        if numbers[0] > 24 or numbers[1] > 60 or numbers[2] > 60:
             return None
         return numbers[0] * 3600 + numbers[1] * 60 + numbers[2] + microseconds
     if len(numbers) == 2:
-        if numbers[0] >= 60 or numbers[1] >= 60:
+        if numbers[0] > 60 or numbers[1] > 60:
             return None
         return numbers[0] * 60 + numbers[1] + microseconds
     if len(numbers) == 1:
-        if numbers[0] >= 60:
+        if numbers[0] > 60:
             return None
         return numbers[0] + microseconds
     return None
@@ -118,9 +120,9 @@ async def handle_pending_edit(
     chat_id = message.chat.id
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
-    
+
     temp_id = random.randint(100000, 999999)
-    
+
     in_path = os.path.join(workdir, f"{temp_id}_in")
     out_path = os.path.join(workdir, f"{temp_id}_out")
     try:

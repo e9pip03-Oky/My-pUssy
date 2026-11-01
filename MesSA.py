@@ -99,7 +99,7 @@ async def process_entry(
     entry_url = entry.get("webpage_url") or entry.get("url")
     if not entry_url:
         return False
-        
+
     cache_settings = settings
     if mode == "default":
         chat_id, user_id, mode_key = get_mode_key(message)
@@ -143,7 +143,7 @@ async def process_entry(
                 await file_cache.set(entry_url, mode, sent.animation.file_id, settings)
             return True
         return False
-    
+
     info, in_path = await download_merge(entry_url, base)
     if in_path and os.path.exists(in_path):
         chat_id, user_id, mode_key = get_mode_key(message)
@@ -161,7 +161,9 @@ async def process_entry(
                 disable_content_type_detection=True,
             )
             if file_cache and sent.document:
-                await file_cache.set(entry_url, mode, sent.document.file_id, cache_settings)
+                await file_cache.set(
+                    entry_url, mode, sent.document.file_id, cache_settings
+                )
         return True
     return False
 
@@ -317,7 +319,7 @@ async def handle_media_request(
         wait_text = WAIT_VOICE_MSG.format(source_name, target_name)
 
     wait_message = await message.reply(wait_text)
-    
+
     chat_id, user_id, mode_key = get_mode_key(message)
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
@@ -409,7 +411,7 @@ async def handle_translation_logic(
         fixed_text = fix_format(text)
         if fixed_text != text:
             return fixed_text
-    else:
+    elif any(char.isalpha() for char in text):
         code = await lang_code.get(mode_key)
         fixed_text = await process_translation(text, code)
         if fixed_text:

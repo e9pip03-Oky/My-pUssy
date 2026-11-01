@@ -18,9 +18,8 @@ from Reply import (
     MODE_STICKER,
     MODE_VOICE,
     STICKER_DIMENSIONS,
-    STICKER_DIM_3_2,
-    STICKER_DIM_3_4,
     STICKER_DIM_9_16,
+    STICKER_DIM_16_9,
     STICKER_DISABLE,
     STICKER_DOUBLE_ROTATE,
     STICKER_ENABLE,
@@ -72,10 +71,7 @@ def build_specific_markup(index: int) -> InlineKeyboardMarkup | None:
 
 
 def build_mode_markup(
-    current_mode: str,
-    lang_active: bool,
-    owner_id: int,
-    mode_key: str,
+    current_mode: str, lang_active: bool, owner_id: int, mode_key: str
 ) -> InlineKeyboardMarkup:
     voice_style = "primary" if current_mode == "voice" else "danger"
     default_style = "primary" if current_mode == "default" else "danger"
@@ -242,23 +238,17 @@ def build_dimensions_markup(
     crop_ratio = settings.get("crop_ratio", "none")
 
     ratio_9_16_style = "primary" if crop_ratio == "9:16" else "danger"
-    ratio_3_2_style = "primary" if crop_ratio == "3:2" else "danger"
-    ratio_3_4_style = "primary" if crop_ratio == "3:4" else "danger"
+    ratio_16_9_style = "primary" if crop_ratio == "16:9" else "danger"
 
     btn_9_16 = InlineKeyboardButton(
         text=STICKER_DIM_9_16,
         callback_data=f"dim_ratio:9_16|{owner_id}|{mode_key}",
         style=ratio_9_16_style,
     )
-    btn_3_2 = InlineKeyboardButton(
-        text=STICKER_DIM_3_2,
-        callback_data=f"dim_ratio:3_2|{owner_id}|{mode_key}",
-        style=ratio_3_2_style,
-    )
-    btn_3_4 = InlineKeyboardButton(
-        text=STICKER_DIM_3_4,
-        callback_data=f"dim_ratio:3_4|{owner_id}|{mode_key}",
-        style=ratio_3_4_style,
+    btn_16_9 = InlineKeyboardButton(
+        text=STICKER_DIM_16_9,
+        callback_data=f"dim_ratio:16_9|{owner_id}|{mode_key}",
+        style=ratio_16_9_style,
     )
 
     btn_back = InlineKeyboardButton(
@@ -269,7 +259,7 @@ def build_dimensions_markup(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_3_4, btn_9_16, btn_3_2],
+            [btn_9_16, btn_16_9],
             [btn_back],
         ]
     )

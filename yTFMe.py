@@ -107,15 +107,7 @@ async def _probe_dimensions(in_path: str) -> tuple[int, int]:
 
 async def to_voice(in_path: str, out_path: str) -> bool:
     return await _run_ffmpeg(
-        "-y",
-        "-i",
-        in_path,
-        "-vn",
-        "-c:a",
-        "libopus",
-        "-f",
-        "ogg",
-        out_path,
+        "-y", "-i", in_path, "-vn", "-c:a", "libopus", "-f", "ogg", out_path
     )
 
 
@@ -160,15 +152,7 @@ async def trim_video(
     if end:
         args.extend(["-to", end])
     args.extend(
-        [
-            "-i",
-            in_path,
-            "-c:v",
-            "libx264",
-            "-movflags",
-            "+faststart",
-            out_path,
-        ]
+        ["-i", in_path, "-c:v", "libx264", "-movflags", "+faststart", out_path]
     )
     return await _run_ffmpeg(*args)
 
@@ -178,9 +162,19 @@ async def to_sticker(
 ) -> bool:
     settings = settings or {}
     filters: list[str] = []
-    
-    double_rot = settings.get("double_rotate")
 
+    crop_ratio = settings.get("crop_ratio", "none")
+    if crop_ratio != "none":
+        try:
+            ratio_w, ratio_h = map(int, crop_ratio.split(":"))
+            if ratio_w < ratio_h:
+                filters.append(f"crop='ih*{ratio_w}/{ratio_h}':'ih'")
+            else:
+                filters.append(f"crop='iw':'iw*{ratio_h}/{ratio_w}'")
+        except Exception:
+            pass
+
+    double_rot = settings.get("double_rotate")
     if settings.get("landscape"):
         if double_rot:
             filters.append("transpose=1,transpose=1,transpose=1")
@@ -201,30 +195,6 @@ async def to_sticker(
 
     if settings.get("flip_left") or settings.get("flip_right"):
         filters.append("hflip")
-
-    has_mode = bool(
-        settings.get("landscape")
-        or settings.get("portrait")
-        or settings.get("force_portrait")
-        or settings.get("flip_left")
-        or settings.get("flip_right")
-    )
-
-    crop_ratio = settings.get("crop_ratio", "none")
-    if has_mode and crop_ratio != "none":
-        try:
-            ratio_w, ratio_h = map(int, crop_ratio.split(":"))
-            
-            if settings.get("landscape") or settings.get("portrait"):
-                filters.append(f"crop='ih*{ratio_w}/{ratio_h}':'ih'")
-            elif settings.get("force_portrait"):
-                filters.append(f"crop='iw':'iw*{ratio_h}/{ratio_w}'")
-            else:
-                filters.append(
-                    f"crop='min(iw,ih*{ratio_w}/{ratio_h})':'min(ih,iw*{ratio_h}/{ratio_w})'"
-                )
-        except Exception:
-            pass
 
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:

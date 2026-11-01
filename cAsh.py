@@ -161,9 +161,7 @@ class ButtonCycleStorage(RedisBase):
 
     async def advance(self, chat_id: int, total: int) -> None:
         index = await self.get_index(chat_id)
-        await self._set(
-            CACHE_PREFIX + f"btn_cycle:{chat_id}", str((index + 1) % total)
-        )
+        await self._set(CACHE_PREFIX + f"btn_cycle:{chat_id}", str((index + 1) % total))
 
 
 class StickerSettings(RedisBase):
@@ -243,9 +241,11 @@ class DefaultSettings(RedisBase):
         parts = value.split(",")
         return {
             "enabled": parts[0] == "1",
-            "send_as": parts[1]
-            if len(parts) > 1 and parts[1] in ("document", "video")
-            else "document",
+            "send_as": (
+                parts[1]
+                if len(parts) > 1 and parts[1] in ("document", "video")
+                else "document"
+            ),
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
@@ -276,11 +276,11 @@ class FileIdCache(RedisBase):
             parts.append(settings.get("crop_ratio", "none"))
             parts.append(settings.get("crop_type", "none"))
             return f"sticker:{'_'.join(parts)}"
-        
+
         if mode == "default" and settings:
             send_as = settings.get("send_as", "document")
             return f"default:{send_as}"
-            
+
         return mode
 
     @staticmethod
@@ -299,9 +299,7 @@ class FileIdCache(RedisBase):
     ) -> None:
         await self._set(self.key(url, mode, settings), file_id, ttl=FILE_ID_TTL)
 
-    async def delete(
-        self, url: str, mode: str, settings: dict | None = None
-    ) -> None:
+    async def delete(self, url: str, mode: str, settings: dict | None = None) -> None:
         await self._del(self.key(url, mode, settings))
 
     @staticmethod
@@ -318,9 +316,7 @@ class FileIdCache(RedisBase):
         self, source_file_id: str, action: str, detail: str, file_id: str
     ) -> None:
         await self._set(
-            self.source_key(source_file_id, action, detail),
-            file_id,
-            ttl=FILE_ID_TTL,
+            self.source_key(source_file_id, action, detail), file_id, ttl=FILE_ID_TTL
         )
 
     async def delete_by_source(
@@ -340,11 +336,7 @@ def user_dir(chat_id: int, user_id: int, bot_id: int, is_private: bool) -> str:
 
 
 def cleanup(
-    chat_id: int,
-    user_id: int,
-    bot_id: int,
-    is_private: bool,
-    *message_ids: int,
+    chat_id: int, user_id: int, bot_id: int, is_private: bool, *message_ids: int
 ) -> None:
     root = _root(chat_id, bot_id, is_private)
     user_path = os.path.join(BASE_DIR, root, str(user_id))
@@ -372,17 +364,15 @@ def cleanup(
 def _redis_client(url: str | None) -> aioredis.Redis | None:
     if not url:
         return None
-    return aioredis.from_url(
-        url,
-        health_check_interval=48,
-        socket_keepalive=True,
-    )
+    return aioredis.from_url(url, health_check_interval=48, socket_keepalive=True)
 
 
 def build_storage(url: str | None) -> RedisStorage | None:
-    return RedisStorage.from_url(
-        url, health_check_interval=48, socket_keepalive=True
-    ) if url else None
+    return (
+        RedisStorage.from_url(url, health_check_interval=48, socket_keepalive=True)
+        if url
+        else None
+    )
 
 
 def build_counter(url: str | None) -> ReplyCounter:

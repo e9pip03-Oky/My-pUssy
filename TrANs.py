@@ -27,6 +27,11 @@ def fix_format(text: str) -> str:
             result.append("S" if previous == "s" else "s")
         elif char == "h" and is_word_end:
             result.append("H")
+        elif char.lower() == "d" and is_word_end:
+            if len(result) >= 2 and result[-1].islower() and result[-2].islower():
+                result.append("D")
+            else:
+                result.append(char)
         elif char.upper() in UPPER_TARGETS:
             result.append(char.upper())
         elif "a" <= char.lower() <= "z" or "а" <= char.lower() <= "я":
