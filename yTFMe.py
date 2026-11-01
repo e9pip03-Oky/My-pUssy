@@ -82,29 +82,6 @@ async def _run_ffmpeg(*args: str) -> bool:
     return process.returncode == 0
 
 
-async def _probe_dimensions(in_path: str) -> tuple[int, int]:
-    process = await asyncio.create_subprocess_exec(
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=width,height",
-        "-of",
-        "csv=p=0",
-        in_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    stdout, _ = await process.communicate()
-    try:
-        width_str, height_str = stdout.decode().strip().split(",")
-        return int(width_str), int(height_str)
-    except Exception:
-        return 0, 0
-
-
 async def to_voice(in_path: str, out_path: str) -> bool:
     return await _run_ffmpeg(
         "-y", "-i", in_path, "-vn", "-c:a", "libopus", "-f", "ogg", out_path
@@ -163,17 +140,6 @@ async def to_sticker(
     settings = settings or {}
     filters: list[str] = []
 
-    crop_ratio = settings.get("crop_ratio", "none")
-    if crop_ratio != "none":
-        try:
-            ratio_w, ratio_h = map(int, crop_ratio.split(":"))
-            if ratio_w < ratio_h:
-                filters.append(f"crop='ih*{ratio_w}/{ratio_h}':'ih'")
-            else:
-                filters.append(f"crop='iw':'iw*{ratio_h}/{ratio_w}'")
-        except Exception:
-            pass
-
     double_rot = settings.get("double_rotate")
     if settings.get("landscape"):
         if double_rot:
@@ -185,13 +151,17 @@ async def to_sticker(
             filters.append("transpose=2,transpose=2,transpose=2")
         else:
             filters.append("transpose=2")
-    elif settings.get("force_portrait"):
-        width, height = await _probe_dimensions(in_path)
-        if width > height:
-            if double_rot:
-                filters.append("transpose=1,transpose=1,transpose=1")
+
+    crop_ratio = settings.get("crop_ratio", "none")
+    if crop_ratio != "none":
+        try:
+            ratio_w, ratio_h = map(int, crop_ratio.split(":"))
+            if ratio_w < ratio_h:
+                filters.append(f"crop='ih*{ratio_w}/{ratio_h}':'ih'")
             else:
-                filters.append("transpose=1")
+                filters.append(f"crop='iw':'iw*{ratio_h}/{ratio_w}'")
+        except Exception:
+            pass
 
     if settings.get("flip_left") or settings.get("flip_right"):
         filters.append("hflip")

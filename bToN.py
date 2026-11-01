@@ -26,7 +26,6 @@ from Reply import (
     STICKER_FLIP,
     STICKER_LANDSCAPE,
     STICKER_PORTRAIT,
-    STICKER_PORTRAIT_FORCE,
 )
 
 log = logging.getLogger("voicebot")
@@ -164,7 +163,6 @@ def build_sticker_markup(
 ) -> InlineKeyboardMarkup:
     landscape_style = "primary" if settings["landscape"] else "danger"
     portrait_style = "primary" if settings["portrait"] else "danger"
-    force_portrait_style = "primary" if settings.get("force_portrait") else "danger"
     flip_style = "primary" if settings["flip_left"] else "danger"
     double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
 
@@ -177,11 +175,6 @@ def build_sticker_markup(
         text=STICKER_PORTRAIT,
         callback_data=f"sticker_set:portrait|{owner_id}|{mode_key}",
         style=portrait_style,
-    )
-    btn_force_portrait = InlineKeyboardButton(
-        text=STICKER_PORTRAIT_FORCE,
-        callback_data=f"sticker_set:force_portrait|{owner_id}|{mode_key}",
-        style=force_portrait_style,
     )
     btn_double_rotate = InlineKeyboardButton(
         text=STICKER_DOUBLE_ROTATE,
@@ -226,7 +219,7 @@ def build_sticker_markup(
         inline_keyboard=[
             [btn_dimensions],
             [btn_portrait, btn_toggle, btn_landscape],
-            [btn_double_rotate, btn_force_portrait, btn_flip],
+            [btn_double_rotate, btn_flip],
             [btn_back],
         ]
     )

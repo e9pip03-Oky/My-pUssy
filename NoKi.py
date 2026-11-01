@@ -327,17 +327,10 @@ def make_handler(
                 settings["landscape"] = not settings["landscape"]
                 if settings["landscape"]:
                     settings["portrait"] = False
-                    settings["force_portrait"] = False
             elif field == "portrait":
                 settings["portrait"] = not settings["portrait"]
                 if settings["portrait"]:
                     settings["landscape"] = False
-                    settings["force_portrait"] = False
-            elif field == "force_portrait":
-                settings["force_portrait"] = not settings["force_portrait"]
-                if settings["force_portrait"]:
-                    settings["landscape"] = False
-                    settings["portrait"] = False
             elif field == "double_rotate":
                 settings["double_rotate"] = not settings.get("double_rotate", False)
             elif field == "flip":
