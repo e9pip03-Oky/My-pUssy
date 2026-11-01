@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import re
 
 from aiogram import Bot
@@ -117,8 +118,11 @@ async def handle_pending_edit(
     chat_id = message.chat.id
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
-    in_path = os.path.join(workdir, f"{media_message.message_id}_in")
-    out_path = os.path.join(workdir, f"{message.message_id}_out")
+    
+    temp_id = random.randint(100000, 999999)
+    
+    in_path = os.path.join(workdir, f"{temp_id}_in")
+    out_path = os.path.join(workdir, f"{temp_id}_out")
     try:
         telegram_file = await bot.get_file(file_id)
         await bot.download_file(telegram_file.file_path, in_path)
@@ -160,7 +164,6 @@ async def handle_pending_edit(
             user_id,
             bot.id,
             is_private,
-            message.message_id,
-            media_message.message_id,
+            temp_id,
         )
     return True

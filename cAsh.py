@@ -213,6 +213,7 @@ class StickerSettings(RedisBase):
                 "flip_left": False,
                 "flip_right": False,
                 "force_portrait": False,
+                "double_rotate": False,
                 "crop_ratio": "none",
                 "crop_type": "none",
             }
@@ -225,8 +226,21 @@ class StickerSettings(RedisBase):
                 "flip_left": parts[3] == "1",
                 "flip_right": parts[4] == "1",
                 "force_portrait": False,
+                "double_rotate": False,
                 "crop_ratio": parts[5] if parts[5] != "none" else "none",
                 "crop_type": parts[6] if parts[6] != "none" else "none",
+            }
+        elif len(parts) == 8:
+            return {
+                "enabled": parts[0] == "1",
+                "landscape": parts[1] == "1",
+                "portrait": parts[2] == "1",
+                "flip_left": parts[3] == "1",
+                "flip_right": parts[4] == "1",
+                "force_portrait": parts[5] == "1",
+                "double_rotate": False,
+                "crop_ratio": parts[6] if parts[6] != "none" else "none",
+                "crop_type": parts[7] if parts[7] != "none" else "none",
             }
         return {
             "enabled": parts[0] == "1",
@@ -235,8 +249,9 @@ class StickerSettings(RedisBase):
             "flip_left": parts[3] == "1",
             "flip_right": parts[4] == "1",
             "force_portrait": parts[5] == "1",
-            "crop_ratio": parts[6] if len(parts) > 6 else "none",
-            "crop_type": parts[7] if len(parts) > 7 else "none",
+            "double_rotate": parts[6] == "1",
+            "crop_ratio": parts[7] if len(parts) > 7 else "none",
+            "crop_type": parts[8] if len(parts) > 8 else "none",
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
@@ -248,6 +263,7 @@ class StickerSettings(RedisBase):
                 "1" if settings["flip_left"] else "0",
                 "1" if settings["flip_right"] else "0",
                 "1" if settings.get("force_portrait") else "0",
+                "1" if settings.get("double_rotate") else "0",
                 settings.get("crop_ratio", "none"),
                 settings.get("crop_type", "none"),
             ]
@@ -290,6 +306,7 @@ class FileIdCache(RedisBase):
                     "flip_left",
                     "flip_right",
                     "force_portrait",
+                    "double_rotate",
                 )
             ]
             parts.append(settings.get("crop_ratio", "none"))

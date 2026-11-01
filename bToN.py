@@ -22,6 +22,7 @@ from Reply import (
     STICKER_DIM_3_4,
     STICKER_DIM_9_16,
     STICKER_DISABLE,
+    STICKER_DOUBLE_ROTATE,
     STICKER_ENABLE,
     STICKER_FLIP,
     STICKER_LANDSCAPE,
@@ -169,6 +170,7 @@ def build_sticker_markup(
     portrait_style = "primary" if settings["portrait"] else "danger"
     force_portrait_style = "primary" if settings.get("force_portrait") else "danger"
     flip_style = "primary" if settings["flip_left"] else "danger"
+    double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
 
     btn_landscape = InlineKeyboardButton(
         text=STICKER_LANDSCAPE,
@@ -184,6 +186,11 @@ def build_sticker_markup(
         text=STICKER_PORTRAIT_FORCE,
         callback_data=f"sticker_set:force_portrait|{owner_id}|{mode_key}",
         style=force_portrait_style,
+    )
+    btn_double_rotate = InlineKeyboardButton(
+        text=STICKER_DOUBLE_ROTATE,
+        callback_data=f"sticker_set:double_rotate|{owner_id}|{mode_key}",
+        style=double_rotate_style,
     )
     btn_flip = InlineKeyboardButton(
         text=STICKER_FLIP,
@@ -204,10 +211,13 @@ def build_sticker_markup(
             style="danger",
         )
 
+    crop_ratio = settings.get("crop_ratio", "none")
+    dimensions_style = "success" if crop_ratio == "none" else "primary"
+
     btn_dimensions = InlineKeyboardButton(
         text=STICKER_DIMENSIONS,
         callback_data=f"dimensions_menu|{owner_id}|{mode_key}",
-        style="success",
+        style=dimensions_style,
     )
 
     btn_back = InlineKeyboardButton(
@@ -220,7 +230,7 @@ def build_sticker_markup(
         inline_keyboard=[
             [btn_dimensions],
             [btn_portrait, btn_toggle, btn_landscape],
-            [btn_force_portrait, btn_flip],
+            [btn_double_rotate, btn_force_portrait, btn_flip],
             [btn_back],
         ]
     )

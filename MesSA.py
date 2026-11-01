@@ -10,6 +10,8 @@ from Reply import (
     LOADING_TEXT,
     MEDIA_AUDIO,
     MEDIA_DOC,
+    MEDIA_NOTE,
+    MEDIA_STICKER,
     MEDIA_VIDEO,
     MODE_DEFAULT,
     MODE_NOTE,
@@ -18,6 +20,9 @@ from Reply import (
     NO_AUDIO_MSG,
     NOTE_WAIT_MSG,
     STATUS_MSG,
+    TARGET_NOTE,
+    TARGET_STICKER,
+    TARGET_VOICE,
     WAIT_TEXT,
     WAIT_VOICE_MSG,
 )
@@ -214,7 +219,6 @@ async def process_url(
             user_id,
             bot.id,
             is_private,
-            message.message_id,
             *used_ids,
         )
         await queue.release(chat_id)
@@ -231,6 +235,7 @@ async def handle_media_request(
     is_video = bool(
         reply.video
         or reply.video_note
+        or reply.animation
         or (
             reply.document
             and reply.document.mime_type
@@ -240,6 +245,7 @@ async def handle_media_request(
     media = (
         reply.video
         or reply.video_note
+        or reply.animation
         or reply.document
         or reply.audio
         or reply.voice
@@ -276,14 +282,36 @@ async def handle_media_request(
         media_type = MEDIA_VIDEO
     elif reply.video_note:
         media_type = MEDIA_VIDEO
+    elif reply.animation:
+        media_type = MEDIA_VIDEO
     elif reply.document:
         media_type = MEDIA_DOC
     else:
         media_type = MEDIA_AUDIO
 
-    wait_message = await message.reply(
-        NOTE_WAIT_MSG if (is_note or is_sticker) else WAIT_VOICE_MSG.format(media_type)
-    )
+    if reply.animation:
+        source_name = MEDIA_STICKER
+    elif reply.video:
+        source_name = MEDIA_VIDEO
+    elif reply.video_note:
+        source_name = MEDIA_NOTE
+    elif reply.document:
+        source_name = MEDIA_DOC
+    else:
+        source_name = MEDIA_AUDIO
+
+    if is_note:
+        target_name = TARGET_NOTE
+        wait_text = NOTE_WAIT_MSG.format(source_name, target_name)
+    elif is_sticker:
+        target_name = TARGET_STICKER
+        wait_text = NOTE_WAIT_MSG.format(source_name, target_name)
+    else:
+        target_name = TARGET_VOICE
+        wait_text = WAIT_VOICE_MSG.format(source_name, target_name)
+
+    wait_message = await message.reply(wait_text)
+    
     chat_id, user_id, mode_key = get_mode_key(message)
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
@@ -329,7 +357,7 @@ async def handle_media_request(
                     media_file_id, f"direct_{text}", detail, sent.voice.file_id
                 )
             else:
-                await message.reply(NO_AUDIO_MSG.format(media_type))
+                await message.reply(NO_AUDIO_MSG.format(source_name))
     except Exception as exc:
         log.warning("media failed %s: %s", message.message_id, exc)
         await message.reply(LINK_FAIL_TEXT)
@@ -340,7 +368,6 @@ async def handle_media_request(
             user_id,
             bot.id,
             is_private,
-            message.message_id,
             temp_id,
         )
     return True

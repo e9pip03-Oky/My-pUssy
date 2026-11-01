@@ -338,6 +338,8 @@ def make_handler(
                 if settings["force_portrait"]:
                     settings["landscape"] = False
                     settings["portrait"] = False
+            elif field == "double_rotate":
+                settings["double_rotate"] = not settings.get("double_rotate", False)
             elif field == "flip":
                 settings["flip_left"] = not settings["flip_left"]
             await sticker.set(mode_key, settings)

@@ -178,15 +178,26 @@ async def to_sticker(
 ) -> bool:
     settings = settings or {}
     filters: list[str] = []
+    
+    double_rot = settings.get("double_rotate")
 
     if settings.get("landscape"):
-        filters.append("transpose=1")
+        if double_rot:
+            filters.append("transpose=1,transpose=1")
+        else:
+            filters.append("transpose=1")
     elif settings.get("portrait"):
-        filters.append("transpose=2")
+        if double_rot:
+            filters.append("transpose=2,transpose=2")
+        else:
+            filters.append("transpose=2")
     elif settings.get("force_portrait"):
         width, height = await _probe_dimensions(in_path)
         if width > height:
-            filters.append("transpose=1")
+            if double_rot:
+                filters.append("transpose=1,transpose=1")
+            else:
+                filters.append("transpose=1")
 
     if settings.get("flip_left") or settings.get("flip_right"):
         filters.append("hflip")
@@ -203,16 +214,20 @@ async def to_sticker(
     if has_mode and crop_ratio != "none":
         try:
             ratio_w, ratio_h = map(int, crop_ratio.split(":"))
-            if settings.get("landscape"):
-                filters.append(f"crop='iw':'iw*{ratio_h}/{ratio_w}'")
-            elif settings.get("portrait"):
+            
+            if settings.get("landscape") or settings.get("portrait"):
                 filters.append(f"crop='ih*{ratio_w}/{ratio_h}':'ih'")
+            elif settings.get("force_portrait"):
+                filters.append(f"crop='iw':'iw*{ratio_h}/{ratio_w}'")
             else:
                 filters.append(
                     f"crop='min(iw,ih*{ratio_w}/{ratio_h})':'min(ih,iw*{ratio_h}/{ratio_w})'"
                 )
         except Exception:
             pass
+
+    if not filters:
+        filters.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
 
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:
