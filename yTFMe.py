@@ -84,7 +84,15 @@ async def _run_ffmpeg(*args: str) -> bool:
 
 async def to_voice(in_path: str, out_path: str) -> bool:
     return await _run_ffmpeg(
-        "-y", "-i", in_path, "-vn", "-c:a", "libopus", "-f", "ogg", out_path
+        "-y",
+        "-i",
+        in_path,
+        "-vn",
+        "-c:a",
+        "libopus",
+        "-f",
+        "ogg",
+        out_path,
     )
 
 
@@ -114,11 +122,21 @@ async def to_note_trim(
             "crop='min(iw,ih)':'min(iw,ih)',scale=640:640,setsar=1/1",
             "-c:v",
             "libx264",
-            "-movflags",
-            "+faststart",
+            "-f",
+            "mp4",
             out_path,
         ]
     )
+    return await _run_ffmpeg(*args)
+
+
+async def trim_note(
+    in_path: str, out_path: str, start: str, end: str | None = None
+) -> bool:
+    args = ["-y", "-ss", start]
+    if end:
+        args.extend(["-to", end])
+    args.extend(["-i", in_path, "-c", "copy", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -128,9 +146,7 @@ async def trim_video(
     args = ["-y", "-ss", start]
     if end:
         args.extend(["-to", end])
-    args.extend(
-        ["-i", in_path, "-c:v", "libx264", "-movflags", "+faststart", out_path]
-    )
+    args.extend(["-i", in_path, "-c", "copy", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -169,6 +185,6 @@ async def to_sticker(
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:
         args.extend(["-vf", ",".join(filters)])
-    args.extend(["-movflags", "+faststart", out_path])
+    args.extend(["-f", "mp4", out_path])
 
     return await _run_ffmpeg(*args)

@@ -89,6 +89,7 @@ def make_handler(
                 message.reply_to_message.voice
                 or message.reply_to_message.video_note
                 or message.reply_to_message.video
+                or message.reply_to_message.animation
             ):
                 await set_edit_state(message, bot)
                 return

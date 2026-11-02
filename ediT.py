@@ -8,7 +8,7 @@ from aiogram.types import FSInputFile, Message
 
 from Reply import EDIT_FAIL_MSG, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG
 from cAsh import FileIdCache, cleanup, safe_delete, user_dir
-from yTFMe import MAX_FILESIZE, to_note_trim, trim_video, trim_voice
+from yTFMe import MAX_FILESIZE, trim_note, trim_video, trim_voice
 
 log = logging.getLogger("voicebot")
 EDIT_STATE = {}
@@ -64,12 +64,16 @@ async def handle_pending_edit(
     state = EDIT_STATE.pop(user_id)
     media_message = state["msg"]
     prompt_message = state["prompt"]
+
     if media_message.voice:
         media_type = "voice"
         file_id = media_message.voice.file_id
     elif media_message.video_note:
         media_type = "note"
         file_id = media_message.video_note.file_id
+    elif media_message.animation:
+        media_type = "sticker"
+        file_id = media_message.animation.file_id
     elif media_message.video:
         media_type = "video"
         file_id = media_message.video.file_id
@@ -108,6 +112,8 @@ async def handle_pending_edit(
                 await message.reply_voice(cached)
             elif media_type == "note":
                 await message.reply_video_note(cached)
+            elif media_type == "sticker":
+                await message.reply_animation(cached)
             else:
                 await message.reply_video(cached)
             await safe_delete(prompt_message)
@@ -142,14 +148,23 @@ async def handle_pending_edit(
                 )
         elif media_type == "note":
             out_path += ".mp4"
-            success = await to_note_trim(in_path, out_path, start_value, end_value)
+            success = await trim_note(in_path, out_path, start_value, end_value)
             if success:
                 sent = await message.reply_video_note(FSInputFile(out_path))
                 await file_cache.set_by_source(
                     file_id, f"edit_{media_type}", detail, sent.video_note.file_id
                 )
-        else:
+        elif media_type == "sticker":
             out_path += ".mp4"
+            success = await trim_video(in_path, out_path, start_value, end_value)
+            if success:
+                sent = await message.reply_animation(FSInputFile(out_path))
+                await file_cache.set_by_source(
+                    file_id, f"edit_{media_type}", detail, sent.animation.file_id
+                )
+        else:
+            ext = os.path.splitext(in_path)[1]
+            out_path += ext
             success = await trim_video(in_path, out_path, start_value, end_value)
             if success:
                 sent = await message.reply_video(FSInputFile(out_path))
