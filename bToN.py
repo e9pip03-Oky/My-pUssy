@@ -170,6 +170,15 @@ def build_default_markup(
         style=video_style,
     )
 
+    crop_ratio = settings.get("crop_ratio", "none")
+    dimensions_style = "success" if crop_ratio == "none" else "primary"
+
+    btn_dimensions = InlineKeyboardButton(
+        text=STICKER_DIMENSIONS,
+        callback_data=f"default_dimensions_menu|{owner_id}|{mode_key}",
+        style=dimensions_style,
+    )
+
     if is_active:
         btn_toggle = InlineKeyboardButton(
             text=LANG_DISABLE,
@@ -195,7 +204,7 @@ def build_default_markup(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_document, btn_video],
+            [btn_document, btn_dimensions, btn_video],
             *mode_buttons,
             [btn_back],
         ]
@@ -281,7 +290,7 @@ def build_note_markup(
 
 
 def build_dimensions_markup(
-    settings: dict, owner_id: int, mode_key: str
+    settings: dict, owner_id: int, mode_key: str, prefix: str = "sticker"
 ) -> InlineKeyboardMarkup:
     crop_ratio = settings.get("crop_ratio", "none")
 
@@ -290,18 +299,18 @@ def build_dimensions_markup(
 
     btn_9_16 = InlineKeyboardButton(
         text=STICKER_DIM_9_16,
-        callback_data=f"dim_ratio:9_16|{owner_id}|{mode_key}",
+        callback_data=f"{prefix}_dim_ratio:9_16|{owner_id}|{mode_key}",
         style=ratio_9_16_style,
     )
     btn_16_9 = InlineKeyboardButton(
         text=STICKER_DIM_16_9,
-        callback_data=f"dim_ratio:16_9|{owner_id}|{mode_key}",
+        callback_data=f"{prefix}_dim_ratio:16_9|{owner_id}|{mode_key}",
         style=ratio_16_9_style,
     )
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
-        callback_data=f"sticker_menu|{owner_id}|{mode_key}",
+        callback_data=f"back:{prefix}|{owner_id}|{mode_key}",
         style="success",
     )
 

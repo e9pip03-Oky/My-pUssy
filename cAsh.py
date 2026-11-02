@@ -276,6 +276,7 @@ class DefaultSettings(RedisBase):
                 "flip_left": False,
                 "flip_right": False,
                 "double_rotate": False,
+                "crop_ratio": "none",
             }
         parts = value.split(",")
         return {
@@ -290,6 +291,7 @@ class DefaultSettings(RedisBase):
             "flip_left": parts[4] == "1" if len(parts) > 4 else False,
             "flip_right": parts[5] == "1" if len(parts) > 5 else False,
             "double_rotate": parts[6] == "1" if len(parts) > 6 else False,
+            "crop_ratio": parts[7] if len(parts) > 7 else "none",
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
@@ -302,6 +304,7 @@ class DefaultSettings(RedisBase):
                 "1" if settings.get("flip_left") else "0",
                 "1" if settings.get("flip_right") else "0",
                 "1" if settings.get("double_rotate") else "0",
+                settings.get("crop_ratio", "none"),
             ]
         )
         await self._set(CACHE_PREFIX + f"default:{mode_key}", value)
@@ -350,6 +353,7 @@ class FileIdCache(RedisBase):
                     "double_rotate",
                 )
             ]
+            parts.append(settings.get("crop_ratio", "none"))
             return f"default:{send_as}:{'_'.join(parts)}"
 
         return mode

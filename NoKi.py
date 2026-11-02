@@ -10,6 +10,7 @@ from Reply import (
     BUTTON_NAMES,
     EDIT_KEYWORDS,
     LANG_MSG,
+    MODE_DEFAULT,
     MODE_DENIED,
     MODE_MSG,
     MODE_NOTE,
@@ -232,13 +233,14 @@ def make_handler(
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             if field in ("default", "note"):
-                await callback.message.edit_reply_markup(
+                await callback.message.edit_text(
+                    MODE_MSG,
                     reply_markup=build_mode_markup(
                         await modes.get(mode_key),
                         await lang.get(mode_key),
                         owner_id,
                         mode_key,
-                    )
+                    ),
                 )
                 await callback.answer()
                 return
@@ -280,10 +282,11 @@ def make_handler(
                 return
             default_settings = await default.get(mode_key)
             current_mode = await modes.get(mode_key)
-            await callback.message.edit_reply_markup(
+            await callback.message.edit_text(
+                STICKER_MSG.format(MODE_DEFAULT),
                 reply_markup=build_default_markup(
                     default_settings, owner_id, mode_key, current_mode == "default"
-                )
+                ),
             )
 
         elif action == "default_toggle":
@@ -382,35 +385,10 @@ def make_handler(
             settings = await sticker.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
-                STICKER_MSG,
+                STICKER_MSG.format(MODE_STICKER),
                 reply_markup=build_sticker_markup(
                     settings, owner_id, mode_key, current_mode == "sticker"
                 ),
-            )
-
-        elif action == "dimensions_menu":
-            if user_id != owner_id:
-                await callback.answer(MODE_DENIED, show_alert=True)
-                return
-            settings = await sticker.get(mode_key)
-            await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
-            )
-
-        elif action == "dim_ratio":
-            if user_id != owner_id:
-                await callback.answer(MODE_DENIED, show_alert=True)
-                return
-            ratio = field.replace("_", ":")
-            settings = await sticker.get(mode_key)
-            current_ratio = settings.get("crop_ratio", "none")
-            if current_ratio == ratio:
-                settings["crop_ratio"] = "none"
-            else:
-                settings["crop_ratio"] = ratio
-            await sticker.set(mode_key, settings)
-            await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
             )
 
         elif action == "note_menu":
@@ -420,11 +398,57 @@ def make_handler(
             note_settings = await note.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
-                STICKER_MSG,
+                STICKER_MSG.format(MODE_NOTE),
                 reply_markup=build_note_markup(
                     note_settings, owner_id, mode_key, current_mode == "note"
                 ),
             )
+
+        elif action == "dimensions_menu":
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            settings = await sticker.get(mode_key)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "sticker")
+            )
+
+        elif action == "default_dimensions_menu":
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            settings = await default.get(mode_key)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "default")
+            )
+
+        elif action in ("dim_ratio", "default_dim_ratio"):
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            ratio = field.replace("_", ":")
+            
+            if action == "dim_ratio":
+                settings = await sticker.get(mode_key)
+            else:
+                settings = await default.get(mode_key)
+
+            current_ratio = settings.get("crop_ratio", "none")
+            if current_ratio == ratio:
+                settings["crop_ratio"] = "none"
+            else:
+                settings["crop_ratio"] = ratio
+                
+            if action == "dim_ratio":
+                await sticker.set(mode_key, settings)
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "sticker")
+                )
+            else:
+                await default.set(mode_key, settings)
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "default")
+                )
 
         await callback.answer()
 
