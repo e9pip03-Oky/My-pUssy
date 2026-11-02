@@ -344,6 +344,16 @@ def make_handler(
                 settings["double_rotate"] = not settings.get("double_rotate", False)
             elif field == "flip":
                 settings["flip_left"] = not settings["flip_left"]
+            elif field == "crop_down":
+                settings["crop_align"] = (
+                    "center" if settings.get("crop_align") == "bottom" else "bottom"
+                )
+            elif field == "crop_up":
+                settings["crop_align"] = (
+                    "center" if settings.get("crop_align") == "top" else "top"
+                )
+            elif field == "mute":
+                settings["muted"] = not settings.get("muted", False)
 
             if action == "default_set":
                 await default.set(mode_key, settings)

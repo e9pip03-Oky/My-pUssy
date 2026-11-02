@@ -284,8 +284,9 @@ async def handle_media_request(
         return False
     if text == MODE_STICKER and not is_video:
         return False
-    if text == MODE_VOICE and not media:
-        return False
+    if text == MODE_VOICE:
+        if not media or reply.animation:
+            return False
 
     is_note = text == MODE_NOTE
     is_sticker = text == MODE_STICKER

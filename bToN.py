@@ -17,6 +17,8 @@ from Reply import (
     MODE_NOTE,
     MODE_STICKER,
     MODE_VOICE,
+    STICKER_CROP_DOWN,
+    STICKER_CROP_UP,
     STICKER_DIMENSIONS,
     STICKER_DIM_9_16,
     STICKER_DIM_16_9,
@@ -25,6 +27,7 @@ from Reply import (
     STICKER_ENABLE,
     STICKER_FLIP,
     STICKER_LANDSCAPE,
+    STICKER_MUTE,
     STICKER_PORTRAIT,
 )
 
@@ -272,8 +275,50 @@ def build_note_markup(
             style="danger",
         )
 
-    mode_buttons = build_settings_buttons(
-        settings, owner_id, mode_key, "note_set", btn_toggle
+    landscape_style = "primary" if settings.get("landscape") else "danger"
+    portrait_style = "primary" if settings.get("portrait") else "danger"
+    flip_style = "primary" if settings.get("flip_left") else "danger"
+    double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
+    
+    crop_align = settings.get("crop_align", "center")
+    down_style = "primary" if crop_align == "bottom" else "danger"
+    up_style = "primary" if crop_align == "top" else "danger"
+    mute_style = "primary" if settings.get("muted") else "danger"
+
+    btn_landscape = InlineKeyboardButton(
+        text=STICKER_LANDSCAPE,
+        callback_data=f"note_set:landscape|{owner_id}|{mode_key}",
+        style=landscape_style,
+    )
+    btn_portrait = InlineKeyboardButton(
+        text=STICKER_PORTRAIT,
+        callback_data=f"note_set:portrait|{owner_id}|{mode_key}",
+        style=portrait_style,
+    )
+    btn_double_rotate = InlineKeyboardButton(
+        text=STICKER_DOUBLE_ROTATE,
+        callback_data=f"note_set:double_rotate|{owner_id}|{mode_key}",
+        style=double_rotate_style,
+    )
+    btn_flip = InlineKeyboardButton(
+        text=STICKER_FLIP,
+        callback_data=f"note_set:flip|{owner_id}|{mode_key}",
+        style=flip_style,
+    )
+    btn_crop_down = InlineKeyboardButton(
+        text=STICKER_CROP_DOWN,
+        callback_data=f"note_set:crop_down|{owner_id}|{mode_key}",
+        style=down_style,
+    )
+    btn_crop_up = InlineKeyboardButton(
+        text=STICKER_CROP_UP,
+        callback_data=f"note_set:crop_up|{owner_id}|{mode_key}",
+        style=up_style,
+    )
+    btn_mute = InlineKeyboardButton(
+        text=STICKER_MUTE,
+        callback_data=f"note_set:mute|{owner_id}|{mode_key}",
+        style=mute_style,
     )
 
     btn_back = InlineKeyboardButton(
@@ -284,7 +329,10 @@ def build_note_markup(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            *mode_buttons,
+            [btn_double_rotate],
+            [btn_portrait, btn_toggle, btn_landscape],
+            [btn_crop_down, btn_flip, btn_crop_up],
+            [btn_mute],
             [btn_back],
         ]
     )

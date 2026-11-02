@@ -239,6 +239,8 @@ class NoteSettings(RedisBase):
                 "flip_left": False,
                 "flip_right": False,
                 "double_rotate": False,
+                "crop_align": "center",
+                "muted": False,
             }
         parts = value.split(",")
         return {
@@ -248,6 +250,8 @@ class NoteSettings(RedisBase):
             "flip_left": parts[3] == "1",
             "flip_right": parts[4] == "1",
             "double_rotate": parts[5] == "1" if len(parts) > 5 else False,
+            "crop_align": parts[6] if len(parts) > 6 else "center",
+            "muted": parts[7] == "1" if len(parts) > 7 else False,
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
@@ -259,6 +263,8 @@ class NoteSettings(RedisBase):
                 "1" if settings["flip_left"] else "0",
                 "1" if settings["flip_right"] else "0",
                 "1" if settings.get("double_rotate") else "0",
+                settings.get("crop_align", "center"),
+                "1" if settings.get("muted") else "0",
             ]
         )
         await self._set(CACHE_PREFIX + f"note:{mode_key}", value)
@@ -339,6 +345,8 @@ class FileIdCache(RedisBase):
                     "double_rotate",
                 )
             ]
+            parts.append(settings.get("crop_align", "center"))
+            parts.append("1" if settings.get("muted") else "0")
             return f"note:{'_'.join(parts)}"
 
         if mode == "default" and settings:
