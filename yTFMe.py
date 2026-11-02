@@ -123,16 +123,27 @@ async def to_note_trim(
         else:
             filters.append("transpose=2")
 
+    crop_align = settings.get("crop_align", "center")
+    if crop_align == "bottom":
+        y_expr = "ih-min(iw,ih)"
+    elif crop_align == "top":
+        y_expr = "0"
+    else:
+        y_expr = "(ih-min(iw,ih))/2"
+
+    filters.append(f"crop='min(iw,ih)':'min(iw,ih)':(iw-min(iw,ih))/2:{y_expr}")
+    filters.append("scale=640:640,setsar=1/1")
+
     if settings.get("flip_left") or settings.get("flip_right"):
         filters.append("hflip")
-
-    filters.append("crop='min(iw,ih)':'min(iw,ih)',scale=640:640,setsar=1/1")
 
     args = ["-y", "-ss", start]
     if end:
         args.extend(["-to", end])
     args.extend(["-i", in_path, "-t", "60"])
     args.extend(["-vf", ",".join(filters)])
+    if settings.get("muted"):
+        args.append("-an")
     args.extend(["-c:v", "libx264", out_path])
 
     return await _run_ffmpeg(*args)
