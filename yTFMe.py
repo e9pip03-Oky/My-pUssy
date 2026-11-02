@@ -87,15 +87,7 @@ async def _run_ffmpeg(*args: str) -> bool:
 
 async def to_voice(in_path: str, out_path: str) -> bool:
     return await _run_ffmpeg(
-        "-y",
-        "-i",
-        in_path,
-        "-vn",
-        "-c:a",
-        "libopus",
-        "-f",
-        "ogg",
-        out_path,
+        "-y", "-i", in_path, "-vn", "-c:a", "libopus", "-f", "ogg", out_path
     )
 
 

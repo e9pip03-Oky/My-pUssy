@@ -228,21 +228,35 @@ def make_handler(
                     )
                 )
 
-        elif action == "back":
+        elif action == "back_to_sticker":
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            if field in ("default", "note"):
-                await callback.message.edit_text(
-                    MODE_MSG,
-                    reply_markup=build_mode_markup(
-                        await modes.get(mode_key),
-                        await lang.get(mode_key),
-                        owner_id,
-                        mode_key,
-                    ),
-                )
-                await callback.answer()
+            settings = await sticker.get(mode_key)
+            current_mode = await modes.get(mode_key)
+            await callback.message.edit_text(
+                STICKER_MSG.format(MODE_STICKER),
+                reply_markup=build_sticker_markup(
+                    settings, owner_id, mode_key, current_mode == "sticker"
+                ),
+            )
+
+        elif action == "back_to_default":
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            default_settings = await default.get(mode_key)
+            current_mode = await modes.get(mode_key)
+            await callback.message.edit_text(
+                STICKER_MSG.format(MODE_DEFAULT),
+                reply_markup=build_default_markup(
+                    default_settings, owner_id, mode_key, current_mode == "default"
+                ),
+            )
+
+        elif action == "back":
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
                 return
             await callback.message.edit_text(
                 MODE_MSG,
@@ -294,7 +308,10 @@ def make_handler(
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             default_settings = await default.get(mode_key)
-            default_settings["send_as"] = "video" if field == "video" else "document"
+            current_send_as = default_settings.get("send_as", "document")
+            default_settings["send_as"] = (
+                "video" if current_send_as == "document" else "document"
+            )
             await default.set(mode_key, default_settings)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_reply_markup(
@@ -410,7 +427,9 @@ def make_handler(
                 return
             settings = await sticker.get(mode_key)
             await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "sticker")
+                reply_markup=build_dimensions_markup(
+                    settings, owner_id, mode_key, "sticker"
+                )
             )
 
         elif action == "default_dimensions_menu":
@@ -419,7 +438,9 @@ def make_handler(
                 return
             settings = await default.get(mode_key)
             await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "default")
+                reply_markup=build_dimensions_markup(
+                    settings, owner_id, mode_key, "default"
+                )
             )
 
         elif action == "dim_ratio":
@@ -435,7 +456,9 @@ def make_handler(
                 settings["crop_ratio"] = ratio
             await sticker.set(mode_key, settings)
             await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "sticker")
+                reply_markup=build_dimensions_markup(
+                    settings, owner_id, mode_key, "sticker"
+                )
             )
 
         elif action == "default_dim_ratio":
@@ -451,7 +474,9 @@ def make_handler(
                 settings["crop_ratio"] = ratio
             await default.set(mode_key, settings)
             await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "default")
+                reply_markup=build_dimensions_markup(
+                    settings, owner_id, mode_key, "default"
+                )
             )
 
         await callback.answer()

@@ -298,6 +298,7 @@ def build_dimensions_markup(
     ratio_16_9_style = "primary" if crop_ratio == "16:9" else "danger"
 
     action_name = "dim_ratio" if prefix == "sticker" else "default_dim_ratio"
+    back_action = "back_to_sticker" if prefix == "sticker" else "back_to_default"
 
     btn_9_16 = InlineKeyboardButton(
         text=STICKER_DIM_9_16,
@@ -312,7 +313,7 @@ def build_dimensions_markup(
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
-        callback_data=f"back:{prefix}|{owner_id}|{mode_key}",
+        callback_data=f"{back_action}|{owner_id}|{mode_key}",
         style="success",
     )
 

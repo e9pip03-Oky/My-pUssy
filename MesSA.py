@@ -160,24 +160,23 @@ async def process_entry(
         default_state = await default.get(mode_key)
         send_as = default_state.get("send_as", "document")
 
-        if send_as == "video":
-            out_path = os.path.join(workdir, f"{temp_id}_def.mp4")
-            if await to_sticker(in_path, out_path, default_state) and os.path.exists(
-                out_path
-            ):
-                sent = await message.reply_video(FSInputFile(out_path))
-            else:
-                sent = await message.reply_video(FSInputFile(in_path))
+        out_path = os.path.join(workdir, f"{temp_id}_def.mp4")
+        success = await to_sticker(in_path, out_path, default_state)
 
+        if not success or not os.path.exists(out_path):
+            out_path = in_path
+
+        if send_as == "video":
+            sent = await message.reply_video(FSInputFile(out_path))
             if file_cache and sent.video:
                 await file_cache.set(
                     entry_url, mode, sent.video.file_id, cache_settings
                 )
         else:
-            ext = os.path.splitext(in_path)[1]
+            ext = os.path.splitext(out_path)[1]
             doc_name = f"{make_name(info)}{ext}"
             sent = await message.reply_document(
-                FSInputFile(in_path, filename=doc_name),
+                FSInputFile(out_path, filename=doc_name),
                 disable_content_type_detection=True,
             )
             if file_cache and sent.document:
