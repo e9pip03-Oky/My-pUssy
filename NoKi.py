@@ -25,6 +25,7 @@ from bToN import (
     build_dimensions_markup,
     build_lang_markup,
     build_mode_markup,
+    build_note_markup,
     build_specific_markup,
     build_sticker_markup,
 )
@@ -36,6 +37,7 @@ from cAsh import (
     LangCodeStorage,
     LangStorage,
     ModeStorage,
+    NoteSettings,
     ReplyCounter,
     StickerSettings,
     get_mode_key,
@@ -61,6 +63,7 @@ def make_handler(
     lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
     sticker: StickerSettings,
+    note: NoteSettings,
     default: DefaultSettings,
     file_cache: FileIdCache,
 ):
@@ -81,7 +84,7 @@ def make_handler(
             return
 
         if message.reply_to_message and text in (MODE_NOTE, MODE_VOICE, MODE_STICKER):
-            if await handle_media_request(message, bot, text, sticker, file_cache):
+            if await handle_media_request(message, bot, text, sticker, note, file_cache):
                 return
 
         if message.reply_to_message and text.startswith(EDIT_KEYWORDS):
@@ -110,6 +113,7 @@ def make_handler(
                 mode_key,
                 current_mode,
                 sticker,
+                note,
                 default,
                 file_cache,
             )
@@ -192,6 +196,21 @@ def make_handler(
                         settings, owner_id, mode_key, new_mode == "sticker"
                     )
                 )
+            elif field == "note":
+                current_mode = await modes.get(mode_key)
+                if current_mode != "note":
+                    await modes.set_previous(mode_key, current_mode)
+                    await modes.set(mode_key, "note")
+                else:
+                    previous = await modes.get_previous(mode_key)
+                    await modes.set(mode_key, previous)
+                new_mode = await modes.get(mode_key)
+                note_settings = await note.get(mode_key)
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_note_markup(
+                        note_settings, owner_id, mode_key, new_mode == "note"
+                    )
+                )
             elif field == "default":
                 current_mode = await modes.get(mode_key)
                 if current_mode != "default":
@@ -201,10 +220,10 @@ def make_handler(
                     previous = await modes.get_previous(mode_key)
                     await modes.set(mode_key, previous)
                 new_mode = await modes.get(mode_key)
-                settings = await default.get(mode_key)
+                default_settings = await default.get(mode_key)
                 await callback.message.edit_reply_markup(
                     reply_markup=build_default_markup(
-                        settings, owner_id, mode_key, new_mode == "default"
+                        default_settings, owner_id, mode_key, new_mode == "default"
                     )
                 )
 
@@ -212,7 +231,7 @@ def make_handler(
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            if field == "default":
+            if field in ("default", "note"):
                 await callback.message.edit_reply_markup(
                     reply_markup=build_mode_markup(
                         await modes.get(mode_key),
@@ -259,27 +278,77 @@ def make_handler(
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            settings = await default.get(mode_key)
+            default_settings = await default.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_reply_markup(
                 reply_markup=build_default_markup(
-                    settings, owner_id, mode_key, current_mode == "default"
+                    default_settings, owner_id, mode_key, current_mode == "default"
                 )
             )
 
-        elif action == "default_set":
+        elif action == "default_toggle":
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            settings = await default.get(mode_key)
-            settings["send_as"] = "video" if field == "video" else "document"
-            await default.set(mode_key, settings)
+            default_settings = await default.get(mode_key)
+            default_settings["send_as"] = "video" if field == "video" else "document"
+            await default.set(mode_key, default_settings)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_reply_markup(
                 reply_markup=build_default_markup(
-                    settings, owner_id, mode_key, current_mode == "default"
+                    default_settings, owner_id, mode_key, current_mode == "default"
                 )
             )
+
+        elif action in ("default_set", "note_set", "sticker_set"):
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+
+            if action == "default_set":
+                settings = await default.get(mode_key)
+            elif action == "note_set":
+                settings = await note.get(mode_key)
+            else:
+                settings = await sticker.get(mode_key)
+
+            if field == "landscape":
+                settings["landscape"] = not settings["landscape"]
+                if settings["landscape"]:
+                    settings["portrait"] = False
+            elif field == "portrait":
+                settings["portrait"] = not settings["portrait"]
+                if settings["portrait"]:
+                    settings["landscape"] = False
+            elif field == "double_rotate":
+                settings["double_rotate"] = not settings.get("double_rotate", False)
+            elif field == "flip":
+                settings["flip_left"] = not settings["flip_left"]
+
+            if action == "default_set":
+                await default.set(mode_key, settings)
+                current_mode = await modes.get(mode_key)
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_default_markup(
+                        settings, owner_id, mode_key, current_mode == "default"
+                    )
+                )
+            elif action == "note_set":
+                await note.set(mode_key, settings)
+                current_mode = await modes.get(mode_key)
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_note_markup(
+                        settings, owner_id, mode_key, current_mode == "note"
+                    )
+                )
+            else:
+                await sticker.set(mode_key, settings)
+                current_mode = await modes.get(mode_key)
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_sticker_markup(
+                        settings, owner_id, mode_key, current_mode == "sticker"
+                    )
+                )
 
         elif action == "lang":
             if user_id != owner_id:
@@ -319,31 +388,6 @@ def make_handler(
                 ),
             )
 
-        elif action == "sticker_set":
-            if user_id != owner_id:
-                await callback.answer(MODE_DENIED, show_alert=True)
-                return
-            settings = await sticker.get(mode_key)
-            if field == "landscape":
-                settings["landscape"] = not settings["landscape"]
-                if settings["landscape"]:
-                    settings["portrait"] = False
-            elif field == "portrait":
-                settings["portrait"] = not settings["portrait"]
-                if settings["portrait"]:
-                    settings["landscape"] = False
-            elif field == "double_rotate":
-                settings["double_rotate"] = not settings.get("double_rotate", False)
-            elif field == "flip":
-                settings["flip_left"] = not settings["flip_left"]
-            await sticker.set(mode_key, settings)
-            current_mode = await modes.get(mode_key)
-            await callback.message.edit_reply_markup(
-                reply_markup=build_sticker_markup(
-                    settings, owner_id, mode_key, current_mode == "sticker"
-                )
-            )
-
         elif action == "dimensions_menu":
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
@@ -369,6 +413,19 @@ def make_handler(
                 reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
             )
 
+        elif action == "note_menu":
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            note_settings = await note.get(mode_key)
+            current_mode = await modes.get(mode_key)
+            await callback.message.edit_text(
+                STICKER_MSG,
+                reply_markup=build_note_markup(
+                    note_settings, owner_id, mode_key, current_mode == "note"
+                ),
+            )
+
         await callback.answer()
 
     return on_message, on_callback
@@ -383,6 +440,7 @@ def register(
     lang_code: LangCodeStorage,
     btn_cycle: ButtonCycleStorage,
     sticker: StickerSettings,
+    note: NoteSettings,
     default: DefaultSettings,
     file_cache: FileIdCache,
 ):
@@ -394,6 +452,7 @@ def register(
         lang_code,
         btn_cycle,
         sticker,
+        note,
         default,
         file_cache,
     )

@@ -95,7 +95,7 @@ def build_mode_markup(
     )
     btn_note = InlineKeyboardButton(
         text=MODE_NOTE,
-        callback_data=f"toggle:note|{owner_id}|{mode_key}",
+        callback_data=f"note_menu|{owner_id}|{mode_key}",
         style=note_style,
     )
     btn_lang = InlineKeyboardButton(
@@ -105,11 +105,43 @@ def build_mode_markup(
     )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_sticker],
-            [btn_voice, btn_note, btn_default],
+            [btn_sticker, btn_note],
+            [btn_voice, btn_default],
             [btn_lang],
         ]
     )
+
+
+def build_settings_buttons(
+    settings: dict, owner_id: int, mode_key: str, action_prefix: str
+) -> list[list[InlineKeyboardButton]]:
+    landscape_style = "primary" if settings.get("landscape") else "danger"
+    portrait_style = "primary" if settings.get("portrait") else "danger"
+    flip_style = "primary" if settings.get("flip_left") else "danger"
+    double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
+
+    btn_landscape = InlineKeyboardButton(
+        text=STICKER_LANDSCAPE,
+        callback_data=f"{action_prefix}:landscape|{owner_id}|{mode_key}",
+        style=landscape_style,
+    )
+    btn_portrait = InlineKeyboardButton(
+        text=STICKER_PORTRAIT,
+        callback_data=f"{action_prefix}:portrait|{owner_id}|{mode_key}",
+        style=portrait_style,
+    )
+    btn_double_rotate = InlineKeyboardButton(
+        text=STICKER_DOUBLE_ROTATE,
+        callback_data=f"{action_prefix}:double_rotate|{owner_id}|{mode_key}",
+        style=double_rotate_style,
+    )
+    btn_flip = InlineKeyboardButton(
+        text=STICKER_FLIP,
+        callback_data=f"{action_prefix}:flip|{owner_id}|{mode_key}",
+        style=flip_style,
+    )
+
+    return [[btn_portrait, btn_landscape], [btn_double_rotate, btn_flip]]
 
 
 def build_default_markup(
@@ -121,12 +153,12 @@ def build_default_markup(
 
     btn_document = InlineKeyboardButton(
         text=DEFAULT_SEND_DOCUMENT,
-        callback_data=f"default_set:document|{owner_id}|{mode_key}",
+        callback_data=f"default_toggle:document|{owner_id}|{mode_key}",
         style=document_style,
     )
     btn_video = InlineKeyboardButton(
         text=DEFAULT_SEND_VIDEO,
-        callback_data=f"default_set:video|{owner_id}|{mode_key}",
+        callback_data=f"default_toggle:video|{owner_id}|{mode_key}",
         style=video_style,
     )
 
@@ -143,6 +175,8 @@ def build_default_markup(
             style="danger",
         )
 
+    mode_buttons = build_settings_buttons(settings, owner_id, mode_key, "default_set")
+
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
         callback_data=f"back:default|{owner_id}|{mode_key}",
@@ -153,6 +187,7 @@ def build_default_markup(
         inline_keyboard=[
             [btn_toggle],
             [btn_document, btn_video],
+            *mode_buttons,
             [btn_back],
         ]
     )
@@ -161,32 +196,6 @@ def build_default_markup(
 def build_sticker_markup(
     settings: dict, owner_id: int, mode_key: str, is_active: bool
 ) -> InlineKeyboardMarkup:
-    landscape_style = "primary" if settings["landscape"] else "danger"
-    portrait_style = "primary" if settings["portrait"] else "danger"
-    flip_style = "primary" if settings["flip_left"] else "danger"
-    double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
-
-    btn_landscape = InlineKeyboardButton(
-        text=STICKER_LANDSCAPE,
-        callback_data=f"sticker_set:landscape|{owner_id}|{mode_key}",
-        style=landscape_style,
-    )
-    btn_portrait = InlineKeyboardButton(
-        text=STICKER_PORTRAIT,
-        callback_data=f"sticker_set:portrait|{owner_id}|{mode_key}",
-        style=portrait_style,
-    )
-    btn_double_rotate = InlineKeyboardButton(
-        text=STICKER_DOUBLE_ROTATE,
-        callback_data=f"sticker_set:double_rotate|{owner_id}|{mode_key}",
-        style=double_rotate_style,
-    )
-    btn_flip = InlineKeyboardButton(
-        text=STICKER_FLIP,
-        callback_data=f"sticker_set:flip|{owner_id}|{mode_key}",
-        style=flip_style,
-    )
-
     if is_active:
         btn_toggle = InlineKeyboardButton(
             text=STICKER_DISABLE,
@@ -209,6 +218,8 @@ def build_sticker_markup(
         style=dimensions_style,
     )
 
+    mode_buttons = build_settings_buttons(settings, owner_id, mode_key, "sticker_set")
+
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
         callback_data=f"back:sticker|{owner_id}|{mode_key}",
@@ -218,8 +229,41 @@ def build_sticker_markup(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [btn_dimensions],
-            [btn_portrait, btn_toggle, btn_landscape],
-            [btn_double_rotate, btn_flip],
+            [btn_toggle],
+            *mode_buttons,
+            [btn_back],
+        ]
+    )
+
+
+def build_note_markup(
+    settings: dict, owner_id: int, mode_key: str, is_active: bool
+) -> InlineKeyboardMarkup:
+    if is_active:
+        btn_toggle = InlineKeyboardButton(
+            text=STICKER_DISABLE,
+            callback_data=f"toggle_state:note|{owner_id}|{mode_key}",
+            style="primary",
+        )
+    else:
+        btn_toggle = InlineKeyboardButton(
+            text=STICKER_ENABLE,
+            callback_data=f"toggle_state:note|{owner_id}|{mode_key}",
+            style="danger",
+        )
+
+    mode_buttons = build_settings_buttons(settings, owner_id, mode_key, "note_set")
+
+    btn_back = InlineKeyboardButton(
+        text=LANG_BACK,
+        callback_data=f"back:note|{owner_id}|{mode_key}",
+        style="success",
+    )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [btn_toggle],
+            *mode_buttons,
             [btn_back],
         ]
     )

@@ -228,11 +228,55 @@ class StickerSettings(RedisBase):
         await self._set(CACHE_PREFIX + f"sticker:{mode_key}", value)
 
 
+class NoteSettings(RedisBase):
+    async def get(self, mode_key: str) -> dict:
+        value = await self._get(CACHE_PREFIX + f"note:{mode_key}")
+        if not value:
+            return {
+                "enabled": False,
+                "landscape": False,
+                "portrait": False,
+                "flip_left": False,
+                "flip_right": False,
+                "double_rotate": False,
+            }
+        parts = value.split(",")
+        return {
+            "enabled": parts[0] == "1",
+            "landscape": parts[1] == "1",
+            "portrait": parts[2] == "1",
+            "flip_left": parts[3] == "1",
+            "flip_right": parts[4] == "1",
+            "double_rotate": parts[5] == "1" if len(parts) > 5 else False,
+        }
+
+    async def set(self, mode_key: str, settings: dict) -> None:
+        value = ",".join(
+            [
+                "1" if settings["enabled"] else "0",
+                "1" if settings["landscape"] else "0",
+                "1" if settings["portrait"] else "0",
+                "1" if settings["flip_left"] else "0",
+                "1" if settings["flip_right"] else "0",
+                "1" if settings.get("double_rotate") else "0",
+            ]
+        )
+        await self._set(CACHE_PREFIX + f"note:{mode_key}", value)
+
+
 class DefaultSettings(RedisBase):
     async def get(self, mode_key: str) -> dict:
         value = await self._get(CACHE_PREFIX + f"default:{mode_key}")
         if not value:
-            return {"enabled": False, "send_as": "document"}
+            return {
+                "enabled": False,
+                "send_as": "document",
+                "landscape": False,
+                "portrait": False,
+                "flip_left": False,
+                "flip_right": False,
+                "double_rotate": False,
+            }
         parts = value.split(",")
         return {
             "enabled": parts[0] == "1",
@@ -241,6 +285,11 @@ class DefaultSettings(RedisBase):
                 if len(parts) > 1 and parts[1] in ("document", "video")
                 else "document"
             ),
+            "landscape": parts[2] == "1" if len(parts) > 2 else False,
+            "portrait": parts[3] == "1" if len(parts) > 3 else False,
+            "flip_left": parts[4] == "1" if len(parts) > 4 else False,
+            "flip_right": parts[5] == "1" if len(parts) > 5 else False,
+            "double_rotate": parts[6] == "1" if len(parts) > 6 else False,
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
@@ -248,6 +297,11 @@ class DefaultSettings(RedisBase):
             [
                 "1" if settings["enabled"] else "0",
                 "video" if settings.get("send_as") == "video" else "document",
+                "1" if settings.get("landscape") else "0",
+                "1" if settings.get("portrait") else "0",
+                "1" if settings.get("flip_left") else "0",
+                "1" if settings.get("flip_right") else "0",
+                "1" if settings.get("double_rotate") else "0",
             ]
         )
         await self._set(CACHE_PREFIX + f"default:{mode_key}", value)
@@ -271,9 +325,32 @@ class FileIdCache(RedisBase):
             parts.append(settings.get("crop_type", "none"))
             return f"sticker:{'_'.join(parts)}"
 
+        if mode == "note" and settings:
+            parts = [
+                "1" if settings.get(key) else "0"
+                for key in (
+                    "landscape",
+                    "portrait",
+                    "flip_left",
+                    "flip_right",
+                    "double_rotate",
+                )
+            ]
+            return f"note:{'_'.join(parts)}"
+
         if mode == "default" and settings:
             send_as = settings.get("send_as", "document")
-            return f"default:{send_as}"
+            parts = [
+                "1" if settings.get(key) else "0"
+                for key in (
+                    "landscape",
+                    "portrait",
+                    "flip_left",
+                    "flip_right",
+                    "double_rotate",
+                )
+            ]
+            return f"default:{send_as}:{'_'.join(parts)}"
 
         return mode
 
@@ -395,6 +472,10 @@ def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
 
 def build_sticker(url: str | None) -> StickerSettings:
     return StickerSettings(_redis_client(url))
+
+
+def build_note(url: str | None) -> NoteSettings:
+    return NoteSettings(_redis_client(url))
 
 
 def build_default(url: str | None) -> DefaultSettings:

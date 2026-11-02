@@ -110,26 +110,39 @@ async def trim_voice(
 
 
 async def to_note_trim(
-    in_path: str, out_path: str, start: str = "0", end: str | None = None
+    in_path: str,
+    out_path: str,
+    settings: dict | None = None,
+    start: str = "0",
+    end: str | None = None,
 ) -> bool:
+    settings = settings or {}
+    filters: list[str] = []
+
+    double_rot = settings.get("double_rotate")
+    if settings.get("landscape"):
+        if double_rot:
+            filters.append("transpose=1,transpose=1,transpose=1")
+        else:
+            filters.append("transpose=1")
+    elif settings.get("portrait"):
+        if double_rot:
+            filters.append("transpose=2,transpose=2,transpose=2")
+        else:
+            filters.append("transpose=2")
+
+    if settings.get("flip_left") or settings.get("flip_right"):
+        filters.append("hflip")
+
+    filters.append("crop='min(iw,ih)':'min(iw,ih)',scale=640:640,setsar=1/1")
+
     args = ["-y", "-ss", start]
     if end:
         args.extend(["-to", end])
-    args.extend(
-        [
-            "-i",
-            in_path,
-            "-t",
-            "60",
-            "-vf",
-            "crop='min(iw,ih)':'min(iw,ih)',scale=640:640,setsar=1/1",
-            "-c:v",
-            "libx264",
-            "-f",
-            "mp4",
-            out_path,
-        ]
-    )
+    args.extend(["-i", in_path, "-t", "60"])
+    args.extend(["-vf", ",".join(filters)])
+    args.extend(["-c:v", "libx264", out_path])
+
     return await _run_ffmpeg(*args)
 
 
@@ -188,6 +201,6 @@ async def to_sticker(
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:
         args.extend(["-vf", ",".join(filters)])
-    args.extend(["-f", "mp4", out_path])
+    args.append(out_path)
 
     return await _run_ffmpeg(*args)

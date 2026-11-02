@@ -32,6 +32,7 @@ from cAsh import (
     FileIdCache,
     LangCodeStorage,
     ModeStorage,
+    NoteSettings,
     StickerSettings,
     cleanup,
     get_mode_key,
@@ -92,6 +93,8 @@ async def process_entry(
     workdir: str,
     mode: str,
     temp_id: int,
+    sticker: StickerSettings,
+    note: NoteSettings,
     default: DefaultSettings,
     settings: dict | None = None,
     file_cache: FileIdCache | None = None,
@@ -104,6 +107,9 @@ async def process_entry(
     if mode == "default":
         chat_id, user_id, mode_key = get_mode_key(message)
         cache_settings = await default.get(mode_key)
+    elif mode == "note":
+        chat_id, user_id, mode_key = get_mode_key(message)
+        cache_settings = await note.get(mode_key)
 
     if file_cache:
         cached = await file_cache.get(entry_url, mode, cache_settings)
@@ -128,10 +134,14 @@ async def process_entry(
         if os.path.getsize(in_path) > MAX_NOTE_FILESIZE:
             return False
         out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
-        if await to_note_trim(in_path, out_path, "0"):
+        chat_id, user_id, mode_key = get_mode_key(message)
+        note_settings = await note.get(mode_key)
+        if await to_note_trim(in_path, out_path, note_settings, "0"):
             sent = await message.reply_video_note(FSInputFile(out_path))
             if file_cache:
-                await file_cache.set(entry_url, mode, sent.video_note.file_id, settings)
+                await file_cache.set(
+                    entry_url, mode, sent.video_note.file_id, note_settings
+                )
             return True
         return False
     if mode == "sticker":
@@ -149,10 +159,20 @@ async def process_entry(
         chat_id, user_id, mode_key = get_mode_key(message)
         default_state = await default.get(mode_key)
         send_as = default_state.get("send_as", "document")
+
         if send_as == "video":
-            sent = await message.reply_video(FSInputFile(in_path))
+            out_path = os.path.join(workdir, f"{temp_id}_def.mp4")
+            if await to_sticker(in_path, out_path, default_state) and os.path.exists(
+                out_path
+            ):
+                sent = await message.reply_video(FSInputFile(out_path))
+            else:
+                sent = await message.reply_video(FSInputFile(in_path))
+
             if file_cache and sent.video:
-                await file_cache.set(entry_url, mode, sent.video.file_id, cache_settings)
+                await file_cache.set(
+                    entry_url, mode, sent.video.file_id, cache_settings
+                )
         else:
             ext = os.path.splitext(in_path)[1]
             doc_name = f"{make_name(info)}{ext}"
@@ -175,6 +195,7 @@ async def process_url(
     mode_key: str,
     mode: str,
     sticker: StickerSettings,
+    note: NoteSettings,
     default: DefaultSettings,
     file_cache: FileIdCache,
 ) -> None:
@@ -206,6 +227,8 @@ async def process_url(
                     workdir,
                     mode,
                     temp_id,
+                    sticker,
+                    note,
                     default,
                     settings,
                     file_cache,
@@ -237,6 +260,7 @@ async def handle_media_request(
     bot: Bot,
     text: str,
     sticker: StickerSettings,
+    note: NoteSettings,
     file_cache: FileIdCache,
 ) -> bool:
     reply = message.reply_to_message
@@ -348,7 +372,8 @@ async def handle_media_request(
                 await message.reply(LINK_FAIL_TEXT)
         elif is_note:
             out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
-            success = await to_note_trim(in_path, out_path, "0")
+            note_settings = await note.get(mode_key)
+            success = await to_note_trim(in_path, out_path, note_settings, "0")
             if success:
                 sent = await message.reply_video_note(FSInputFile(out_path))
                 await file_cache.set_by_source(
