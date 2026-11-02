@@ -297,14 +297,16 @@ def build_dimensions_markup(
     ratio_9_16_style = "primary" if crop_ratio == "9:16" else "danger"
     ratio_16_9_style = "primary" if crop_ratio == "16:9" else "danger"
 
+    action_name = "dim_ratio" if prefix == "sticker" else "default_dim_ratio"
+
     btn_9_16 = InlineKeyboardButton(
         text=STICKER_DIM_9_16,
-        callback_data=f"{prefix}_dim_ratio:9_16|{owner_id}|{mode_key}",
+        callback_data=f"{action_name}:9_16|{owner_id}|{mode_key}",
         style=ratio_9_16_style,
     )
     btn_16_9 = InlineKeyboardButton(
         text=STICKER_DIM_16_9,
-        callback_data=f"{prefix}_dim_ratio:16_9|{owner_id}|{mode_key}",
+        callback_data=f"{action_name}:16_9|{owner_id}|{mode_key}",
         style=ratio_16_9_style,
     )
 
