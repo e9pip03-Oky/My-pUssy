@@ -422,33 +422,37 @@ def make_handler(
                 reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "default")
             )
 
-        elif action in ("dim_ratio", "default_dim_ratio"):
+        elif action == "dim_ratio":
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             ratio = field.replace("_", ":")
-            
-            if action == "dim_ratio":
-                settings = await sticker.get(mode_key)
-            else:
-                settings = await default.get(mode_key)
-
+            settings = await sticker.get(mode_key)
             current_ratio = settings.get("crop_ratio", "none")
             if current_ratio == ratio:
                 settings["crop_ratio"] = "none"
             else:
                 settings["crop_ratio"] = ratio
-                
-            if action == "dim_ratio":
-                await sticker.set(mode_key, settings)
-                await callback.message.edit_reply_markup(
-                    reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "sticker")
-                )
+            await sticker.set(mode_key, settings)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "sticker")
+            )
+
+        elif action == "default_dim_ratio":
+            if user_id != owner_id:
+                await callback.answer(MODE_DENIED, show_alert=True)
+                return
+            ratio = field.replace("_", ":")
+            settings = await default.get(mode_key)
+            current_ratio = settings.get("crop_ratio", "none")
+            if current_ratio == ratio:
+                settings["crop_ratio"] = "none"
             else:
-                await default.set(mode_key, settings)
-                await callback.message.edit_reply_markup(
-                    reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "default")
-                )
+                settings["crop_ratio"] = ratio
+            await default.set(mode_key, settings)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key, "default")
+            )
 
         await callback.answer()
 
