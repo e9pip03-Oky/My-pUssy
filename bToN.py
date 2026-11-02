@@ -105,15 +105,19 @@ def build_mode_markup(
     )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_sticker, btn_note],
-            [btn_voice, btn_default],
+            [btn_sticker],
+            [btn_voice, btn_default, btn_note],
             [btn_lang],
         ]
     )
 
 
 def build_settings_buttons(
-    settings: dict, owner_id: int, mode_key: str, action_prefix: str
+    settings: dict,
+    owner_id: int,
+    mode_key: str,
+    action_prefix: str,
+    middle_button: InlineKeyboardButton | None = None,
 ) -> list[list[InlineKeyboardButton]]:
     landscape_style = "primary" if settings.get("landscape") else "danger"
     portrait_style = "primary" if settings.get("portrait") else "danger"
@@ -141,7 +145,11 @@ def build_settings_buttons(
         style=flip_style,
     )
 
-    return [[btn_portrait, btn_landscape], [btn_double_rotate, btn_flip]]
+    row1 = [btn_portrait, btn_landscape]
+    if middle_button:
+        row1 = [btn_portrait, middle_button, btn_landscape]
+
+    return [row1, [btn_double_rotate, btn_flip]]
 
 
 def build_default_markup(
@@ -175,7 +183,9 @@ def build_default_markup(
             style="danger",
         )
 
-    mode_buttons = build_settings_buttons(settings, owner_id, mode_key, "default_set")
+    mode_buttons = build_settings_buttons(
+        settings, owner_id, mode_key, "default_set", btn_toggle
+    )
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
@@ -185,7 +195,6 @@ def build_default_markup(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_toggle],
             [btn_document, btn_video],
             *mode_buttons,
             [btn_back],
@@ -218,7 +227,9 @@ def build_sticker_markup(
         style=dimensions_style,
     )
 
-    mode_buttons = build_settings_buttons(settings, owner_id, mode_key, "sticker_set")
+    mode_buttons = build_settings_buttons(
+        settings, owner_id, mode_key, "sticker_set", btn_toggle
+    )
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
@@ -229,7 +240,6 @@ def build_sticker_markup(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [btn_dimensions],
-            [btn_toggle],
             *mode_buttons,
             [btn_back],
         ]
@@ -252,7 +262,9 @@ def build_note_markup(
             style="danger",
         )
 
-    mode_buttons = build_settings_buttons(settings, owner_id, mode_key, "note_set")
+    mode_buttons = build_settings_buttons(
+        settings, owner_id, mode_key, "note_set", btn_toggle
+    )
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
@@ -262,7 +274,6 @@ def build_note_markup(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_toggle],
             *mode_buttons,
             [btn_back],
         ]
