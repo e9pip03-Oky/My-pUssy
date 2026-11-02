@@ -111,6 +111,16 @@ async def to_note_trim(
     settings = settings or {}
     filters: list[str] = []
 
+    crop_align = settings.get("crop_align", "center")
+    if crop_align == "bottom":
+        y_expr = "ih-min(iw\\,ih)"
+    elif crop_align == "top":
+        y_expr = "0"
+    else:
+        y_expr = "(ih-min(iw\\,ih))/2"
+
+    filters.append(f"crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:{y_expr}")
+
     double_rot = settings.get("double_rotate")
     if settings.get("landscape"):
         if double_rot:
@@ -123,15 +133,6 @@ async def to_note_trim(
         else:
             filters.append("transpose=2")
 
-    crop_align = settings.get("crop_align", "center")
-    if crop_align == "bottom":
-        y_expr = "ih-min(iw,ih)"
-    elif crop_align == "top":
-        y_expr = "0"
-    else:
-        y_expr = "(ih-min(iw,ih))/2"
-
-    filters.append(f"crop='min(iw,ih)':'min(iw,ih)':'(iw-min(iw,ih))/2':'{y_expr}'")
     filters.append("scale=640:640,setsar=1/1")
 
     if settings.get("flip_left") or settings.get("flip_right"):
