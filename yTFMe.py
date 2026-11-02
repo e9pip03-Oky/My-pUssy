@@ -6,6 +6,8 @@ import yt_dlp
 MAX_FILESIZE = 48 * 1024 * 1024
 MAX_NOTE_FILESIZE = 20 * 1024 * 1024
 
+ffmpeg_semaphore = asyncio.Semaphore(1)
+
 
 def _extract_entries(url: str) -> list[dict]:
     options = {
@@ -72,14 +74,15 @@ async def download_merge(url: str, base: str) -> tuple[dict, str]:
 
 
 async def _run_ffmpeg(*args: str) -> bool:
-    process = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        *args,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    await process.wait()
-    return process.returncode == 0
+    async with ffmpeg_semaphore:
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            *args,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await process.wait()
+        return process.returncode == 0
 
 
 async def to_voice(in_path: str, out_path: str) -> bool:
@@ -102,7 +105,7 @@ async def trim_voice(
     args = ["-y", "-ss", start]
     if end:
         args.extend(["-to", end])
-    args.extend(["-i", in_path, "-c:a", "libopus", "-f", "ogg", out_path])
+    args.extend(["-i", in_path, "-c", "copy", "-f", "ogg", out_path])
     return await _run_ffmpeg(*args)
 
 
