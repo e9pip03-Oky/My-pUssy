@@ -3,3 +3,4 @@ yt-dlp
 redis
 aiohttp
 googletrans-curl
+curl_cffi

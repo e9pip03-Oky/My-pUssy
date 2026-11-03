@@ -15,6 +15,7 @@ def _extract_entries(url: str) -> list[dict]:
         "no_warnings": True,
         "extract_flat": True,
         "noplaylist": False,
+        "impersonate": "chrome",
     }
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -31,6 +32,7 @@ def _download(url: str, base: str) -> tuple[dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
+        "impersonate": "chrome",
     }
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -50,6 +52,7 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
+        "impersonate": "chrome",
     }
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=True)
