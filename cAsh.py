@@ -14,6 +14,8 @@ BASE_DIR = "downloads"
 CACHE_PREFIX = "voice:"
 FILE_ID_TTL = 60 * 60 * 24 * 30
 
+ffmpeg_semaphore = asyncio.Semaphore(1)
+
 
 async def safe_delete(message: Message) -> None:
     try:

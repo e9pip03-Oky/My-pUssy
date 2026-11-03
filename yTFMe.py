@@ -3,10 +3,10 @@ import os
 
 import yt_dlp
 
+from cAsh import ffmpeg_semaphore
+
 MAX_FILESIZE = 48 * 1024 * 1024
 MAX_NOTE_FILESIZE = 20 * 1024 * 1024
-
-ffmpeg_semaphore = asyncio.Semaphore(1)
 
 
 def _extract_entries(url: str) -> list[dict]:

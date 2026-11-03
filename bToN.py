@@ -279,7 +279,7 @@ def build_note_markup(
     portrait_style = "primary" if settings.get("portrait") else "danger"
     flip_style = "primary" if settings.get("flip_left") else "danger"
     double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
-    
+
     crop_align = settings.get("crop_align", "center")
     down_style = "primary" if crop_align == "bottom" else "danger"
     up_style = "primary" if crop_align == "top" else "danger"
