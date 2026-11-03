@@ -443,13 +443,10 @@ async def handle_translation_logic(
     return None
 
 
-async def get_status_mode(
-    mode_key: str, modes: ModeStorage, sticker: StickerSettings
-) -> str:
-    sticker_state = await sticker.get(mode_key)
+async def get_status_mode(mode_key: str, modes: ModeStorage) -> str:
     current_mode = await modes.get(mode_key)
 
-    if sticker_state["enabled"]:
+    if current_mode == "sticker":
         return MODE_STICKER
     if current_mode == "voice":
         return MODE_VOICE
