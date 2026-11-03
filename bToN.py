@@ -7,24 +7,22 @@ from Reply import (
     BUTTON_NAMES,
     DEFAULT_SEND_DOCUMENT,
     DEFAULT_SEND_VIDEO,
+    DISABLE,
+    ENABLE,
     LANG_BACK,
-    LANG_DISABLE,
-    LANG_ENABLE,
     LANG_ENG,
     LANG_RUS,
-    MODE_DEFAULT,
+    STICKER,
+    NOTE,
+    VOICE,
+    DEFAULT,
     MODE_LANG,
-    MODE_NOTE,
-    MODE_STICKER,
-    MODE_VOICE,
     STICKER_CROP_DOWN,
     STICKER_CROP_UP,
     STICKER_DIMENSIONS,
     STICKER_DIM_9_16,
     STICKER_DIM_16_9,
-    STICKER_DISABLE,
     STICKER_DOUBLE_ROTATE,
-    STICKER_ENABLE,
     STICKER_FLIP,
     STICKER_LANDSCAPE,
     STICKER_MUTE,
@@ -82,22 +80,22 @@ def build_mode_markup(
     lang_style = "success" if lang_active else "danger"
 
     btn_voice = InlineKeyboardButton(
-        text=MODE_VOICE,
+        text=VOICE,
         callback_data=f"toggle:voice|{owner_id}|{mode_key}",
         style=voice_style,
     )
     btn_default = InlineKeyboardButton(
-        text=MODE_DEFAULT,
+        text=DEFAULT,
         callback_data=f"default_menu|{owner_id}|{mode_key}",
         style=default_style,
     )
     btn_sticker = InlineKeyboardButton(
-        text=MODE_STICKER,
+        text=STICKER,
         callback_data=f"sticker_menu|{owner_id}|{mode_key}",
         style=sticker_style,
     )
     btn_note = InlineKeyboardButton(
-        text=MODE_NOTE,
+        text=NOTE,
         callback_data=f"note_menu|{owner_id}|{mode_key}",
         style=note_style,
     )
@@ -184,13 +182,13 @@ def build_default_markup(
 
     if is_active:
         btn_toggle = InlineKeyboardButton(
-            text=LANG_DISABLE,
+            text=DISABLE,
             callback_data=f"toggle_state:default|{owner_id}|{mode_key}",
             style="primary",
         )
     else:
         btn_toggle = InlineKeyboardButton(
-            text=LANG_ENABLE,
+            text=ENABLE,
             callback_data=f"toggle_state:default|{owner_id}|{mode_key}",
             style="danger",
         )
@@ -220,13 +218,13 @@ def build_sticker_markup(
 ) -> InlineKeyboardMarkup:
     if is_active:
         btn_toggle = InlineKeyboardButton(
-            text=STICKER_DISABLE,
+            text=DISABLE,
             callback_data=f"toggle_state:sticker|{owner_id}|{mode_key}",
             style="primary",
         )
     else:
         btn_toggle = InlineKeyboardButton(
-            text=STICKER_ENABLE,
+            text=ENABLE,
             callback_data=f"toggle_state:sticker|{owner_id}|{mode_key}",
             style="danger",
         )
@@ -264,13 +262,13 @@ def build_note_markup(
 ) -> InlineKeyboardMarkup:
     if is_active:
         btn_toggle = InlineKeyboardButton(
-            text=STICKER_DISABLE,
+            text=DISABLE,
             callback_data=f"toggle_state:note|{owner_id}|{mode_key}",
             style="primary",
         )
     else:
         btn_toggle = InlineKeyboardButton(
-            text=STICKER_ENABLE,
+            text=ENABLE,
             callback_data=f"toggle_state:note|{owner_id}|{mode_key}",
             style="danger",
         )
@@ -393,13 +391,13 @@ def build_lang_markup(
 
     if lang_active:
         btn_toggle = InlineKeyboardButton(
-            text=LANG_DISABLE,
+            text=DISABLE,
             callback_data=f"toggle_state:lang|{owner_id}|{mode_key}",
             style="primary",
         )
     else:
         btn_toggle = InlineKeyboardButton(
-            text=LANG_ENABLE,
+            text=ENABLE,
             callback_data=f"toggle_state:lang|{owner_id}|{mode_key}",
             style="danger",
         )

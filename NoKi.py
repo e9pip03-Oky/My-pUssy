@@ -10,15 +10,13 @@ from Reply import (
     BUTTON_NAMES,
     EDIT_KEYWORDS,
     LANG_MSG,
-    MODE_DEFAULT,
+    STICKER,
+    NOTE,
+    VOICE,
+    DEFAULT,
     MODE_DENIED,
     MODE_MSG,
-    MODE_NOTE,
-    MODE_STICKER,
-    MODE_VOICE,
     RANDOM_REPLIES,
-    STATUS_COMMAND,
-    STATUS_MSG,
     STICKER_MSG,
 )
 from bToN import (
@@ -45,7 +43,6 @@ from cAsh import (
 )
 from ediT import handle_pending_edit, set_edit_state
 from MesSA import (
-    get_status_mode,
     handle_admin_logic,
     handle_media_request,
     handle_translation_logic,
@@ -84,7 +81,7 @@ def make_handler(
         if await handle_pending_edit(message, bot, file_cache):
             return
 
-        if message.reply_to_message and text in (MODE_NOTE, MODE_VOICE, MODE_STICKER):
+        if message.reply_to_message and text in (NOTE, VOICE, STICKER):
             if await handle_media_request(message, bot, text, sticker, note, file_cache):
                 return
 
@@ -135,11 +132,6 @@ def make_handler(
                     old_messages.append(sent_message.message_id)
                     await adt.save_messages(mode_key, old_messages)
                 return
-
-        if text == STATUS_COMMAND:
-            active_mode = await get_status_mode(mode_key, modes, sticker)
-            await message.reply(STATUS_MSG.format(active_mode))
-            return
 
         if await lang.get(mode_key):
             translated = await handle_translation_logic(text, mode_key, lang_code)
@@ -235,7 +227,7 @@ def make_handler(
             settings = await sticker.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
-                STICKER_MSG.format(MODE_STICKER),
+                STICKER_MSG.format(STICKER),
                 reply_markup=build_sticker_markup(
                     settings, owner_id, mode_key, current_mode == "sticker"
                 ),
@@ -248,7 +240,7 @@ def make_handler(
             default_settings = await default.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
-                STICKER_MSG.format(MODE_DEFAULT),
+                STICKER_MSG.format(DEFAULT),
                 reply_markup=build_default_markup(
                     default_settings, owner_id, mode_key, current_mode == "default"
                 ),
@@ -297,7 +289,7 @@ def make_handler(
             default_settings = await default.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
-                STICKER_MSG.format(MODE_DEFAULT),
+                STICKER_MSG.format(DEFAULT),
                 reply_markup=build_default_markup(
                     default_settings, owner_id, mode_key, current_mode == "default"
                 ),
@@ -412,7 +404,7 @@ def make_handler(
             settings = await sticker.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
-                STICKER_MSG.format(MODE_STICKER),
+                STICKER_MSG.format(STICKER),
                 reply_markup=build_sticker_markup(
                     settings, owner_id, mode_key, current_mode == "sticker"
                 ),
@@ -425,7 +417,7 @@ def make_handler(
             note_settings = await note.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
-                STICKER_MSG.format(MODE_NOTE),
+                STICKER_MSG.format(NOTE),
                 reply_markup=build_note_markup(
                     note_settings, owner_id, mode_key, current_mode == "note"
                 ),

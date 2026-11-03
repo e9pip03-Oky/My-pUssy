@@ -13,16 +13,11 @@ from Reply import (
     MEDIA_NOTE,
     MEDIA_STICKER,
     MEDIA_VIDEO,
-    MODE_DEFAULT,
-    MODE_NOTE,
-    MODE_STICKER,
-    MODE_VOICE,
+    STICKER,
+    NOTE,
+    VOICE,
     NO_AUDIO_MSG,
     NOTE_WAIT_MSG,
-    STATUS_MSG,
-    TARGET_NOTE,
-    TARGET_STICKER,
-    TARGET_VOICE,
     WAIT_TEXT,
     WAIT_VOICE_MSG,
 )
@@ -280,16 +275,16 @@ async def handle_media_request(
         or reply.audio
         or reply.voice
     )
-    if text == MODE_NOTE and not is_video:
+    if text == NOTE and not is_video:
         return False
-    if text == MODE_STICKER and not is_video:
+    if text == STICKER and not is_video:
         return False
-    if text == MODE_VOICE:
+    if text == VOICE:
         if not media or reply.animation:
             return False
 
-    is_note = text == MODE_NOTE
-    is_sticker = text == MODE_STICKER
+    is_note = text == NOTE
+    is_sticker = text == STICKER
     media_file_id = media.file_id
     detail = "direct"
 
@@ -299,9 +294,9 @@ async def handle_media_request(
         )
         if cached:
             try:
-                if text == MODE_VOICE:
+                if text == VOICE:
                     await message.reply_voice(cached)
-                elif text == MODE_NOTE:
+                elif text == NOTE:
                     await message.reply_video_note(cached)
                 return True
             except Exception:
@@ -332,13 +327,13 @@ async def handle_media_request(
         source_name = MEDIA_AUDIO
 
     if is_note:
-        target_name = TARGET_NOTE
+        target_name = NOTE
         wait_text = NOTE_WAIT_MSG.format(source_name, target_name)
     elif is_sticker:
-        target_name = TARGET_STICKER
+        target_name = STICKER
         wait_text = NOTE_WAIT_MSG.format(source_name, target_name)
     else:
-        target_name = TARGET_VOICE
+        target_name = VOICE
         wait_text = WAIT_VOICE_MSG.format(source_name, target_name)
 
     wait_message = await message.reply(wait_text)
@@ -441,15 +436,3 @@ async def handle_translation_logic(
         if fixed_text:
             return fixed_text
     return None
-
-
-async def get_status_mode(mode_key: str, modes: ModeStorage) -> str:
-    current_mode = await modes.get(mode_key)
-
-    if current_mode == "sticker":
-        return MODE_STICKER
-    if current_mode == "voice":
-        return MODE_VOICE
-    if current_mode == "note":
-        return MODE_NOTE
-    return MODE_DEFAULT
