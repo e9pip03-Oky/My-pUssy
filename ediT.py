@@ -72,7 +72,7 @@ async def handle_pending_edit(
         media_type = "note"
         file_id = media_message.video_note.file_id
     elif media_message.animation:
-        media_type = "sticker"
+        media_type = "animation"
         file_id = media_message.animation.file_id
     elif media_message.video:
         media_type = "video"
@@ -112,7 +112,7 @@ async def handle_pending_edit(
                 await message.reply_voice(cached)
             elif media_type == "note":
                 await message.reply_video_note(cached)
-            elif media_type == "sticker":
+            elif media_type == "animation":
                 await message.reply_animation(cached)
             else:
                 await message.reply_video(cached)
@@ -154,7 +154,7 @@ async def handle_pending_edit(
                 await file_cache.set_by_source(
                     file_id, f"edit_{media_type}", detail, sent.video_note.file_id
                 )
-        elif media_type == "sticker":
+        elif media_type == "animation":
             out_path += ".mp4"
             success = await trim_video(in_path, out_path, start_value, end_value)
             if success:

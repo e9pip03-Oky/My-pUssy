@@ -9,6 +9,7 @@ import NoKi
 from bToN import build_buttons, build_markup, parse_ids
 from cAsh import (
     build_adt,
+    build_animation,
     build_btn_cycle,
     build_counter,
     build_default,
@@ -17,7 +18,6 @@ from cAsh import (
     build_lang_code,
     build_modes,
     build_note,
-    build_sticker,
     build_storage,
 )
 from Reply import BOOT_TEXT
@@ -51,7 +51,7 @@ async def main() -> None:
         build_lang(REDIS_URL),
         build_lang_code(REDIS_URL),
         build_btn_cycle(REDIS_URL),
-        build_sticker(REDIS_URL),
+        build_animation(REDIS_URL),
         build_note(REDIS_URL),
         build_default(REDIS_URL),
         build_file_cache(REDIS_URL),

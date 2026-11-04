@@ -9,7 +9,7 @@ from aiogram.types import Message
 
 log = logging.getLogger("voicebot")
 MAX_CONCURRENT = 3
-MAX_WAITING = 3
+MAX_WAITING = 18
 BASE_DIR = "downloads"
 CACHE_PREFIX = "voice:"
 FILE_ID_TTL = 60 * 60 * 24 * 30
@@ -41,23 +41,27 @@ class ChatQueue:
         self._slots: dict[int, asyncio.Queue[None]] = {}
         self._waiting: dict[int, int] = {}
         self._locks: dict[int, asyncio.Lock] = {}
+        self._meta_lock = asyncio.Lock()
 
-    def _lock(self, chat_id: int) -> asyncio.Lock:
-        if chat_id not in self._locks:
-            self._locks[chat_id] = asyncio.Lock()
-        return self._locks[chat_id]
+    async def _lock(self, chat_id: int) -> asyncio.Lock:
+        async with self._meta_lock:
+            if chat_id not in self._locks:
+                self._locks[chat_id] = asyncio.Lock()
+            return self._locks[chat_id]
 
-    def _queue(self, chat_id: int) -> asyncio.Queue[None]:
-        if chat_id not in self._slots:
-            queue: asyncio.Queue[None] = asyncio.Queue()
-            for _ in range(MAX_CONCURRENT):
-                queue.put_nowait(None)
-            self._slots[chat_id] = queue
-        return self._slots[chat_id]
+    async def _queue(self, chat_id: int) -> asyncio.Queue[None]:
+        async with self._meta_lock:
+            if chat_id not in self._slots:
+                queue: asyncio.Queue[None] = asyncio.Queue()
+                for _ in range(MAX_CONCURRENT):
+                    queue.put_nowait(None)
+                self._slots[chat_id] = queue
+            return self._slots[chat_id]
 
     async def acquire(self, chat_id: int) -> tuple[bool, bool]:
-        async with self._lock(chat_id):
-            queue = self._queue(chat_id)
+        lock = await self._lock(chat_id)
+        queue = await self._queue(chat_id)
+        async with lock:
             if not queue.empty():
                 queue.get_nowait()
                 return True, False
@@ -67,15 +71,15 @@ class ChatQueue:
         try:
             await queue.get()
         except asyncio.CancelledError:
-            async with self._lock(chat_id):
+            async with lock:
                 self._waiting[chat_id] = max(0, self._waiting[chat_id] - 1)
             raise
-        async with self._lock(chat_id):
+        async with lock:
             self._waiting[chat_id] = max(0, self._waiting[chat_id] - 1)
         return True, True
 
     async def release(self, chat_id: int) -> None:
-        queue = self._queue(chat_id)
+        queue = await self._queue(chat_id)
         queue.put_nowait(None)
 
 
@@ -166,9 +170,9 @@ class ButtonCycleStorage(RedisBase):
         await self._set(CACHE_PREFIX + f"btn_cycle:{chat_id}", str((index + 1) % total))
 
 
-class StickerSettings(RedisBase):
+class AnimationSettings(RedisBase):
     async def get(self, mode_key: str) -> dict:
-        value = await self._get(CACHE_PREFIX + f"sticker:{mode_key}")
+        value = await self._get(CACHE_PREFIX + f"animation:{mode_key}")
         if not value:
             return {
                 "enabled": False,
@@ -227,7 +231,7 @@ class StickerSettings(RedisBase):
                 settings.get("crop_type", "none"),
             ]
         )
-        await self._set(CACHE_PREFIX + f"sticker:{mode_key}", value)
+        await self._set(CACHE_PREFIX + f"animation:{mode_key}", value)
 
 
 class NoteSettings(RedisBase):
@@ -321,7 +325,7 @@ class DefaultSettings(RedisBase):
 class FileIdCache(RedisBase):
     @staticmethod
     def _signature(mode: str, settings: dict | None) -> str:
-        if mode == "sticker" and settings:
+        if mode == "animation" and settings:
             parts = [
                 "1" if settings.get(key) else "0"
                 for key in (
@@ -334,7 +338,7 @@ class FileIdCache(RedisBase):
             ]
             parts.append(settings.get("crop_ratio", "none"))
             parts.append(settings.get("crop_type", "none"))
-            return f"sticker:{'_'.join(parts)}"
+            return f"animation:{'_'.join(parts)}"
 
         if mode == "note" and settings:
             parts = [
@@ -484,8 +488,8 @@ def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
     return ButtonCycleStorage(_redis_client(url))
 
 
-def build_sticker(url: str | None) -> StickerSettings:
-    return StickerSettings(_redis_client(url))
+def build_animation(url: str | None) -> AnimationSettings:
+    return AnimationSettings(_redis_client(url))
 
 
 def build_note(url: str | None) -> NoteSettings:

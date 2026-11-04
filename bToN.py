@@ -4,6 +4,17 @@ import os
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from Reply import (
+    ANIMATION,
+    ANIMATION_CROP_DOWN,
+    ANIMATION_CROP_UP,
+    ANIMATION_DIMENSIONS,
+    ANIMATION_DIM_9_16,
+    ANIMATION_DIM_16_9,
+    ANIMATION_DOUBLE_ROTATE,
+    ANIMATION_FLIP,
+    ANIMATION_LANDSCAPE,
+    ANIMATION_MUTE,
+    ANIMATION_PORTRAIT,
     BUTTON_NAMES,
     DEFAULT,
     DEFAULT_SEND_DOCUMENT,
@@ -15,17 +26,6 @@ from Reply import (
     LANG_RUS,
     MODE_LANG,
     NOTE,
-    STICKER,
-    STICKER_CROP_DOWN,
-    STICKER_CROP_UP,
-    STICKER_DIMENSIONS,
-    STICKER_DIM_9_16,
-    STICKER_DIM_16_9,
-    STICKER_DOUBLE_ROTATE,
-    STICKER_FLIP,
-    STICKER_LANDSCAPE,
-    STICKER_MUTE,
-    STICKER_PORTRAIT,
     VOICE,
 )
 
@@ -75,7 +75,7 @@ def build_mode_markup(
 ) -> InlineKeyboardMarkup:
     voice_style = "primary" if current_mode == "voice" else "danger"
     default_style = "primary" if current_mode == "default" else "danger"
-    sticker_style = "primary" if current_mode == "sticker" else "danger"
+    animation_style = "primary" if current_mode == "animation" else "danger"
     note_style = "primary" if current_mode == "note" else "danger"
     lang_style = "success" if lang_active else "danger"
 
@@ -89,10 +89,10 @@ def build_mode_markup(
         callback_data=f"default_menu|{owner_id}|{mode_key}",
         style=default_style,
     )
-    btn_sticker = InlineKeyboardButton(
-        text=STICKER,
-        callback_data=f"sticker_menu|{owner_id}|{mode_key}",
-        style=sticker_style,
+    btn_animation = InlineKeyboardButton(
+        text=ANIMATION,
+        callback_data=f"animation_menu|{owner_id}|{mode_key}",
+        style=animation_style,
     )
     btn_note = InlineKeyboardButton(
         text=NOTE,
@@ -106,7 +106,7 @@ def build_mode_markup(
     )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_sticker],
+            [btn_animation],
             [btn_voice, btn_default, btn_note],
             [btn_lang],
         ]
@@ -126,22 +126,22 @@ def build_settings_buttons(
     double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
 
     btn_landscape = InlineKeyboardButton(
-        text=STICKER_LANDSCAPE,
+        text=ANIMATION_LANDSCAPE,
         callback_data=f"{action_prefix}:landscape|{owner_id}|{mode_key}",
         style=landscape_style,
     )
     btn_portrait = InlineKeyboardButton(
-        text=STICKER_PORTRAIT,
+        text=ANIMATION_PORTRAIT,
         callback_data=f"{action_prefix}:portrait|{owner_id}|{mode_key}",
         style=portrait_style,
     )
     btn_double_rotate = InlineKeyboardButton(
-        text=STICKER_DOUBLE_ROTATE,
+        text=ANIMATION_DOUBLE_ROTATE,
         callback_data=f"{action_prefix}:double_rotate|{owner_id}|{mode_key}",
         style=double_rotate_style,
     )
     btn_flip = InlineKeyboardButton(
-        text=STICKER_FLIP,
+        text=ANIMATION_FLIP,
         callback_data=f"{action_prefix}:flip|{owner_id}|{mode_key}",
         style=flip_style,
     )
@@ -175,7 +175,7 @@ def build_default_markup(
     dimensions_style = "success" if crop_ratio == "none" else "primary"
 
     btn_dimensions = InlineKeyboardButton(
-        text=STICKER_DIMENSIONS,
+        text=ANIMATION_DIMENSIONS,
         callback_data=f"default_dimensions_menu|{owner_id}|{mode_key}",
         style=dimensions_style,
     )
@@ -213,19 +213,19 @@ def build_default_markup(
     )
 
 
-def build_sticker_markup(
+def build_animation_markup(
     settings: dict, owner_id: int, mode_key: str, is_active: bool
 ) -> InlineKeyboardMarkup:
     if is_active:
         btn_toggle = InlineKeyboardButton(
             text=DISABLE,
-            callback_data=f"toggle_state:sticker|{owner_id}|{mode_key}",
+            callback_data=f"toggle_state:animation|{owner_id}|{mode_key}",
             style="primary",
         )
     else:
         btn_toggle = InlineKeyboardButton(
             text=ENABLE,
-            callback_data=f"toggle_state:sticker|{owner_id}|{mode_key}",
+            callback_data=f"toggle_state:animation|{owner_id}|{mode_key}",
             style="danger",
         )
 
@@ -233,18 +233,18 @@ def build_sticker_markup(
     dimensions_style = "success" if crop_ratio == "none" else "primary"
 
     btn_dimensions = InlineKeyboardButton(
-        text=STICKER_DIMENSIONS,
+        text=ANIMATION_DIMENSIONS,
         callback_data=f"dimensions_menu|{owner_id}|{mode_key}",
         style=dimensions_style,
     )
 
     mode_buttons = build_settings_buttons(
-        settings, owner_id, mode_key, "sticker_set", btn_toggle
+        settings, owner_id, mode_key, "animation_set", btn_toggle
     )
 
     btn_back = InlineKeyboardButton(
         text=LANG_BACK,
-        callback_data=f"back:sticker|{owner_id}|{mode_key}",
+        callback_data=f"back:animation|{owner_id}|{mode_key}",
         style="success",
     )
 
@@ -284,37 +284,37 @@ def build_note_markup(
     mute_style = "primary" if settings.get("muted") else "danger"
 
     btn_landscape = InlineKeyboardButton(
-        text=STICKER_LANDSCAPE,
+        text=ANIMATION_LANDSCAPE,
         callback_data=f"note_set:landscape|{owner_id}|{mode_key}",
         style=landscape_style,
     )
     btn_portrait = InlineKeyboardButton(
-        text=STICKER_PORTRAIT,
+        text=ANIMATION_PORTRAIT,
         callback_data=f"note_set:portrait|{owner_id}|{mode_key}",
         style=portrait_style,
     )
     btn_double_rotate = InlineKeyboardButton(
-        text=STICKER_DOUBLE_ROTATE,
+        text=ANIMATION_DOUBLE_ROTATE,
         callback_data=f"note_set:double_rotate|{owner_id}|{mode_key}",
         style=double_rotate_style,
     )
     btn_flip = InlineKeyboardButton(
-        text=STICKER_FLIP,
+        text=ANIMATION_FLIP,
         callback_data=f"note_set:flip|{owner_id}|{mode_key}",
         style=flip_style,
     )
     btn_crop_down = InlineKeyboardButton(
-        text=STICKER_CROP_DOWN,
+        text=ANIMATION_CROP_DOWN,
         callback_data=f"note_set:crop_down|{owner_id}|{mode_key}",
         style=down_style,
     )
     btn_crop_up = InlineKeyboardButton(
-        text=STICKER_CROP_UP,
+        text=ANIMATION_CROP_UP,
         callback_data=f"note_set:crop_up|{owner_id}|{mode_key}",
         style=up_style,
     )
     btn_mute = InlineKeyboardButton(
-        text=STICKER_MUTE,
+        text=ANIMATION_MUTE,
         callback_data=f"note_set:mute|{owner_id}|{mode_key}",
         style=mute_style,
     )
@@ -337,23 +337,23 @@ def build_note_markup(
 
 
 def build_dimensions_markup(
-    settings: dict, owner_id: int, mode_key: str, prefix: str = "sticker"
+    settings: dict, owner_id: int, mode_key: str, prefix: str = "animation"
 ) -> InlineKeyboardMarkup:
     crop_ratio = settings.get("crop_ratio", "none")
 
     ratio_9_16_style = "primary" if crop_ratio == "9:16" else "danger"
     ratio_16_9_style = "primary" if crop_ratio == "16:9" else "danger"
 
-    action_name = "dim_ratio" if prefix == "sticker" else "default_dim_ratio"
-    back_action = "back_to_sticker" if prefix == "sticker" else "back_to_default"
+    action_name = "dim_ratio" if prefix == "animation" else "default_dim_ratio"
+    back_action = "back_to_animation" if prefix == "animation" else "back_to_default"
 
     btn_9_16 = InlineKeyboardButton(
-        text=STICKER_DIM_9_16,
+        text=ANIMATION_DIM_9_16,
         callback_data=f"{action_name}:9_16|{owner_id}|{mode_key}",
         style=ratio_9_16_style,
     )
     btn_16_9 = InlineKeyboardButton(
-        text=STICKER_DIM_16_9,
+        text=ANIMATION_DIM_16_9,
         callback_data=f"{action_name}:16_9|{owner_id}|{mode_key}",
         style=ratio_16_9_style,
     )

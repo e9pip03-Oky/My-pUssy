@@ -8,27 +8,27 @@ from aiogram.types import FSInputFile, Message
 from Reply import (
     LINK_FAIL_TEXT,
     LOADING_TEXT,
+    MEDIA_ANIMATION,
     MEDIA_AUDIO,
     MEDIA_DOC,
     MEDIA_NOTE,
-    MEDIA_STICKER,
     MEDIA_VIDEO,
     NOTE,
     NO_AUDIO_MSG,
     NOTE_WAIT_MSG,
-    STICKER,
+    ANIMATION,
     VOICE,
     WAIT_TEXT,
     WAIT_VOICE_MSG,
 )
 from cAsh import (
     AdtStorage,
+    AnimationSettings,
     DefaultSettings,
     FileIdCache,
     LangCodeStorage,
     ModeStorage,
     NoteSettings,
-    StickerSettings,
     cleanup,
     get_mode_key,
     queue,
@@ -42,8 +42,8 @@ from yTFMe import (
     download,
     download_merge,
     get_entries,
+    to_animation,
     to_note_trim,
-    to_sticker,
     to_voice,
 )
 
@@ -69,7 +69,7 @@ async def send_cached(file_id: str, message: Message, mode: str) -> bool:
             await message.reply_voice(file_id)
         elif mode == "note":
             await message.reply_video_note(file_id)
-        elif mode == "sticker":
+        elif mode == "animation":
             await message.reply_animation(file_id)
         else:
             try:
@@ -88,7 +88,7 @@ async def process_entry(
     workdir: str,
     mode: str,
     temp_id: int,
-    sticker: StickerSettings,
+    animation: AnimationSettings,
     note: NoteSettings,
     default: DefaultSettings,
     settings: dict | None = None,
@@ -139,10 +139,10 @@ async def process_entry(
                 )
             return True
         return False
-    if mode == "sticker":
+    if mode == "animation":
         info, in_path = await download_merge(entry_url, base)
-        out_path = os.path.join(workdir, f"{temp_id}_sticker.mp4")
-        if await to_sticker(in_path, out_path, settings) and os.path.exists(out_path):
+        out_path = os.path.join(workdir, f"{temp_id}_animation.mp4")
+        if await to_animation(in_path, out_path, settings) and os.path.exists(out_path):
             sent = await message.reply_animation(FSInputFile(out_path))
             if file_cache:
                 await file_cache.set(entry_url, mode, sent.animation.file_id, settings)
@@ -157,7 +157,7 @@ async def process_entry(
 
         if send_as == "video":
             out_path = os.path.join(workdir, f"{temp_id}_def.mp4")
-            success = await to_sticker(in_path, out_path, default_state)
+            success = await to_animation(in_path, out_path, default_state)
             if not success or not os.path.exists(out_path):
                 out_path = in_path
 
@@ -187,7 +187,7 @@ async def process_url(
     url: str,
     mode_key: str,
     mode: str,
-    sticker: StickerSettings,
+    animation: AnimationSettings,
     note: NoteSettings,
     default: DefaultSettings,
     file_cache: FileIdCache,
@@ -202,7 +202,7 @@ async def process_url(
     try:
         if waited:
             wait_message = await message.reply(WAIT_TEXT)
-        settings = await sticker.get(mode_key) if mode == "sticker" else None
+        settings = await animation.get(mode_key) if mode == "animation" else None
         status = await message.reply(LOADING_TEXT)
         failed = True
         try:
@@ -220,7 +220,7 @@ async def process_url(
                     workdir,
                     mode,
                     temp_id,
-                    sticker,
+                    animation,
                     note,
                     default,
                     settings,
@@ -252,7 +252,7 @@ async def handle_media_request(
     message: Message,
     bot: Bot,
     text: str,
-    sticker: StickerSettings,
+    animation: AnimationSettings,
     note: NoteSettings,
     file_cache: FileIdCache,
 ) -> bool:
@@ -277,18 +277,18 @@ async def handle_media_request(
     )
     if text == NOTE and not is_video:
         return False
-    if text == STICKER and not is_video:
+    if text == ANIMATION and not is_video:
         return False
     if text == VOICE:
         if not media or reply.animation:
             return False
 
     is_note = text == NOTE
-    is_sticker = text == STICKER
+    is_animation = text == ANIMATION
     media_file_id = media.file_id
     detail = "direct"
 
-    if not is_sticker:
+    if not is_animation:
         cached = await file_cache.get_by_source(
             media_file_id, f"direct_{text}", detail
         )
@@ -316,7 +316,7 @@ async def handle_media_request(
         media_type = MEDIA_AUDIO
 
     if reply.animation:
-        source_name = MEDIA_STICKER
+        source_name = MEDIA_ANIMATION
     elif reply.video:
         source_name = MEDIA_VIDEO
     elif reply.video_note:
@@ -329,8 +329,8 @@ async def handle_media_request(
     if is_note:
         target_name = NOTE
         wait_text = NOTE_WAIT_MSG.format(source_name, target_name)
-    elif is_sticker:
-        target_name = STICKER
+    elif is_animation:
+        target_name = ANIMATION
         wait_text = NOTE_WAIT_MSG.format(source_name, target_name)
     else:
         target_name = VOICE
@@ -356,10 +356,10 @@ async def handle_media_request(
             await message.reply(LINK_FAIL_TEXT)
             return True
 
-        if is_sticker:
-            out_path = os.path.join(workdir, f"{temp_id}_sticker.mp4")
-            settings = await sticker.get(mode_key)
-            success = await to_sticker(in_path, out_path, settings)
+        if is_animation:
+            out_path = os.path.join(workdir, f"{temp_id}_animation.mp4")
+            settings = await animation.get(mode_key)
+            success = await to_animation(in_path, out_path, settings)
             if success and os.path.exists(out_path):
                 await message.reply_animation(FSInputFile(out_path))
             else:
