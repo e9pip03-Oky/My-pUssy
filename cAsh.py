@@ -175,6 +175,7 @@ class AnimationSettings(RedisBase):
         value = await self._get(CACHE_PREFIX + f"animation:{mode_key}")
         if not value:
             return {
+                "enabled": False,
                 "landscape": False,
                 "portrait": False,
                 "flip_left": False,
@@ -184,23 +185,47 @@ class AnimationSettings(RedisBase):
                 "crop_type": "none",
             }
         parts = value.split(",")
+        if len(parts) == 6:
+            return {
+                "enabled": parts[0] == "1",
+                "landscape": parts[1] == "1",
+                "portrait": parts[2] == "1",
+                "flip_left": parts[3] == "1",
+                "flip_right": parts[4] == "1",
+                "double_rotate": False,
+                "crop_ratio": parts[5] if parts[5] != "none" else "none",
+                "crop_type": "none",
+            }
+        elif len(parts) == 7:
+            return {
+                "enabled": parts[0] == "1",
+                "landscape": parts[1] == "1",
+                "portrait": parts[2] == "1",
+                "flip_left": parts[3] == "1",
+                "flip_right": parts[4] == "1",
+                "double_rotate": False,
+                "crop_ratio": parts[5] if parts[5] != "none" else "none",
+                "crop_type": parts[6] if parts[6] != "none" else "none",
+            }
         return {
-            "landscape": parts[0] == "1" if len(parts) > 0 else False,
-            "portrait": parts[1] == "1" if len(parts) > 1 else False,
-            "flip_left": parts[2] == "1" if len(parts) > 2 else False,
-            "flip_right": parts[3] == "1" if len(parts) > 3 else False,
-            "double_rotate": parts[4] == "1" if len(parts) > 4 else False,
-            "crop_ratio": parts[5] if len(parts) > 5 else "none",
-            "crop_type": parts[6] if len(parts) > 6 else "none",
+            "enabled": parts[0] == "1",
+            "landscape": parts[1] == "1",
+            "portrait": parts[2] == "1",
+            "flip_left": parts[3] == "1",
+            "flip_right": parts[4] == "1",
+            "double_rotate": parts[5] == "1",
+            "crop_ratio": parts[6] if len(parts) > 6 else "none",
+            "crop_type": parts[7] if len(parts) > 7 else "none",
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
         value = ",".join(
             [
-                "1" if settings.get("landscape") else "0",
-                "1" if settings.get("portrait") else "0",
-                "1" if settings.get("flip_left") else "0",
-                "1" if settings.get("flip_right") else "0",
+                "1" if settings["enabled"] else "0",
+                "1" if settings["landscape"] else "0",
+                "1" if settings["portrait"] else "0",
+                "1" if settings["flip_left"] else "0",
+                "1" if settings["flip_right"] else "0",
                 "1" if settings.get("double_rotate") else "0",
                 settings.get("crop_ratio", "none"),
                 settings.get("crop_type", "none"),
@@ -215,20 +240,35 @@ class NoteSettings(RedisBase):
         if not value:
             return {
                 "enabled": False,
+                "landscape": False,
+                "portrait": False,
+                "flip_left": False,
+                "flip_right": False,
+                "double_rotate": False,
                 "crop_align": "center",
                 "muted": False,
             }
         parts = value.split(",")
         return {
-            "enabled": parts[0] == "1" if len(parts) > 0 else False,
-            "crop_align": parts[1] if len(parts) > 1 else "center",
-            "muted": parts[2] == "1" if len(parts) > 2 else False,
+            "enabled": parts[0] == "1",
+            "landscape": parts[1] == "1",
+            "portrait": parts[2] == "1",
+            "flip_left": parts[3] == "1",
+            "flip_right": parts[4] == "1",
+            "double_rotate": parts[5] == "1" if len(parts) > 5 else False,
+            "crop_align": parts[6] if len(parts) > 6 else "center",
+            "muted": parts[7] == "1" if len(parts) > 7 else False,
         }
 
     async def set(self, mode_key: str, settings: dict) -> None:
         value = ",".join(
             [
-                "1" if settings.get("enabled") else "0",
+                "1" if settings["enabled"] else "0",
+                "1" if settings["landscape"] else "0",
+                "1" if settings["portrait"] else "0",
+                "1" if settings["flip_left"] else "0",
+                "1" if settings["flip_right"] else "0",
+                "1" if settings.get("double_rotate") else "0",
                 settings.get("crop_align", "center"),
                 "1" if settings.get("muted") else "0",
             ]
@@ -240,13 +280,10 @@ class DefaultSettings(RedisBase):
     async def get(self, mode_key: str) -> dict:
         value = await self._get(CACHE_PREFIX + f"default:{mode_key}")
         if not value:
-            return {
-                "enabled": False,
-                "send_as": "document",
-            }
+            return {"enabled": False, "send_as": "document"}
         parts = value.split(",")
         return {
-            "enabled": parts[0] == "1" if len(parts) > 0 else False,
+            "enabled": parts[0] == "1",
             "send_as": (
                 parts[1]
                 if len(parts) > 1 and parts[1] in ("document", "video")
@@ -257,7 +294,7 @@ class DefaultSettings(RedisBase):
     async def set(self, mode_key: str, settings: dict) -> None:
         value = ",".join(
             [
-                "1" if settings.get("enabled") else "0",
+                "1" if settings["enabled"] else "0",
                 "video" if settings.get("send_as") == "video" else "document",
             ]
         )
@@ -285,14 +322,6 @@ class FileIdCache(RedisBase):
         if mode == "note" and settings:
             parts = [
                 "1" if settings.get(key) else "0"
-                for key in ("crop_align", "muted")
-            ]
-            return f"note:{'_'.join(parts)}"
-
-        if mode == "default" and settings:
-            send_as = settings.get("send_as", "document")
-            parts = [
-                "1" if settings.get(key) else "0"
                 for key in (
                     "landscape",
                     "portrait",
@@ -301,8 +330,13 @@ class FileIdCache(RedisBase):
                     "double_rotate",
                 )
             ]
-            parts.append(settings.get("crop_ratio", "none"))
-            return f"default:{send_as}:{'_'.join(parts)}"
+            parts.append(settings.get("crop_align", "center"))
+            parts.append("1" if settings.get("muted") else "0")
+            return f"note:{'_'.join(parts)}"
+
+        if mode == "default" and settings:
+            send_as = settings.get("send_as", "document")
+            return f"default:{send_as}"
 
         return mode
 

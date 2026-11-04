@@ -101,6 +101,16 @@ async def trim_voice(
     return await _run_ffmpeg(*args)
 
 
+async def trim_audio(
+    in_path: str, out_path: str, start: str, end: str | None = None
+) -> bool:
+    args = ["-y", "-ss", start]
+    if end:
+        args.extend(["-to", end])
+    args.extend(["-i", in_path, "-c", "copy", out_path])
+    return await _run_ffmpeg(*args)
+
+
 async def to_note_trim(
     in_path: str,
     out_path: str,

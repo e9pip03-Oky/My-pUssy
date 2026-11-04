@@ -14,8 +14,8 @@ from Reply import (
     MEDIA_DOC,
     MEDIA_NOTE,
     MEDIA_VIDEO,
-    NO_AUDIO_MSG,
     NOTE,
+    NO_AUDIO_MSG,
     NOTE_WAIT_MSG,
     VOICE,
     WAIT_TEXT,
@@ -101,10 +101,10 @@ async def process_entry(
     cache_settings = settings
     if mode == "default":
         chat_id, user_id, mode_key = get_mode_key(message)
-        cache_settings = await animation.get(mode_key)
+        cache_settings = await default.get(mode_key)
     elif mode == "note":
         chat_id, user_id, mode_key = get_mode_key(message)
-        cache_settings = await animation.get(mode_key)
+        cache_settings = await note.get(mode_key)
 
     if file_cache:
         cached = await file_cache.get(entry_url, mode, cache_settings)
@@ -130,14 +130,12 @@ async def process_entry(
             return False
         out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
         chat_id, user_id, mode_key = get_mode_key(message)
-        shared = await animation.get(mode_key)
         note_settings = await note.get(mode_key)
-        merged = {**shared, **note_settings}
-        if await to_note_trim(in_path, out_path, merged, "0"):
+        if await to_note_trim(in_path, out_path, note_settings, "0"):
             sent = await message.reply_video_note(FSInputFile(out_path))
             if file_cache:
                 await file_cache.set(
-                    entry_url, mode, sent.video_note.file_id, merged
+                    entry_url, mode, sent.video_note.file_id, note_settings
                 )
             return True
         return False
@@ -154,20 +152,14 @@ async def process_entry(
     info, in_path = await download_merge(entry_url, base)
     if in_path and os.path.exists(in_path):
         chat_id, user_id, mode_key = get_mode_key(message)
-        shared = await animation.get(mode_key)
         default_state = await default.get(mode_key)
         send_as = default_state.get("send_as", "document")
 
         if send_as == "video":
-            out_path = os.path.join(workdir, f"{temp_id}_def.mp4")
-            success = await to_animation(in_path, out_path, shared)
-            if not success or not os.path.exists(out_path):
-                out_path = in_path
-
-            sent = await message.reply_video(FSInputFile(out_path))
+            sent = await message.reply_video(FSInputFile(in_path))
             if file_cache and sent.video:
                 await file_cache.set(
-                    entry_url, mode, sent.video.file_id, shared
+                    entry_url, mode, sent.video.file_id, cache_settings
                 )
         else:
             ext = os.path.splitext(in_path)[1]
@@ -178,7 +170,7 @@ async def process_entry(
             )
             if file_cache and sent.document:
                 await file_cache.set(
-                    entry_url, mode, sent.document.file_id, shared
+                    entry_url, mode, sent.document.file_id, cache_settings
                 )
         return True
     return False
@@ -278,8 +270,9 @@ async def handle_media_request(
         or reply.audio
         or reply.voice
     )
-    if text == NOTE and not is_video:
-        return False
+    if text == NOTE:
+        if not is_video or reply.video_note:
+            return False
     if text == ANIMATION and not is_video:
         return False
     if text == VOICE:
@@ -369,10 +362,8 @@ async def handle_media_request(
                 await message.reply(LINK_FAIL_TEXT)
         elif is_note:
             out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
-            shared = await animation.get(mode_key)
             note_settings = await note.get(mode_key)
-            merged = {**shared, **note_settings}
-            success = await to_note_trim(in_path, out_path, merged, "0")
+            success = await to_note_trim(in_path, out_path, note_settings, "0")
             if success:
                 sent = await message.reply_video_note(FSInputFile(out_path))
                 await file_cache.set_by_source(

@@ -8,7 +8,7 @@ from aiogram.types import FSInputFile, Message
 
 from Reply import EDIT_FAIL_MSG, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG
 from cAsh import FileIdCache, cleanup, safe_delete, user_dir
-from yTFMe import MAX_FILESIZE, trim_note, trim_video, trim_voice
+from yTFMe import MAX_FILESIZE, trim_audio, trim_note, trim_video, trim_voice
 
 log = logging.getLogger("voicebot")
 EDIT_STATE = {}
@@ -68,6 +68,9 @@ async def handle_pending_edit(
     if media_message.voice:
         media_type = "voice"
         file_id = media_message.voice.file_id
+    elif media_message.audio:
+        media_type = "audio"
+        file_id = media_message.audio.file_id
     elif media_message.video_note:
         media_type = "note"
         file_id = media_message.video_note.file_id
@@ -110,6 +113,8 @@ async def handle_pending_edit(
         try:
             if media_type == "voice":
                 await message.reply_voice(cached)
+            elif media_type == "audio":
+                await message.reply_audio(cached)
             elif media_type == "note":
                 await message.reply_video_note(cached)
             elif media_type == "animation":
@@ -145,6 +150,15 @@ async def handle_pending_edit(
                 sent = await message.reply_voice(FSInputFile(out_path))
                 await file_cache.set_by_source(
                     file_id, f"edit_{media_type}", detail, sent.voice.file_id
+                )
+        elif media_type == "audio":
+            ext = os.path.splitext(in_path)[1]
+            out_path += ext
+            success = await trim_audio(in_path, out_path, start_value, end_value)
+            if success:
+                sent = await message.reply_audio(FSInputFile(out_path))
+                await file_cache.set_by_source(
+                    file_id, f"edit_{media_type}", detail, sent.audio.file_id
                 )
         elif media_type == "note":
             out_path += ".mp4"

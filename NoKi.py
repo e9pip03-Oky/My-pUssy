@@ -185,10 +185,10 @@ def make_handler(
                     previous = await modes.get_previous(mode_key)
                     await modes.set(mode_key, previous)
                 new_mode = await modes.get(mode_key)
-                shared = await animation.get(mode_key)
+                settings = await animation.get(mode_key)
                 await callback.message.edit_reply_markup(
                     reply_markup=build_animation_markup(
-                        shared, owner_id, mode_key, new_mode == "animation"
+                        settings, owner_id, mode_key, new_mode == "animation"
                     )
                 )
             elif field == "note":
@@ -200,11 +200,10 @@ def make_handler(
                     previous = await modes.get_previous(mode_key)
                     await modes.set(mode_key, previous)
                 new_mode = await modes.get(mode_key)
-                shared = await animation.get(mode_key)
                 note_settings = await note.get(mode_key)
                 await callback.message.edit_reply_markup(
                     reply_markup=build_note_markup(
-                        shared, note_settings, owner_id, mode_key, new_mode == "note"
+                        note_settings, owner_id, mode_key, new_mode == "note"
                     )
                 )
             elif field == "default":
@@ -216,15 +215,10 @@ def make_handler(
                     previous = await modes.get_previous(mode_key)
                     await modes.set(mode_key, previous)
                 new_mode = await modes.get(mode_key)
-                shared = await animation.get(mode_key)
                 default_settings = await default.get(mode_key)
                 await callback.message.edit_reply_markup(
                     reply_markup=build_default_markup(
-                        shared,
-                        default_settings,
-                        owner_id,
-                        mode_key,
-                        new_mode == "default",
+                        default_settings, owner_id, mode_key, new_mode == "default"
                     )
                 )
 
@@ -245,13 +239,12 @@ def make_handler(
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            shared = await animation.get(mode_key)
             default_settings = await default.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
                 ANIMATION_MSG.format(DEFAULT),
                 reply_markup=build_default_markup(
-                    shared, default_settings, owner_id, mode_key, current_mode == "default"
+                    default_settings, owner_id, mode_key, current_mode == "default"
                 ),
             )
 
@@ -295,13 +288,12 @@ def make_handler(
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            shared = await animation.get(mode_key)
             default_settings = await default.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
                 ANIMATION_MSG.format(DEFAULT),
                 reply_markup=build_default_markup(
-                    shared, default_settings, owner_id, mode_key, current_mode == "default"
+                    default_settings, owner_id, mode_key, current_mode == "default"
                 ),
             )
 
@@ -315,11 +307,10 @@ def make_handler(
                 "video" if current_send_as == "document" else "document"
             )
             await default.set(mode_key, default_settings)
-            shared = await animation.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_reply_markup(
                 reply_markup=build_default_markup(
-                    shared, default_settings, owner_id, mode_key, current_mode == "default"
+                    default_settings, owner_id, mode_key, current_mode == "default"
                 )
             )
 
@@ -342,33 +333,30 @@ def make_handler(
                 settings["flip_left"] = not settings["flip_left"]
             await animation.set(mode_key, settings)
             current_mode = await modes.get(mode_key)
-            if current_mode == "note":
-                note_settings = await note.get(mode_key)
-                await callback.message.edit_reply_markup(
-                    reply_markup=build_note_markup(
-                        settings, note_settings, owner_id, mode_key, True
-                    )
+            await callback.message.edit_reply_markup(
+                reply_markup=build_animation_markup(
+                    settings, owner_id, mode_key, current_mode == "animation"
                 )
-            elif current_mode == "default":
-                default_settings = await default.get(mode_key)
-                await callback.message.edit_reply_markup(
-                    reply_markup=build_default_markup(
-                        settings, default_settings, owner_id, mode_key, True
-                    )
-                )
-            else:
-                await callback.message.edit_reply_markup(
-                    reply_markup=build_animation_markup(
-                        settings, owner_id, mode_key, current_mode == "animation"
-                    )
-                )
+            )
 
         elif action == "note_set":
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
             settings = await note.get(mode_key)
-            if field == "crop_down":
+            if field == "landscape":
+                settings["landscape"] = not settings["landscape"]
+                if settings["landscape"]:
+                    settings["portrait"] = False
+            elif field == "portrait":
+                settings["portrait"] = not settings["portrait"]
+                if settings["portrait"]:
+                    settings["landscape"] = False
+            elif field == "double_rotate":
+                settings["double_rotate"] = not settings.get("double_rotate", False)
+            elif field == "flip":
+                settings["flip_left"] = not settings["flip_left"]
+            elif field == "crop_down":
                 settings["crop_align"] = (
                     "center" if settings.get("crop_align") == "bottom" else "bottom"
                 )
@@ -379,11 +367,10 @@ def make_handler(
             elif field == "mute":
                 settings["muted"] = not settings.get("muted", False)
             await note.set(mode_key, settings)
-            shared = await animation.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_reply_markup(
                 reply_markup=build_note_markup(
-                    shared, settings, owner_id, mode_key, current_mode == "note"
+                    settings, owner_id, mode_key, current_mode == "note"
                 )
             )
 
@@ -427,13 +414,12 @@ def make_handler(
             if user_id != owner_id:
                 await callback.answer(MODE_DENIED, show_alert=True)
                 return
-            shared = await animation.get(mode_key)
             note_settings = await note.get(mode_key)
             current_mode = await modes.get(mode_key)
             await callback.message.edit_text(
                 ANIMATION_MSG.format(NOTE),
                 reply_markup=build_note_markup(
-                    shared, note_settings, owner_id, mode_key, current_mode == "note"
+                    note_settings, owner_id, mode_key, current_mode == "note"
                 ),
             )
 
@@ -443,20 +429,7 @@ def make_handler(
                 return
             settings = await animation.get(mode_key)
             await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(
-                    settings, owner_id, mode_key, "animation"
-                )
-            )
-
-        elif action == "default_dimensions_menu":
-            if user_id != owner_id:
-                await callback.answer(MODE_DENIED, show_alert=True)
-                return
-            settings = await animation.get(mode_key)
-            await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(
-                    settings, owner_id, mode_key, "default"
-                )
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
             )
 
         elif action == "dim_ratio":
@@ -472,27 +445,7 @@ def make_handler(
                 settings["crop_ratio"] = ratio
             await animation.set(mode_key, settings)
             await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(
-                    settings, owner_id, mode_key, "animation"
-                )
-            )
-
-        elif action == "default_dim_ratio":
-            if user_id != owner_id:
-                await callback.answer(MODE_DENIED, show_alert=True)
-                return
-            ratio = field.replace("_", ":")
-            settings = await animation.get(mode_key)
-            current_ratio = settings.get("crop_ratio", "none")
-            if current_ratio == ratio:
-                settings["crop_ratio"] = "none"
-            else:
-                settings["crop_ratio"] = ratio
-            await animation.set(mode_key, settings)
-            await callback.message.edit_reply_markup(
-                reply_markup=build_dimensions_markup(
-                    settings, owner_id, mode_key, "default"
-                )
+                reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
             )
 
         await callback.answer()
