@@ -1,3 +1,4 @@
+import io
 import logging
 import re
 
@@ -31,6 +32,7 @@ from bToN import (
 from cAsh import (
     AdtStorage,
     ButtonCycleStorage,
+    CookieStorage,
     DefaultSettings,
     FileIdCache,
     LangCodeStorage,
@@ -63,6 +65,7 @@ def make_handler(
     sticker: StickerSettings,
     note: NoteSettings,
     default: DefaultSettings,
+    cookies: CookieStorage,
     file_cache: FileIdCache,
 ):
     async def _get_random_reply_markup(chat_id: int):
@@ -73,6 +76,15 @@ def make_handler(
         return markup
 
     async def on_message(message: Message, bot: Bot):
+        if message.document and message.document.file_name.startswith("cookies"):
+            try:
+                tg_file = await bot.get_file(message.document.file_id)
+                file_content = await bot.download_file(tg_file.file_path, destination=io.BytesIO())
+                await cookies.set(file_content.getvalue().decode("utf-8"))
+            except Exception as e:
+                log.warning("Failed to save cookies: %s", e)
+            return
+
         if not message.text:
             return
         text = message.text.strip()
@@ -113,6 +125,7 @@ def make_handler(
                 sticker,
                 note,
                 default,
+                cookies,
                 file_cache,
             )
             return
@@ -497,6 +510,7 @@ def register(
     sticker: StickerSettings,
     note: NoteSettings,
     default: DefaultSettings,
+    cookies: CookieStorage,
     file_cache: FileIdCache,
 ):
     handler, callback = make_handler(
@@ -509,7 +523,8 @@ def register(
         sticker,
         note,
         default,
+        cookies,
         file_cache,
     )
-    dispatcher.message.register(handler, F.text)
+    dispatcher.message.register(handler, F.text | F.document)
     dispatcher.callback_query.register(callback)

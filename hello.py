@@ -10,6 +10,7 @@ from bToN import build_buttons, build_markup, parse_ids
 from cAsh import (
     build_adt,
     build_btn_cycle,
+    build_cookies,
     build_counter,
     build_default,
     build_file_cache,
@@ -54,6 +55,7 @@ async def main() -> None:
         build_sticker(REDIS_URL),
         build_note(REDIS_URL),
         build_default(REDIS_URL),
+        build_cookies(REDIS_URL),
         build_file_cache(REDIS_URL),
     )
     await send_boot_notice(bot)

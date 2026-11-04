@@ -23,6 +23,7 @@ from Reply import (
 )
 from cAsh import (
     AdtStorage,
+    CookieStorage,
     DefaultSettings,
     FileIdCache,
     LangCodeStorage,
@@ -91,6 +92,7 @@ async def process_entry(
     sticker: StickerSettings,
     note: NoteSettings,
     default: DefaultSettings,
+    cookies: CookieStorage,
     settings: dict | None = None,
     file_cache: FileIdCache | None = None,
 ) -> bool:
@@ -114,9 +116,10 @@ async def process_entry(
             await file_cache.delete(entry_url, mode, cache_settings)
 
     base = os.path.join(workdir, str(temp_id))
+    cookie_data = await cookies.get()
 
     if mode == "voice":
-        info, in_path = await download(entry_url, base)
+        info, in_path = await download(entry_url, base, cookie_data)
         out_path = os.path.join(workdir, f"{temp_id}_voice.ogg")
         if await to_voice(in_path, out_path) and os.path.exists(out_path):
             sent = await message.reply_voice(FSInputFile(out_path))
@@ -125,7 +128,7 @@ async def process_entry(
             return True
         return False
     if mode == "note":
-        info, in_path = await download_merge(entry_url, base)
+        info, in_path = await download_merge(entry_url, base, cookie_data)
         if os.path.getsize(in_path) > MAX_NOTE_FILESIZE:
             return False
         out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
@@ -140,7 +143,7 @@ async def process_entry(
             return True
         return False
     if mode == "sticker":
-        info, in_path = await download_merge(entry_url, base)
+        info, in_path = await download_merge(entry_url, base, cookie_data)
         out_path = os.path.join(workdir, f"{temp_id}_sticker.mp4")
         if await to_sticker(in_path, out_path, settings) and os.path.exists(out_path):
             sent = await message.reply_animation(FSInputFile(out_path))
@@ -149,7 +152,7 @@ async def process_entry(
             return True
         return False
 
-    info, in_path = await download_merge(entry_url, base)
+    info, in_path = await download_merge(entry_url, base, cookie_data)
     if in_path and os.path.exists(in_path):
         chat_id, user_id, mode_key = get_mode_key(message)
         default_state = await default.get(mode_key)
@@ -190,6 +193,7 @@ async def process_url(
     sticker: StickerSettings,
     note: NoteSettings,
     default: DefaultSettings,
+    cookies: CookieStorage,
     file_cache: FileIdCache,
 ) -> None:
     chat_id, user_id, _ = get_mode_key(message)
@@ -207,7 +211,8 @@ async def process_url(
         failed = True
         try:
             workdir = user_dir(chat_id, user_id, bot.id, is_private)
-            entries = await get_entries(url)
+            cookie_data = await cookies.get()
+            entries = await get_entries(url, cookie_data)
             if not entries:
                 raise RuntimeError("no results")
             sent_count = 0
@@ -223,6 +228,7 @@ async def process_url(
                     sticker,
                     note,
                     default,
+                    cookies,
                     settings,
                     file_cache,
                 ):
