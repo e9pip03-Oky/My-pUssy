@@ -192,8 +192,8 @@ def build_default_markup(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_document, btn_video],
             [btn_toggle],
+            [btn_document, btn_video],
             [btn_back],
         ]
     )
