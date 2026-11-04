@@ -318,14 +318,6 @@ class DefaultSettings(RedisBase):
         await self._set(CACHE_PREFIX + f"default:{mode_key}", value)
 
 
-class CookieStorage(RedisBase):
-    async def get(self) -> str | None:
-        return await self._get(CACHE_PREFIX + "cookies")
-
-    async def set(self, content: str) -> None:
-        await self._set(CACHE_PREFIX + "cookies", content)
-
-
 class FileIdCache(RedisBase):
     @staticmethod
     def _signature(mode: str, settings: dict | None) -> str:
@@ -502,10 +494,6 @@ def build_note(url: str | None) -> NoteSettings:
 
 def build_default(url: str | None) -> DefaultSettings:
     return DefaultSettings(_redis_client(url))
-
-
-def build_cookies(url: str | None) -> CookieStorage:
-    return CookieStorage(_redis_client(url))
 
 
 def build_file_cache(url: str | None) -> FileIdCache:

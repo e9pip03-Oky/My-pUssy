@@ -7,34 +7,23 @@ from cAsh import ffmpeg_semaphore
 
 MAX_FILESIZE = 48 * 1024 * 1024
 MAX_NOTE_FILESIZE = 20 * 1024 * 1024
-COOKIES_FILE = "temp_cookies.txt"
 
 
-def _extract_entries(url: str, cookies: str | None) -> list[dict]:
+def _extract_entries(url: str) -> list[dict]:
     options = {
         "quiet": True,
         "no_warnings": True,
         "extract_flat": True,
         "noplaylist": False,
     }
-    if cookies:
-        with open(COOKIES_FILE, "w") as f:
-            f.write(cookies)
-        options["cookiefile"] = COOKIES_FILE
-
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=False)
-    finally:
-        if cookies and os.path.exists(COOKIES_FILE):
-            os.remove(COOKIES_FILE)
-
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(url, download=False)
     if "entries" in info:
         return [entry for entry in info["entries"] if entry]
     return [info]
 
 
-def _download(url: str, base: str, cookies: str | None) -> tuple[dict, str]:
+def _download(url: str, base: str) -> tuple[dict, str]:
     options = {
         "format": "ba/b",
         "outtmpl": base + ".%(ext)s",
@@ -43,26 +32,17 @@ def _download(url: str, base: str, cookies: str | None) -> tuple[dict, str]:
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
     }
-    if cookies:
-        with open(COOKIES_FILE, "w") as f:
-            f.write(cookies)
-        options["cookiefile"] = COOKIES_FILE
-
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
-            path = ydl.prepare_filename(info)
-            if os.path.exists(path):
-                size = os.path.getsize(path)
-                if size > MAX_FILESIZE:
-                    raise RuntimeError(f"file too large: {size}")
-            return info, path
-    finally:
-        if cookies and os.path.exists(COOKIES_FILE):
-            os.remove(COOKIES_FILE)
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(url, download=True)
+        path = ydl.prepare_filename(info)
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            if size > MAX_FILESIZE:
+                raise RuntimeError(f"file too large: {size}")
+        return info, path
 
 
-def _download_merge(url: str, base: str, cookies: str | None) -> tuple[dict, str]:
+def _download_merge(url: str, base: str) -> tuple[dict, str]:
     options = {
         "format": "bv+ba/b",
         "outtmpl": base + ".%(ext)s",
@@ -71,35 +51,26 @@ def _download_merge(url: str, base: str, cookies: str | None) -> tuple[dict, str
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
     }
-    if cookies:
-        with open(COOKIES_FILE, "w") as f:
-            f.write(cookies)
-        options["cookiefile"] = COOKIES_FILE
-
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
-            path = ydl.prepare_filename(info)
-            if os.path.exists(path):
-                size = os.path.getsize(path)
-                if size > MAX_FILESIZE:
-                    raise RuntimeError(f"file too large: {size}")
-            return info, path
-    finally:
-        if cookies and os.path.exists(COOKIES_FILE):
-            os.remove(COOKIES_FILE)
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(url, download=True)
+        path = ydl.prepare_filename(info)
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            if size > MAX_FILESIZE:
+                raise RuntimeError(f"file too large: {size}")
+        return info, path
 
 
-async def get_entries(url: str, cookies: str | None) -> list[dict]:
-    return await asyncio.to_thread(_extract_entries, url, cookies)
+async def get_entries(url: str) -> list[dict]:
+    return await asyncio.to_thread(_extract_entries, url)
 
 
-async def download(url: str, base: str, cookies: str | None) -> tuple[dict, str]:
-    return await asyncio.to_thread(_download, url, base, cookies)
+async def download(url: str, base: str) -> tuple[dict, str]:
+    return await asyncio.to_thread(_download, url, base)
 
 
-async def download_merge(url: str, base: str, cookies: str | None) -> tuple[dict, str]:
-    return await asyncio.to_thread(_download_merge, url, base, cookies)
+async def download_merge(url: str, base: str) -> tuple[dict, str]:
+    return await asyncio.to_thread(_download_merge, url, base)
 
 
 async def _run_ffmpeg(*args: str) -> bool:

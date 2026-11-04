@@ -5,6 +5,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from Reply import (
     BUTTON_NAMES,
+    DEFAULT,
     DEFAULT_SEND_DOCUMENT,
     DEFAULT_SEND_VIDEO,
     DISABLE,
@@ -12,11 +13,9 @@ from Reply import (
     LANG_BACK,
     LANG_ENG,
     LANG_RUS,
-    STICKER,
-    NOTE,
-    VOICE,
-    DEFAULT,
     MODE_LANG,
+    NOTE,
+    STICKER,
     STICKER_CROP_DOWN,
     STICKER_CROP_UP,
     STICKER_DIMENSIONS,
@@ -27,6 +26,7 @@ from Reply import (
     STICKER_LANDSCAPE,
     STICKER_MUTE,
     STICKER_PORTRAIT,
+    VOICE,
 )
 
 log = logging.getLogger("voicebot")
