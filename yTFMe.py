@@ -121,15 +121,8 @@ async def to_note_trim(
     settings = settings or {}
     filters: list[str] = []
 
-    crop_align = settings.get("crop_align", "center")
-    if crop_align == "bottom":
-        y_expr = "ih-min(iw\\,ih)"
-    elif crop_align == "top":
-        y_expr = "0"
-    else:
-        y_expr = "(ih-min(iw\\,ih))/2"
-
-    filters.append(f"crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:{y_expr}")
+    if settings.get("flip_left") or settings.get("flip_right"):
+        filters.append("hflip")
 
     double_rot = settings.get("double_rotate")
     if settings.get("landscape"):
@@ -143,10 +136,16 @@ async def to_note_trim(
         else:
             filters.append("transpose=2")
 
-    filters.append("scale=640:640,setsar=1/1")
+    crop_align = settings.get("crop_align", "center")
+    if crop_align == "bottom":
+        y_expr = "ih-min(iw\\,ih)"
+    elif crop_align == "top":
+        y_expr = "0"
+    else:
+        y_expr = "(ih-min(iw\\,ih))/2"
 
-    if settings.get("flip_left") or settings.get("flip_right"):
-        filters.append("hflip")
+    filters.append(f"crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:{y_expr}")
+    filters.append("scale=640:640,setsar=1/1")
 
     args = ["-y", "-ss", start]
     if end:
@@ -186,6 +185,9 @@ async def to_animation(
     settings = settings or {}
     filters: list[str] = []
 
+    if settings.get("flip_left") or settings.get("flip_right"):
+        filters.append("hflip")
+
     double_rot = settings.get("double_rotate")
     if settings.get("landscape"):
         if double_rot:
@@ -208,9 +210,6 @@ async def to_animation(
                 filters.append(f"crop='iw':'iw*{ratio_h}/{ratio_w}'")
         except Exception:
             pass
-
-    if settings.get("flip_left") or settings.get("flip_right"):
-        filters.append("hflip")
 
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:
