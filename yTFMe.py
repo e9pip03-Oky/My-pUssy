@@ -8,6 +8,11 @@ from cAsh import ffmpeg_semaphore
 MAX_FILESIZE = 48 * 1024 * 1024
 MAX_NOTE_FILESIZE = 20 * 1024 * 1024
 
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36"
+)
+
 
 def _extract_entries(url: str) -> list[dict]:
     options = {
@@ -15,6 +20,7 @@ def _extract_entries(url: str) -> list[dict]:
         "no_warnings": True,
         "extract_flat": True,
         "noplaylist": False,
+        "http_headers": {"User-Agent": USER_AGENT},
     }
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -31,6 +37,7 @@ def _download(url: str, base: str) -> tuple[dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
+        "http_headers": {"User-Agent": USER_AGENT},
     }
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -50,6 +57,7 @@ def _download_merge(url: str, base: str) -> tuple[dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "max_filesize": MAX_FILESIZE,
+        "http_headers": {"User-Agent": USER_AGENT},
     }
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=True)
