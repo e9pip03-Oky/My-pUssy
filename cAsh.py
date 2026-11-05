@@ -4,10 +4,10 @@ import logging
 import os
 
 import redis.asyncio as aioredis
-from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Message
 
 log = logging.getLogger("voicebot")
+
 MAX_CONCURRENT = 3
 MAX_WAITING = 18
 BASE_DIR = "downloads"
@@ -15,6 +15,18 @@ CACHE_PREFIX = "voice:"
 FILE_ID_TTL = 60 * 60 * 24 * 30
 
 ffmpeg_semaphore = asyncio.Semaphore(1)
+
+
+def _hash_key(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _parse_bool(parts: list[str], index: int) -> bool:
+    return len(parts) > index and parts[index] == "1"
+
+
+def _ser_bool(value) -> str:
+    return "1" if value else "0"
 
 
 async def safe_delete(message: Message) -> None:
@@ -30,10 +42,6 @@ def get_mode_key(message: Message) -> tuple[int, int, str]:
     thread_id = message.message_thread_id
     mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
     return chat_id, user_id, mode_key
-
-
-def _hash_key(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
 
 
 class ChatQueue:
@@ -129,7 +137,7 @@ class LangStorage(RedisBase):
         return await self._get(CACHE_PREFIX + f"lang:{mode_key}") == "1"
 
     async def set(self, mode_key: str, active: bool) -> None:
-        await self._set(CACHE_PREFIX + f"lang:{mode_key}", "1" if active else "0")
+        await self._set(CACHE_PREFIX + f"lang:{mode_key}", _ser_bool(active))
 
 
 class LangCodeStorage(RedisBase):
@@ -170,218 +178,6 @@ class ButtonCycleStorage(RedisBase):
         await self._set(CACHE_PREFIX + f"btn_cycle:{chat_id}", str((index + 1) % total))
 
 
-class AnimationSettings(RedisBase):
-    async def get(self, mode_key: str) -> dict:
-        value = await self._get(CACHE_PREFIX + f"animation:{mode_key}")
-        if not value:
-            return {
-                "enabled": False,
-                "landscape": False,
-                "portrait": False,
-                "flip_left": False,
-                "flip_right": False,
-                "double_rotate": False,
-                "crop_ratio": "none",
-                "crop_type": "none",
-            }
-        parts = value.split(",")
-        if len(parts) == 6:
-            return {
-                "enabled": parts[0] == "1",
-                "landscape": parts[1] == "1",
-                "portrait": parts[2] == "1",
-                "flip_left": parts[3] == "1",
-                "flip_right": parts[4] == "1",
-                "double_rotate": False,
-                "crop_ratio": parts[5] if parts[5] != "none" else "none",
-                "crop_type": "none",
-            }
-        elif len(parts) == 7:
-            return {
-                "enabled": parts[0] == "1",
-                "landscape": parts[1] == "1",
-                "portrait": parts[2] == "1",
-                "flip_left": parts[3] == "1",
-                "flip_right": parts[4] == "1",
-                "double_rotate": False,
-                "crop_ratio": parts[5] if parts[5] != "none" else "none",
-                "crop_type": parts[6] if parts[6] != "none" else "none",
-            }
-        return {
-            "enabled": parts[0] == "1",
-            "landscape": parts[1] == "1",
-            "portrait": parts[2] == "1",
-            "flip_left": parts[3] == "1",
-            "flip_right": parts[4] == "1",
-            "double_rotate": parts[5] == "1",
-            "crop_ratio": parts[6] if len(parts) > 6 else "none",
-            "crop_type": parts[7] if len(parts) > 7 else "none",
-        }
-
-    async def set(self, mode_key: str, settings: dict) -> None:
-        value = ",".join(
-            [
-                "1" if settings["enabled"] else "0",
-                "1" if settings["landscape"] else "0",
-                "1" if settings["portrait"] else "0",
-                "1" if settings["flip_left"] else "0",
-                "1" if settings["flip_right"] else "0",
-                "1" if settings.get("double_rotate") else "0",
-                settings.get("crop_ratio", "none"),
-                settings.get("crop_type", "none"),
-            ]
-        )
-        await self._set(CACHE_PREFIX + f"animation:{mode_key}", value)
-
-
-class NoteSettings(RedisBase):
-    async def get(self, mode_key: str) -> dict:
-        value = await self._get(CACHE_PREFIX + f"note:{mode_key}")
-        if not value:
-            return {
-                "enabled": False,
-                "landscape": False,
-                "portrait": False,
-                "flip_left": False,
-                "flip_right": False,
-                "double_rotate": False,
-                "crop_align": "center",
-                "muted": False,
-            }
-        parts = value.split(",")
-        return {
-            "enabled": parts[0] == "1",
-            "landscape": parts[1] == "1",
-            "portrait": parts[2] == "1",
-            "flip_left": parts[3] == "1",
-            "flip_right": parts[4] == "1",
-            "double_rotate": parts[5] == "1" if len(parts) > 5 else False,
-            "crop_align": parts[6] if len(parts) > 6 else "center",
-            "muted": parts[7] == "1" if len(parts) > 7 else False,
-        }
-
-    async def set(self, mode_key: str, settings: dict) -> None:
-        value = ",".join(
-            [
-                "1" if settings["enabled"] else "0",
-                "1" if settings["landscape"] else "0",
-                "1" if settings["portrait"] else "0",
-                "1" if settings["flip_left"] else "0",
-                "1" if settings["flip_right"] else "0",
-                "1" if settings.get("double_rotate") else "0",
-                settings.get("crop_align", "center"),
-                "1" if settings.get("muted") else "0",
-            ]
-        )
-        await self._set(CACHE_PREFIX + f"note:{mode_key}", value)
-
-
-class DefaultSettings(RedisBase):
-    async def get(self, mode_key: str) -> dict:
-        value = await self._get(CACHE_PREFIX + f"default:{mode_key}")
-        if not value:
-            return {"enabled": False, "send_as": "document"}
-        parts = value.split(",")
-        return {
-            "enabled": parts[0] == "1",
-            "send_as": (
-                parts[1]
-                if len(parts) > 1 and parts[1] in ("document", "video")
-                else "document"
-            ),
-        }
-
-    async def set(self, mode_key: str, settings: dict) -> None:
-        value = ",".join(
-            [
-                "1" if settings["enabled"] else "0",
-                "video" if settings.get("send_as") == "video" else "document",
-            ]
-        )
-        await self._set(CACHE_PREFIX + f"default:{mode_key}", value)
-
-
-class FileIdCache(RedisBase):
-    @staticmethod
-    def _signature(mode: str, settings: dict | None) -> str:
-        if mode == "animation" and settings:
-            parts = [
-                "1" if settings.get(key) else "0"
-                for key in (
-                    "landscape",
-                    "portrait",
-                    "flip_left",
-                    "flip_right",
-                    "double_rotate",
-                )
-            ]
-            parts.append(settings.get("crop_ratio", "none"))
-            parts.append(settings.get("crop_type", "none"))
-            return f"animation:{'_'.join(parts)}"
-
-        if mode == "note" and settings:
-            parts = [
-                "1" if settings.get(key) else "0"
-                for key in (
-                    "landscape",
-                    "portrait",
-                    "flip_left",
-                    "flip_right",
-                    "double_rotate",
-                )
-            ]
-            parts.append(settings.get("crop_align", "center"))
-            parts.append("1" if settings.get("muted") else "0")
-            return f"note:{'_'.join(parts)}"
-
-        if mode == "default" and settings:
-            send_as = settings.get("send_as", "document")
-            return f"default:{send_as}"
-
-        return mode
-
-    @staticmethod
-    def key(url: str, mode: str, settings: dict | None = None) -> str:
-        signature = FileIdCache._signature(mode, settings)
-        raw = f"{url}|{signature}"
-        return CACHE_PREFIX + "file_id:" + _hash_key(raw)
-
-    async def get(
-        self, url: str, mode: str, settings: dict | None = None
-    ) -> str | None:
-        return await self._get(self.key(url, mode, settings))
-
-    async def set(
-        self, url: str, mode: str, file_id: str, settings: dict | None = None
-    ) -> None:
-        await self._set(self.key(url, mode, settings), file_id, ttl=FILE_ID_TTL)
-
-    async def delete(self, url: str, mode: str, settings: dict | None = None) -> None:
-        await self._del(self.key(url, mode, settings))
-
-    @staticmethod
-    def source_key(source_file_id: str, action: str, detail: str) -> str:
-        raw = f"{source_file_id}|{action}|{detail}"
-        return CACHE_PREFIX + "src_id:" + _hash_key(raw)
-
-    async def get_by_source(
-        self, source_file_id: str, action: str, detail: str
-    ) -> str | None:
-        return await self._get(self.source_key(source_file_id, action, detail))
-
-    async def set_by_source(
-        self, source_file_id: str, action: str, detail: str, file_id: str
-    ) -> None:
-        await self._set(
-            self.source_key(source_file_id, action, detail), file_id, ttl=FILE_ID_TTL
-        )
-
-    async def delete_by_source(
-        self, source_file_id: str, action: str, detail: str
-    ) -> None:
-        await self._del(self.source_key(source_file_id, action, detail))
-
-
 def _root(chat_id: int, bot_id: int, is_private: bool) -> str:
     return str(bot_id) if is_private else str(chat_id).removeprefix("-")
 
@@ -398,7 +194,7 @@ def cleanup(
     root = _root(chat_id, bot_id, is_private)
     user_path = os.path.join(BASE_DIR, root, str(user_id))
     if os.path.isdir(user_path):
-        prefixes = tuple(str(message_id) for message_id in message_ids if message_id)
+        prefixes = tuple(str(mid) for mid in message_ids if mid)
         if prefixes:
             for filename in os.listdir(user_path):
                 if any(
@@ -416,60 +212,6 @@ def cleanup(
             os.rmdir(path)
         except OSError:
             pass
-
-
-def _redis_client(url: str | None) -> aioredis.Redis | None:
-    if not url:
-        return None
-    return aioredis.from_url(url, health_check_interval=48, socket_keepalive=True)
-
-
-def build_storage(url: str | None) -> RedisStorage | None:
-    return (
-        RedisStorage.from_url(url, health_check_interval=48, socket_keepalive=True)
-        if url
-        else None
-    )
-
-
-def build_counter(url: str | None) -> ReplyCounter:
-    return ReplyCounter(_redis_client(url))
-
-
-def build_modes(url: str | None) -> ModeStorage:
-    return ModeStorage(_redis_client(url))
-
-
-def build_adt(url: str | None) -> AdtStorage:
-    return AdtStorage(_redis_client(url))
-
-
-def build_lang(url: str | None) -> LangStorage:
-    return LangStorage(_redis_client(url))
-
-
-def build_lang_code(url: str | None) -> LangCodeStorage:
-    return LangCodeStorage(_redis_client(url))
-
-
-def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
-    return ButtonCycleStorage(_redis_client(url))
-
-
-def build_animation(url: str | None) -> AnimationSettings:
-    return AnimationSettings(_redis_client(url))
-
-
-def build_note(url: str | None) -> NoteSettings:
-    return NoteSettings(_redis_client(url))
-
-
-def build_default(url: str | None) -> DefaultSettings:
-    return DefaultSettings(_redis_client(url))
-
-
-def build_file_cache(url: str | None) -> FileIdCache:
-    return FileIdCache(_redis_client(url))
 
 
 queue = ChatQueue()

@@ -5,39 +5,19 @@ import random
 from aiogram import Bot
 from aiogram.types import FSInputFile, Message
 
-from Reply import (
-    ANIMATION,
-    LINK_FAIL_TEXT,
-    LOADING_TEXT,
-    MEDIA_ANIMATION,
-    MEDIA_AUDIO,
-    MEDIA_DOC,
-    MEDIA_NOTE,
-    MEDIA_VIDEO,
-    NOTE,
-    NO_AUDIO_MSG,
-    NOTE_WAIT_MSG,
-    VOICE,
-    WAIT_TEXT,
-    WAIT_VOICE_MSG,
-)
-from cAsh import (
+from MesSA_Two import check_is_admin, send_cached
+from Reply import LINK_FAIL_TEXT, LOADING_TEXT, WAIT_TEXT
+from TrANs import fix_format, has_formatting_chars, make_name, process_translation
+from cAsh import cleanup, get_mode_key, queue, safe_delete, user_dir
+from cAsh_Two import (
     AdtStorage,
     AnimationSettings,
     DefaultSettings,
     FileIdCache,
     LangCodeStorage,
-    ModeStorage,
     NoteSettings,
-    cleanup,
-    get_mode_key,
-    queue,
-    safe_delete,
-    user_dir,
 )
-from TrANs import fix_format, has_formatting_chars, make_name, process_translation
 from yTFMe import (
-    MAX_FILESIZE,
     MAX_NOTE_FILESIZE,
     download,
     download_merge,
@@ -50,36 +30,80 @@ from yTFMe import (
 log = logging.getLogger("voicebot")
 
 
-async def check_is_admin(
-    bot: Bot, chat_id: int, user_id: int, is_channel: bool
+async def _send_by_mode(
+    message: Message,
+    entry: dict,
+    entry_url: str,
+    base: str,
+    temp_id: int,
+    mode: str,
+    workdir: str,
+    animation: AnimationSettings,
+    note: NoteSettings,
+    default: DefaultSettings,
+    settings: dict | None,
+    cache_settings: dict | None,
+    file_cache: FileIdCache | None,
 ) -> bool:
-    try:
-        if is_channel:
-            chat = await bot.get_chat(chat_id)
-            return chat.type == "channel"
-        member = await bot.get_chat_member(chat_id, user_id)
-        return member.status in ("administrator", "creator")
-    except Exception:
-        return False
-
-
-async def send_cached(file_id: str, message: Message, mode: str) -> bool:
-    try:
-        if mode == "voice":
-            await message.reply_voice(file_id)
-        elif mode == "note":
-            await message.reply_video_note(file_id)
-        elif mode == "animation":
-            await message.reply_animation(file_id)
-        else:
-            try:
-                await message.reply_video(file_id)
-            except Exception:
-                await message.reply_document(file_id)
+    if mode == "voice":
+        _, in_path = await download(entry_url, base)
+        out_path = os.path.join(workdir, f"{temp_id}_voice.ogg")
+        if not await to_voice(in_path, out_path) or not os.path.exists(out_path):
+            return False
+        sent = await message.reply_voice(FSInputFile(out_path))
+        if file_cache:
+            await file_cache.set(entry_url, mode, sent.voice.file_id, settings)
         return True
-    except Exception as exc:
-        log.warning("cached file_id failed: %s", exc)
+
+    if mode == "note":
+        _, in_path = await download_merge(entry_url, base)
+        if os.path.getsize(in_path) > MAX_NOTE_FILESIZE:
+            return False
+        out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
+        note_settings = await note.get(get_mode_key(message)[2])
+        if not await to_note_trim(in_path, out_path, note_settings, "0"):
+            return False
+        sent = await message.reply_video_note(FSInputFile(out_path))
+        if file_cache:
+            await file_cache.set(
+                entry_url, mode, sent.video_note.file_id, note_settings
+            )
+        return True
+
+    if mode == "animation":
+        _, in_path = await download_merge(entry_url, base)
+        out_path = os.path.join(workdir, f"{temp_id}_animation.mp4")
+        if not await to_animation(in_path, out_path, settings) or not os.path.exists(
+            out_path
+        ):
+            return False
+        sent = await message.reply_animation(FSInputFile(out_path))
+        if file_cache:
+            await file_cache.set(entry_url, mode, sent.animation.file_id, settings)
+        return True
+
+    _, in_path = await download_merge(entry_url, base)
+    if not in_path or not os.path.exists(in_path):
         return False
+    send_as = (await default.get(get_mode_key(message)[2])).get(
+        "send_as", "document"
+    )
+    if send_as == "video":
+        sent = await message.reply_video(FSInputFile(in_path))
+        if file_cache and sent.video:
+            await file_cache.set(entry_url, mode, sent.video.file_id, cache_settings)
+    else:
+        ext = os.path.splitext(in_path)[1]
+        doc_name = f"{make_name(entry)}{ext}"
+        sent = await message.reply_document(
+            FSInputFile(in_path, filename=doc_name),
+            disable_content_type_detection=True,
+        )
+        if file_cache and sent.document:
+            await file_cache.set(
+                entry_url, mode, sent.document.file_id, cache_settings
+            )
+    return True
 
 
 async def process_entry(
@@ -98,12 +122,11 @@ async def process_entry(
     if not entry_url:
         return False
 
+    mode_key = get_mode_key(message)[2]
     cache_settings = settings
     if mode == "default":
-        chat_id, user_id, mode_key = get_mode_key(message)
         cache_settings = await default.get(mode_key)
     elif mode == "note":
-        chat_id, user_id, mode_key = get_mode_key(message)
         cache_settings = await note.get(mode_key)
 
     if file_cache:
@@ -113,67 +136,21 @@ async def process_entry(
                 return True
             await file_cache.delete(entry_url, mode, cache_settings)
 
-    base = os.path.join(workdir, str(temp_id))
-
-    if mode == "voice":
-        info, in_path = await download(entry_url, base)
-        out_path = os.path.join(workdir, f"{temp_id}_voice.ogg")
-        if await to_voice(in_path, out_path) and os.path.exists(out_path):
-            sent = await message.reply_voice(FSInputFile(out_path))
-            if file_cache:
-                await file_cache.set(entry_url, mode, sent.voice.file_id, settings)
-            return True
-        return False
-    if mode == "note":
-        info, in_path = await download_merge(entry_url, base)
-        if os.path.getsize(in_path) > MAX_NOTE_FILESIZE:
-            return False
-        out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
-        chat_id, user_id, mode_key = get_mode_key(message)
-        note_settings = await note.get(mode_key)
-        if await to_note_trim(in_path, out_path, note_settings, "0"):
-            sent = await message.reply_video_note(FSInputFile(out_path))
-            if file_cache:
-                await file_cache.set(
-                    entry_url, mode, sent.video_note.file_id, note_settings
-                )
-            return True
-        return False
-    if mode == "animation":
-        info, in_path = await download_merge(entry_url, base)
-        out_path = os.path.join(workdir, f"{temp_id}_animation.mp4")
-        if await to_animation(in_path, out_path, settings) and os.path.exists(out_path):
-            sent = await message.reply_animation(FSInputFile(out_path))
-            if file_cache:
-                await file_cache.set(entry_url, mode, sent.animation.file_id, settings)
-            return True
-        return False
-
-    info, in_path = await download_merge(entry_url, base)
-    if in_path and os.path.exists(in_path):
-        chat_id, user_id, mode_key = get_mode_key(message)
-        default_state = await default.get(mode_key)
-        send_as = default_state.get("send_as", "document")
-
-        if send_as == "video":
-            sent = await message.reply_video(FSInputFile(in_path))
-            if file_cache and sent.video:
-                await file_cache.set(
-                    entry_url, mode, sent.video.file_id, cache_settings
-                )
-        else:
-            ext = os.path.splitext(in_path)[1]
-            doc_name = f"{make_name(info)}{ext}"
-            sent = await message.reply_document(
-                FSInputFile(in_path, filename=doc_name),
-                disable_content_type_detection=True,
-            )
-            if file_cache and sent.document:
-                await file_cache.set(
-                    entry_url, mode, sent.document.file_id, cache_settings
-                )
-        return True
-    return False
+    return await _send_by_mode(
+        message,
+        entry,
+        entry_url,
+        os.path.join(workdir, str(temp_id)),
+        temp_id,
+        mode,
+        workdir,
+        animation,
+        note,
+        default,
+        settings,
+        cache_settings,
+        file_cache,
+    )
 
 
 async def process_url(
@@ -233,189 +210,29 @@ async def process_url(
     finally:
         if wait_message:
             await safe_delete(wait_message)
-        cleanup(
-            chat_id,
-            user_id,
-            bot.id,
-            is_private,
-            *used_ids,
-        )
+        cleanup(chat_id, user_id, bot.id, is_private, *used_ids)
         await queue.release(chat_id)
 
 
-async def handle_media_request(
-    message: Message,
-    bot: Bot,
-    text: str,
-    animation: AnimationSettings,
-    note: NoteSettings,
-    file_cache: FileIdCache,
-) -> bool:
-    reply = message.reply_to_message
-    is_video = bool(
-        reply.video
-        or reply.video_note
-        or reply.animation
-        or (
-            reply.document
-            and reply.document.mime_type
-            and "video" in reply.document.mime_type
-        )
-    )
-    media = (
-        reply.video
-        or reply.video_note
-        or reply.animation
-        or reply.document
-        or reply.audio
-        or reply.voice
-    )
-    if text == NOTE:
-        if not is_video or reply.video_note:
-            return False
-    if text == ANIMATION and not is_video:
-        return False
-    if text == VOICE:
-        if not media or reply.animation:
-            return False
-
-    is_note = text == NOTE
-    is_animation = text == ANIMATION
-    media_file_id = media.file_id
-    detail = "direct"
-
-    if not is_animation:
-        cached = await file_cache.get_by_source(
-            media_file_id, f"direct_{text}", detail
-        )
-        if cached:
-            try:
-                if text == VOICE:
-                    await message.reply_voice(cached)
-                elif text == NOTE:
-                    await message.reply_video_note(cached)
-                return True
-            except Exception:
-                await file_cache.delete_by_source(
-                    media_file_id, f"direct_{text}", detail
-                )
-
-    if reply.video:
-        media_type = MEDIA_VIDEO
-    elif reply.video_note:
-        media_type = MEDIA_VIDEO
-    elif reply.animation:
-        media_type = MEDIA_VIDEO
-    elif reply.document:
-        media_type = MEDIA_DOC
-    else:
-        media_type = MEDIA_AUDIO
-
-    if reply.animation:
-        source_name = MEDIA_ANIMATION
-    elif reply.video:
-        source_name = MEDIA_VIDEO
-    elif reply.video_note:
-        source_name = MEDIA_NOTE
-    elif reply.document:
-        source_name = MEDIA_DOC
-    else:
-        source_name = MEDIA_AUDIO
-
-    if is_note:
-        target_name = NOTE
-        wait_text = NOTE_WAIT_MSG.format(source_name, target_name)
-    elif is_animation:
-        target_name = ANIMATION
-        wait_text = NOTE_WAIT_MSG.format(source_name, target_name)
-    else:
-        target_name = VOICE
-        wait_text = WAIT_VOICE_MSG.format(source_name, target_name)
-
-    wait_message = await message.reply(wait_text)
-
-    chat_id, user_id, mode_key = get_mode_key(message)
-    is_private = message.chat.type == "private"
-    workdir = user_dir(chat_id, user_id, bot.id, is_private)
-    temp_id = random.randint(100, 999)
-    in_path = os.path.join(workdir, str(temp_id))
-
-    try:
-        telegram_file = await bot.get_file(media.file_id)
-        await bot.download_file(telegram_file.file_path, in_path)
-
-        size = os.path.getsize(in_path)
-        if size > MAX_FILESIZE:
-            await message.reply(LINK_FAIL_TEXT)
-            return True
-        if is_note and size > MAX_NOTE_FILESIZE:
-            await message.reply(LINK_FAIL_TEXT)
-            return True
-
-        if is_animation:
-            out_path = os.path.join(workdir, f"{temp_id}_animation.mp4")
-            settings = await animation.get(mode_key)
-            success = await to_animation(in_path, out_path, settings)
-            if success and os.path.exists(out_path):
-                await message.reply_animation(FSInputFile(out_path))
-            else:
-                await message.reply(LINK_FAIL_TEXT)
-        elif is_note:
-            out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
-            note_settings = await note.get(mode_key)
-            success = await to_note_trim(in_path, out_path, note_settings, "0")
-            if success:
-                sent = await message.reply_video_note(FSInputFile(out_path))
-                await file_cache.set_by_source(
-                    media_file_id, f"direct_{text}", detail, sent.video_note.file_id
-                )
-            else:
-                await message.reply(LINK_FAIL_TEXT)
-        else:
-            out_path = os.path.join(workdir, f"{temp_id}_voice.ogg")
-            success = await to_voice(in_path, out_path)
-            if success and os.path.exists(out_path):
-                sent = await message.reply_voice(FSInputFile(out_path))
-                await file_cache.set_by_source(
-                    media_file_id, f"direct_{text}", detail, sent.voice.file_id
-                )
-            else:
-                await message.reply(NO_AUDIO_MSG.format(source_name))
-    except Exception as exc:
-        log.warning("media failed %s: %s", message.message_id, exc)
-        await message.reply(LINK_FAIL_TEXT)
-    finally:
-        await safe_delete(wait_message)
-        cleanup(
-            chat_id,
-            user_id,
-            bot.id,
-            is_private,
-            temp_id,
-        )
-    return True
-
-
 async def handle_admin_logic(
-    message: Message,
-    bot: Bot,
-    mode_key: str,
-    adt: AdtStorage,
+    message: Message, bot: Bot, mode_key: str, adt: AdtStorage
 ) -> bool:
+    if message.chat.type == "private":
+        return True
     chat_id = message.chat.id
     user_id = message.from_user.id if message.from_user else 0
-    is_channel = message.chat.type == "channel"
-    if message.chat.type != "private":
-        if not await check_is_admin(bot, chat_id, user_id, is_channel):
-            return False
-        old_messages = await adt.get_messages(mode_key)
-        if len(old_messages) >= 3:
-            old = old_messages.pop(0)
-            try:
-                await bot.delete_message(chat_id, old)
-            except Exception:
-                pass
-        await adt.save_messages(mode_key, old_messages)
+    if not await check_is_admin(
+        bot, chat_id, user_id, message.chat.type == "channel"
+    ):
+        return False
+    old_messages = await adt.get_messages(mode_key)
+    if len(old_messages) >= 3:
+        old = old_messages.pop(0)
+        try:
+            await bot.delete_message(chat_id, old)
+        except Exception:
+            pass
+    await adt.save_messages(mode_key, old_messages)
     return True
 
 
@@ -423,12 +240,9 @@ async def handle_translation_logic(
     text: str, mode_key: str, lang_code: LangCodeStorage
 ) -> str | None:
     if has_formatting_chars(text):
-        fixed_text = fix_format(text)
-        if fixed_text != text:
-            return fixed_text
-    elif any(char.isalpha() for char in text):
-        code = await lang_code.get(mode_key)
-        fixed_text = await process_translation(text, code)
-        if fixed_text:
-            return fixed_text
-    return None
+        fixed = fix_format(text)
+        return fixed if fixed != text else None
+    if not any(char.isalpha() for char in text):
+        return None
+    translated = await process_translation(text, await lang_code.get(mode_key))
+    return translated or None

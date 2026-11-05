@@ -9,10 +9,11 @@ UPPER_TARGETS = set("ATFGUJNMLБИА")
 
 
 def has_formatting_chars(text: str) -> bool:
+    lower = text.lower()
     return (
         any(char.upper() in UPPER_TARGETS for char in text)
-        or "ss" in text.lower()
-        or "h" in text.lower()
+        or "ss" in lower
+        or "h" in lower
     )
 
 
@@ -22,20 +23,21 @@ def fix_format(text: str) -> str:
     length = len(text)
     for index, char in enumerate(text):
         is_word_end = (index == length - 1) or not text[index + 1].isalnum()
+        lower = char.lower()
 
-        if char.lower() == "s":
+        if lower == "s":
             result.append("S" if previous == "s" else "s")
         elif char == "h" and is_word_end:
             result.append("H")
-        elif char.lower() == "d" and is_word_end:
+        elif lower == "d" and is_word_end:
             if len(result) >= 2 and result[-1].islower() and result[-2].islower():
                 result.append("D")
             else:
                 result.append(char)
         elif char.upper() in UPPER_TARGETS:
             result.append(char.upper())
-        elif "a" <= char.lower() <= "z" or "а" <= char.lower() <= "я":
-            result.append(char.lower())
+        elif "a" <= lower <= "z" or "а" <= lower <= "я":
+            result.append(lower)
         else:
             result.append(char)
 

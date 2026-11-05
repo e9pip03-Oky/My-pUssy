@@ -5,9 +5,10 @@ import sys
 
 from aiogram import Bot, Dispatcher
 
-import NoKi
+from Nookie import register
+from Reply import BOOT_TEXT
 from bToN import build_buttons, build_markup, parse_ids
-from cAsh import (
+from cAsh_Two import (
     build_adt,
     build_animation,
     build_btn_cycle,
@@ -20,7 +21,6 @@ from cAsh import (
     build_note,
     build_storage,
 )
-from Reply import BOOT_TEXT
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 REDIS_URL = os.environ.get("REDIS_URL")
@@ -31,11 +31,11 @@ log = logging.getLogger("voicebot")
 
 
 async def send_boot_notice(bot: Bot) -> None:
-    entries = build_buttons(parse_ids(BOT_NOTICE))
-    for user_id, name, style in entries:
+    for user_id, name, style in build_buttons(parse_ids(BOT_NOTICE)):
         try:
-            markup = build_markup(name, user_id, style)
-            await bot.send_message(user_id, BOOT_TEXT, reply_markup=markup)
+            await bot.send_message(
+                user_id, BOOT_TEXT, reply_markup=build_markup(name, user_id, style)
+            )
         except Exception as exc:
             log.warning("boot notice to %s failed: %s", user_id, exc)
 
@@ -43,7 +43,7 @@ async def send_boot_notice(bot: Bot) -> None:
 async def main() -> None:
     bot = Bot(token=BOT_TOKEN)
     dispatcher = Dispatcher(storage=build_storage(REDIS_URL))
-    NoKi.register(
+    register(
         dispatcher,
         build_counter(REDIS_URL),
         build_modes(REDIS_URL),

@@ -30,7 +30,11 @@ from Reply import (
 )
 
 log = logging.getLogger("voicebot")
+
 BUTTON_STYLES = ("primary", "success", "danger")
+STYLE_ON = "primary"
+STYLE_OFF = "danger"
+STYLE_BACK = "success"
 
 
 def parse_ids(raw: str) -> list[int]:
@@ -38,7 +42,7 @@ def parse_ids(raw: str) -> list[int]:
 
 
 def build_buttons(ids: list[int]) -> list[tuple[int, str, str]]:
-    result = []
+    result: list[tuple[int, str, str]] = []
     seen: set[int] = set()
     for index, user_id in enumerate(ids):
         if user_id in seen:
@@ -70,39 +74,54 @@ def build_specific_markup(index: int) -> InlineKeyboardMarkup | None:
     return build_markup(name, user_id, style)
 
 
+def _style(active: bool) -> str:
+    return STYLE_ON if active else STYLE_OFF
+
+
+def _btn(label: str, data: str, style: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=label, callback_data=data, style=style)
+
+
+def _toggle(label: str, data: str, active: bool) -> InlineKeyboardButton:
+    return _btn(label, data, _style(active))
+
+
+def _back(action: str, owner_id: int, mode_key: str) -> InlineKeyboardButton:
+    return _btn(LANG_BACK, f"back:{action}|{owner_id}|{mode_key}", STYLE_BACK)
+
+
+def _state_toggle(action: str, owner_id: int, mode_key: str, active: bool):
+    label = DISABLE if active else ENABLE
+    return _toggle(label, f"toggle_state:{action}|{owner_id}|{mode_key}", active)
+
+
+def _setting_btn(
+    label: str, prefix: str, field: str, owner_id: int, mode_key: str, active: bool
+) -> InlineKeyboardButton:
+    return _toggle(label, f"{prefix}:{field}|{owner_id}|{mode_key}", active)
+
+
 def build_mode_markup(
     current_mode: str, lang_active: bool, owner_id: int, mode_key: str
 ) -> InlineKeyboardMarkup:
-    voice_style = "primary" if current_mode == "voice" else "danger"
-    default_style = "primary" if current_mode == "default" else "danger"
-    animation_style = "primary" if current_mode == "animation" else "danger"
-    note_style = "primary" if current_mode == "note" else "danger"
-    lang_style = "success" if lang_active else "danger"
-
-    btn_voice = InlineKeyboardButton(
-        text=VOICE,
-        callback_data=f"toggle:voice|{owner_id}|{mode_key}",
-        style=voice_style,
+    btn_animation = _btn(
+        ANIMATION,
+        f"animation_menu|{owner_id}|{mode_key}",
+        _style(current_mode == "animation"),
     )
-    btn_default = InlineKeyboardButton(
-        text=DEFAULT,
-        callback_data=f"default_menu|{owner_id}|{mode_key}",
-        style=default_style,
+    btn_voice = _toggle(
+        VOICE, f"toggle:voice|{owner_id}|{mode_key}", current_mode == "voice"
     )
-    btn_animation = InlineKeyboardButton(
-        text=ANIMATION,
-        callback_data=f"animation_menu|{owner_id}|{mode_key}",
-        style=animation_style,
+    btn_default = _btn(
+        DEFAULT, f"default_menu|{owner_id}|{mode_key}", _style(current_mode == "default")
     )
-    btn_note = InlineKeyboardButton(
-        text=NOTE,
-        callback_data=f"note_menu|{owner_id}|{mode_key}",
-        style=note_style,
+    btn_note = _btn(
+        NOTE, f"note_menu|{owner_id}|{mode_key}", _style(current_mode == "note")
     )
-    btn_lang = InlineKeyboardButton(
-        text=MODE_LANG,
-        callback_data=f"lang|{owner_id}|{mode_key}",
-        style=lang_style,
+    btn_lang = _btn(
+        MODE_LANG,
+        f"lang|{owner_id}|{mode_key}",
+        STYLE_BACK if lang_active else STYLE_OFF,
     )
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -113,88 +132,25 @@ def build_mode_markup(
     )
 
 
-def build_settings_buttons(
-    settings: dict,
-    owner_id: int,
-    mode_key: str,
-    action_prefix: str,
-    middle_button: InlineKeyboardButton | None = None,
-) -> list[list[InlineKeyboardButton]]:
-    landscape_style = "primary" if settings.get("landscape") else "danger"
-    portrait_style = "primary" if settings.get("portrait") else "danger"
-    flip_style = "primary" if settings.get("flip_left") else "danger"
-    double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
-
-    btn_landscape = InlineKeyboardButton(
-        text=ANIMATION_LANDSCAPE,
-        callback_data=f"{action_prefix}:landscape|{owner_id}|{mode_key}",
-        style=landscape_style,
-    )
-    btn_portrait = InlineKeyboardButton(
-        text=ANIMATION_PORTRAIT,
-        callback_data=f"{action_prefix}:portrait|{owner_id}|{mode_key}",
-        style=portrait_style,
-    )
-    btn_double_rotate = InlineKeyboardButton(
-        text=ANIMATION_DOUBLE_ROTATE,
-        callback_data=f"{action_prefix}:double_rotate|{owner_id}|{mode_key}",
-        style=double_rotate_style,
-    )
-    btn_flip = InlineKeyboardButton(
-        text=ANIMATION_FLIP,
-        callback_data=f"{action_prefix}:flip|{owner_id}|{mode_key}",
-        style=flip_style,
-    )
-
-    row1 = [btn_portrait, btn_landscape]
-    if middle_button:
-        row1 = [btn_portrait, middle_button, btn_landscape]
-
-    return [row1, [btn_double_rotate, btn_flip]]
-
-
 def build_default_markup(
     settings: dict, owner_id: int, mode_key: str, is_active: bool
 ) -> InlineKeyboardMarkup:
     send_as = settings.get("send_as", "document")
-    document_style = "primary" if send_as == "document" else "danger"
-    video_style = "primary" if send_as == "video" else "danger"
-
-    btn_document = InlineKeyboardButton(
-        text=DEFAULT_SEND_DOCUMENT,
-        callback_data=f"default_toggle:document|{owner_id}|{mode_key}",
-        style=document_style,
+    btn_document = _toggle(
+        DEFAULT_SEND_DOCUMENT,
+        f"default_toggle:document|{owner_id}|{mode_key}",
+        send_as == "document",
     )
-    btn_video = InlineKeyboardButton(
-        text=DEFAULT_SEND_VIDEO,
-        callback_data=f"default_toggle:video|{owner_id}|{mode_key}",
-        style=video_style,
+    btn_video = _toggle(
+        DEFAULT_SEND_VIDEO,
+        f"default_toggle:video|{owner_id}|{mode_key}",
+        send_as == "video",
     )
-
-    if is_active:
-        btn_toggle = InlineKeyboardButton(
-            text=DISABLE,
-            callback_data=f"toggle_state:default|{owner_id}|{mode_key}",
-            style="primary",
-        )
-    else:
-        btn_toggle = InlineKeyboardButton(
-            text=ENABLE,
-            callback_data=f"toggle_state:default|{owner_id}|{mode_key}",
-            style="danger",
-        )
-
-    btn_back = InlineKeyboardButton(
-        text=LANG_BACK,
-        callback_data=f"back:default|{owner_id}|{mode_key}",
-        style="success",
-    )
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_toggle],
+            [_state_toggle("default", owner_id, mode_key, is_active)],
             [btn_document, btn_video],
-            [btn_back],
+            [_back("default", owner_id, mode_key)],
         ]
     )
 
@@ -202,43 +158,36 @@ def build_default_markup(
 def build_animation_markup(
     settings: dict, owner_id: int, mode_key: str, is_active: bool
 ) -> InlineKeyboardMarkup:
-    if is_active:
-        btn_toggle = InlineKeyboardButton(
-            text=DISABLE,
-            callback_data=f"toggle_state:animation|{owner_id}|{mode_key}",
-            style="primary",
-        )
-    else:
-        btn_toggle = InlineKeyboardButton(
-            text=ENABLE,
-            callback_data=f"toggle_state:animation|{owner_id}|{mode_key}",
-            style="danger",
-        )
-
     crop_ratio = settings.get("crop_ratio", "none")
-    dimensions_style = "success" if crop_ratio == "none" else "primary"
-
-    btn_dimensions = InlineKeyboardButton(
-        text=ANIMATION_DIMENSIONS,
-        callback_data=f"dimensions_menu|{owner_id}|{mode_key}",
-        style=dimensions_style,
+    btn_dimensions = _btn(
+        ANIMATION_DIMENSIONS,
+        f"dimensions_menu|{owner_id}|{mode_key}",
+        STYLE_BACK if crop_ratio == "none" else STYLE_ON,
     )
 
-    mode_buttons = build_settings_buttons(
-        settings, owner_id, mode_key, "animation_set", btn_toggle
-    )
-
-    btn_back = InlineKeyboardButton(
-        text=LANG_BACK,
-        callback_data=f"back:animation|{owner_id}|{mode_key}",
-        style="success",
-    )
+    def setting(label: str, field: str) -> InlineKeyboardButton:
+        return _setting_btn(
+            label,
+            "animation_set",
+            field,
+            owner_id,
+            mode_key,
+            settings.get(field, False),
+        )
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [btn_dimensions],
-            *mode_buttons,
-            [btn_back],
+            [
+                setting(ANIMATION_PORTRAIT, "portrait"),
+                _state_toggle("animation", owner_id, mode_key, is_active),
+                setting(ANIMATION_LANDSCAPE, "landscape"),
+            ],
+            [
+                setting(ANIMATION_DOUBLE_ROTATE, "double_rotate"),
+                setting(ANIMATION_FLIP, "flip_left"),
+            ],
+            [_back("animation", owner_id, mode_key)],
         ]
     )
 
@@ -246,78 +195,36 @@ def build_animation_markup(
 def build_note_markup(
     settings: dict, owner_id: int, mode_key: str, is_active: bool
 ) -> InlineKeyboardMarkup:
-    if is_active:
-        btn_toggle = InlineKeyboardButton(
-            text=DISABLE,
-            callback_data=f"toggle_state:note|{owner_id}|{mode_key}",
-            style="primary",
-        )
-    else:
-        btn_toggle = InlineKeyboardButton(
-            text=ENABLE,
-            callback_data=f"toggle_state:note|{owner_id}|{mode_key}",
-            style="danger",
-        )
-
-    landscape_style = "primary" if settings.get("landscape") else "danger"
-    portrait_style = "primary" if settings.get("portrait") else "danger"
-    flip_style = "primary" if settings.get("flip_left") else "danger"
-    double_rotate_style = "primary" if settings.get("double_rotate") else "danger"
+    def setting(label: str, field: str, active: bool) -> InlineKeyboardButton:
+        return _setting_btn(label, "note_set", field, owner_id, mode_key, active)
 
     crop_align = settings.get("crop_align", "center")
-    down_style = "primary" if crop_align == "bottom" else "danger"
-    up_style = "primary" if crop_align == "top" else "danger"
-    mute_style = "primary" if settings.get("muted") else "danger"
-
-    btn_landscape = InlineKeyboardButton(
-        text=ANIMATION_LANDSCAPE,
-        callback_data=f"note_set:landscape|{owner_id}|{mode_key}",
-        style=landscape_style,
-    )
-    btn_portrait = InlineKeyboardButton(
-        text=ANIMATION_PORTRAIT,
-        callback_data=f"note_set:portrait|{owner_id}|{mode_key}",
-        style=portrait_style,
-    )
-    btn_double_rotate = InlineKeyboardButton(
-        text=ANIMATION_DOUBLE_ROTATE,
-        callback_data=f"note_set:double_rotate|{owner_id}|{mode_key}",
-        style=double_rotate_style,
-    )
-    btn_flip = InlineKeyboardButton(
-        text=ANIMATION_FLIP,
-        callback_data=f"note_set:flip|{owner_id}|{mode_key}",
-        style=flip_style,
-    )
-    btn_crop_down = InlineKeyboardButton(
-        text=ANIMATION_CROP_DOWN,
-        callback_data=f"note_set:crop_down|{owner_id}|{mode_key}",
-        style=down_style,
-    )
-    btn_crop_up = InlineKeyboardButton(
-        text=ANIMATION_CROP_UP,
-        callback_data=f"note_set:crop_up|{owner_id}|{mode_key}",
-        style=up_style,
-    )
-    btn_mute = InlineKeyboardButton(
-        text=ANIMATION_MUTE,
-        callback_data=f"note_set:mute|{owner_id}|{mode_key}",
-        style=mute_style,
-    )
-
-    btn_back = InlineKeyboardButton(
-        text=LANG_BACK,
-        callback_data=f"back:note|{owner_id}|{mode_key}",
-        style="success",
-    )
+    btn_crop_down = setting(ANIMATION_CROP_DOWN, "crop_down", crop_align == "bottom")
+    btn_crop_up = setting(ANIMATION_CROP_UP, "crop_up", crop_align == "top")
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_double_rotate],
-            [btn_portrait, btn_toggle, btn_landscape],
-            [btn_crop_down, btn_flip, btn_crop_up],
-            [btn_mute],
-            [btn_back],
+            [
+                setting(
+                    ANIMATION_DOUBLE_ROTATE,
+                    "double_rotate",
+                    settings.get("double_rotate", False),
+                )
+            ],
+            [
+                setting(ANIMATION_PORTRAIT, "portrait", settings.get("portrait", False)),
+                _state_toggle("note", owner_id, mode_key, is_active),
+                setting(
+                    ANIMATION_LANDSCAPE, "landscape", settings.get("landscape", False)
+                ),
+            ],
+            [
+                btn_crop_down,
+                setting(ANIMATION_FLIP, "flip_left", settings.get("flip_left", False)),
+                btn_crop_up,
+            ],
+            [setting(ANIMATION_MUTE, "muted", settings.get("muted", False))],
+            [_back("note", owner_id, mode_key)],
         ]
     )
 
@@ -326,31 +233,20 @@ def build_dimensions_markup(
     settings: dict, owner_id: int, mode_key: str
 ) -> InlineKeyboardMarkup:
     crop_ratio = settings.get("crop_ratio", "none")
-
-    ratio_9_16_style = "primary" if crop_ratio == "9:16" else "danger"
-    ratio_16_9_style = "primary" if crop_ratio == "16:9" else "danger"
-
-    btn_9_16 = InlineKeyboardButton(
-        text=ANIMATION_DIM_9_16,
-        callback_data=f"dim_ratio:9_16|{owner_id}|{mode_key}",
-        style=ratio_9_16_style,
+    btn_9_16 = _toggle(
+        ANIMATION_DIM_9_16,
+        f"dim_ratio:9_16|{owner_id}|{mode_key}",
+        crop_ratio == "9:16",
     )
-    btn_16_9 = InlineKeyboardButton(
-        text=ANIMATION_DIM_16_9,
-        callback_data=f"dim_ratio:16_9|{owner_id}|{mode_key}",
-        style=ratio_16_9_style,
+    btn_16_9 = _toggle(
+        ANIMATION_DIM_16_9,
+        f"dim_ratio:16_9|{owner_id}|{mode_key}",
+        crop_ratio == "16:9",
     )
-
-    btn_back = InlineKeyboardButton(
-        text=LANG_BACK,
-        callback_data=f"back:animation|{owner_id}|{mode_key}",
-        style="success",
-    )
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [btn_9_16, btn_16_9],
-            [btn_back],
+            [_back("animation", owner_id, mode_key)],
         ]
     )
 
@@ -358,43 +254,16 @@ def build_dimensions_markup(
 def build_lang_markup(
     lang_active: bool, current_code: str, owner_id: int, mode_key: str
 ) -> InlineKeyboardMarkup:
-    eng_style = "primary" if current_code == "en" else "danger"
-    rus_style = "primary" if current_code == "ru" else "danger"
-
-    btn_eng = InlineKeyboardButton(
-        text=LANG_ENG,
-        callback_data=f"setlang:en|{owner_id}|{mode_key}",
-        style=eng_style,
+    btn_eng = _toggle(
+        LANG_ENG, f"setlang:en|{owner_id}|{mode_key}", current_code == "en"
     )
-    btn_rus = InlineKeyboardButton(
-        text=LANG_RUS,
-        callback_data=f"setlang:ru|{owner_id}|{mode_key}",
-        style=rus_style,
+    btn_rus = _toggle(
+        LANG_RUS, f"setlang:ru|{owner_id}|{mode_key}", current_code == "ru"
     )
-
-    if lang_active:
-        btn_toggle = InlineKeyboardButton(
-            text=DISABLE,
-            callback_data=f"toggle_state:lang|{owner_id}|{mode_key}",
-            style="primary",
-        )
-    else:
-        btn_toggle = InlineKeyboardButton(
-            text=ENABLE,
-            callback_data=f"toggle_state:lang|{owner_id}|{mode_key}",
-            style="danger",
-        )
-
-    btn_back = InlineKeyboardButton(
-        text=LANG_BACK,
-        callback_data=f"back:lang|{owner_id}|{mode_key}",
-        style="success",
-    )
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [btn_toggle],
+            [_state_toggle("lang", owner_id, mode_key, lang_active)],
             [btn_eng, btn_rus],
-            [btn_back],
+            [_back("lang", owner_id, mode_key)],
         ]
     )
