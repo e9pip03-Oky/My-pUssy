@@ -1,6 +1,5 @@
 aiogram
-yt-dlp
-redis
 aiohttp
+redis
+yt-dlp
 googletrans-curl
-curl_cffi
