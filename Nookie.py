@@ -223,7 +223,7 @@ def make_handler(
                     settings["landscape"] = False
             elif field == "double_rotate":
                 settings["double_rotate"] = not settings.get("double_rotate", False)
-            elif field == "flip":
+            elif field == "flip_left":
                 settings["flip_left"] = not settings["flip_left"]
             await animation.set(mode_key, settings)
             await callback.message.edit_reply_markup(
@@ -247,7 +247,7 @@ def make_handler(
                     settings["landscape"] = False
             elif field == "double_rotate":
                 settings["double_rotate"] = not settings.get("double_rotate", False)
-            elif field == "flip":
+            elif field == "flip_left":
                 settings["flip_left"] = not settings["flip_left"]
             elif field == "crop_down":
                 settings["crop_align"] = (
