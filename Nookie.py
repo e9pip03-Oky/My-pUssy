@@ -404,7 +404,7 @@ def register(
 ):
     from Nookie_Two import make_message_handler
 
-    message_handler = make_message_handler(
+    on_message, on_channel_post = make_message_handler(
         counter,
         modes,
         adt,
@@ -420,8 +420,8 @@ def register(
         pending,
         boot_notice,
     )
-    dispatcher.message.register(message_handler, F.text)
-    dispatcher.channel_post.register(message_handler, F.text)
+    dispatcher.message.register(on_message, F.text)
+    dispatcher.channel_post.register(on_channel_post, F.text)
     dispatcher.message.register(make_service_cleaner(notif))
     dispatcher.callback_query.register(
         make_handler(
