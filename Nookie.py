@@ -423,6 +423,7 @@ def register(
     dispatcher.message.register(on_message, F.text)
     dispatcher.channel_post.register(on_channel_post, F.text)
     dispatcher.message.register(make_service_cleaner(notif))
+    dispatcher.channel_post.register(make_service_cleaner(notif))
     dispatcher.callback_query.register(
         make_handler(
             modes,
