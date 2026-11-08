@@ -121,11 +121,11 @@ async def _convert_and_send(
     mode_key: str,
     source_name: str,
     media_file_id: str,
+    detail: str,
     animation: AnimationSettings,
     note: NoteSettings,
     file_cache: FileIdCache,
 ) -> None:
-    detail = "direct"
     cache_action = f"direct_{text}"
 
     if text == ANIMATION:
@@ -177,11 +177,21 @@ async def handle_media_request(
     if not _allowed(text, reply, is_video):
         return False
 
+    chat_id, user_id, mode_key = get_mode_key(message)
     media_file_id = media.file_id
+
+    if text == NOTE:
+        current_settings = await note.get(mode_key)
+        detail = FileIdCache._signature("note", current_settings)
+    elif text == ANIMATION:
+        current_settings = await animation.get(mode_key)
+        detail = FileIdCache._signature("animation", current_settings)
+    else:
+        detail = "direct"
     cache_action = f"direct_{text}"
 
     if text != ANIMATION:
-        cached = await file_cache.get_by_source(media_file_id, cache_action, "direct")
+        cached = await file_cache.get_by_source(media_file_id, cache_action, detail)
         if cached:
             try:
                 if text == VOICE:
@@ -191,14 +201,13 @@ async def handle_media_request(
                 return True
             except Exception:
                 await file_cache.delete_by_source(
-                    media_file_id, cache_action, "direct"
+                    media_file_id, cache_action, detail
                 )
 
     wait_message = await message.reply(_wait_text(text, source_name))
-    chat_id, user_id, mode_key = get_mode_key(message)
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
-    temp_id = random.randint(100, 999)
+    temp_id = random.randint(100000, 999999)
     in_path = os.path.join(workdir, str(temp_id))
 
     try:
@@ -219,6 +228,7 @@ async def handle_media_request(
             mode_key,
             source_name,
             media_file_id,
+            detail,
             animation,
             note,
             file_cache,

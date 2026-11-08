@@ -85,16 +85,28 @@ async def _send_by_mode(
     _, in_path = await download_merge(entry_url, base)
     if not in_path or not os.path.exists(in_path):
         return False
+
     send_as = (await default.get(get_mode_key(message)[2])).get(
         "send_as", "document"
     )
+    ext = os.path.splitext(in_path)[1]
+    doc_name = f"{make_name(entry)}{ext}"
+
     if send_as == "video":
-        sent = await message.reply_video(FSInputFile(in_path))
-        if file_cache and sent.video:
-            await file_cache.set(entry_url, mode, sent.video.file_id, cache_settings)
+        video_path = os.path.join(workdir, doc_name)
+        os.rename(in_path, video_path)
+        try:
+            sent = await message.reply_video(FSInputFile(video_path))
+            if file_cache and sent.video:
+                await file_cache.set(
+                    entry_url, mode, sent.video.file_id, cache_settings
+                )
+        finally:
+            try:
+                os.remove(video_path)
+            except OSError:
+                pass
     else:
-        ext = os.path.splitext(in_path)[1]
-        doc_name = f"{make_name(entry)}{ext}"
         sent = await message.reply_document(
             FSInputFile(in_path, filename=doc_name),
             disable_content_type_detection=True,
@@ -184,7 +196,7 @@ async def process_url(
                 raise RuntimeError("no results")
             sent_count = 0
             for entry in entries:
-                temp_id = random.randint(100, 999)
+                temp_id = random.randint(100000, 999999)
                 used_ids.append(temp_id)
                 if await process_entry(
                     entry,

@@ -8,6 +8,9 @@ MODE_LANG = "لغتي"
 MODE_MSG = "تستطيع تغيير وضع عمل البوت\nمن هنا"
 MODE_DENIED = "ليس مسموح لك القيام\nبهذا التغيير"
 
+NOTIF_OPEN = "فتح الاشعارات"
+NOTIF_CLOSE = "قفل الاشعارات"
+
 DEFAULT_SEND_DOCUMENT = "مستند"
 DEFAULT_SEND_VIDEO = "فيديو"
 
@@ -25,7 +28,7 @@ ANIMATION_DOUBLE_ROTATE = "🔄 ³×"
 ANIMATION_FLIP = "↔️"
 ANIMATION_CROP_DOWN = "⬇️"
 ANIMATION_CROP_UP = "⬆️"
-ANIMATION_MUTE = "🔇"
+ANIMATION_MUTE = "🧁"
 ANIMATION_DIMENSIONS = "الابعاد"
 ANIMATION_DIM_9_16 = "9:16"
 ANIMATION_DIM_16_9 = "16:9"

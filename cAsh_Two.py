@@ -11,6 +11,7 @@ from cAsh import (
     LangCodeStorage,
     LangStorage,
     ModeStorage,
+    NotifStorage,
     RedisBase,
     ReplyCounter,
     _hash_key,
@@ -247,6 +248,10 @@ def build_lang_code(url: str | None) -> LangCodeStorage:
 
 def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
     return ButtonCycleStorage(_redis_client(url))
+
+
+def build_notif(url: str | None) -> NotifStorage:
+    return NotifStorage(_redis_client(url))
 
 
 def build_animation(url: str | None) -> AnimationSettings:

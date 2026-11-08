@@ -32,8 +32,10 @@ from cAsh_Two import (
     LangStorage,
     ModeStorage,
     NoteSettings,
+    NotifStorage,
     ReplyCounter,
 )
+from poeMs import make_service_cleaner
 
 log = logging.getLogger("voicebot")
 
@@ -53,6 +55,7 @@ OWNER_ACTIONS = {
     "note_menu",
     "dimensions_menu",
     "dim_ratio",
+    "toggle_notif",
 }
 
 
@@ -80,6 +83,7 @@ def make_handler(
     animation: AnimationSettings,
     note: NoteSettings,
     default: DefaultSettings,
+    notif: NotifStorage,
 ):
     async def on_callback(callback: CallbackQuery):
         data = callback.data
@@ -135,6 +139,7 @@ def make_handler(
                 await callback.message.edit_reply_markup(reply_markup=markup)
 
         elif action == "back_to_animation":
+            await modes.set_last_menu(mode_key, "animation")
             await callback.message.edit_text(
                 ANIMATION_MSG.format(ANIMATION),
                 reply_markup=build_animation_markup(
@@ -146,6 +151,7 @@ def make_handler(
             )
 
         elif action == "back_to_default":
+            await modes.set_last_menu(mode_key, "main")
             await callback.message.edit_text(
                 ANIMATION_MSG.format(DEFAULT),
                 reply_markup=build_default_markup(
@@ -157,6 +163,7 @@ def make_handler(
             )
 
         elif action == "back":
+            await modes.set_last_menu(mode_key, "main")
             await callback.message.edit_text(
                 MODE_MSG,
                 reply_markup=build_mode_markup(
@@ -164,6 +171,7 @@ def make_handler(
                     await lang.get(mode_key),
                     owner_id,
                     mode_key,
+                    await notif.get(mode_key),
                 ),
             )
 
@@ -180,10 +188,12 @@ def make_handler(
                     await lang.get(mode_key),
                     owner_id,
                     mode_key,
+                    await notif.get(mode_key),
                 )
             )
 
         elif action == "default_menu":
+            await modes.set_last_menu(mode_key, "default")
             await callback.message.edit_text(
                 ANIMATION_MSG.format(DEFAULT),
                 reply_markup=build_default_markup(
@@ -257,7 +267,7 @@ def make_handler(
                 settings["crop_align"] = (
                     "center" if settings.get("crop_align") == "top" else "top"
                 )
-            elif field == "mute":
+            elif field == "muted":
                 settings["muted"] = not settings.get("muted", False)
             await note.set(mode_key, settings)
             await callback.message.edit_reply_markup(
@@ -270,6 +280,7 @@ def make_handler(
             )
 
         elif action == "lang":
+            await modes.set_last_menu(mode_key, "lang")
             await callback.message.edit_text(
                 LANG_MSG,
                 reply_markup=build_lang_markup(
@@ -289,6 +300,7 @@ def make_handler(
             )
 
         elif action == "animation_menu":
+            await modes.set_last_menu(mode_key, "animation")
             await callback.message.edit_text(
                 ANIMATION_MSG.format(ANIMATION),
                 reply_markup=build_animation_markup(
@@ -300,6 +312,7 @@ def make_handler(
             )
 
         elif action == "note_menu":
+            await modes.set_last_menu(mode_key, "note")
             await callback.message.edit_text(
                 ANIMATION_MSG.format(NOTE),
                 reply_markup=build_note_markup(
@@ -328,6 +341,20 @@ def make_handler(
                 reply_markup=build_dimensions_markup(settings, owner_id, mode_key)
             )
 
+        elif action == "toggle_notif":
+            notif_active = await notif.get(mode_key)
+            await notif.set(mode_key, not notif_active)
+            new_active = await notif.get(mode_key)
+            await callback.message.edit_reply_markup(
+                reply_markup=build_mode_markup(
+                    await modes.get(mode_key),
+                    await lang.get(mode_key),
+                    owner_id,
+                    mode_key,
+                    new_active,
+                )
+            )
+
         await callback.answer()
 
     return on_callback
@@ -345,6 +372,7 @@ def register(
     note: NoteSettings,
     default: DefaultSettings,
     file_cache: FileIdCache,
+    notif: NotifStorage,
 ):
     from Nookie_Two import make_message_handler
 
@@ -360,9 +388,11 @@ def register(
             note,
             default,
             file_cache,
+            notif,
         ),
         F.text,
     )
+    dispatcher.message.register(make_service_cleaner(notif))
     dispatcher.callback_query.register(
-        make_handler(modes, lang, lang_code, animation, note, default)
+        make_handler(modes, lang, lang_code, animation, note, default, notif)
     )

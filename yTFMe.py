@@ -162,9 +162,14 @@ async def to_animation(
         try:
             ratio_w, ratio_h = map(int, crop_ratio.split(":"))
             if ratio_w < ratio_h:
-                filters.append(f"crop='ih*{ratio_w}/{ratio_h}':'ih'")
+                crop_w = f"ih*{ratio_w}/{ratio_h}"
+                crop_h = "ih"
             else:
-                filters.append(f"crop='iw':'iw*{ratio_h}/{ratio_w}'")
+                crop_w = "iw"
+                crop_h = f"iw*{ratio_h}/{ratio_w}"
+            filters.append(
+                f"crop={crop_w}:{crop_h}:(iw-{crop_w})/2:(ih-{crop_h})/2"
+            )
         except Exception:
             pass
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]

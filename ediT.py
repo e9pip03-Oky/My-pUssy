@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import os
 import random
 import re
@@ -23,6 +24,20 @@ TRIM_FUNCS = {
     "animation": (trim_video, "reply_animation", ".mp4"),
     "video": (trim_video, "reply_video", None),
 }
+
+
+def _detect_ext(media, in_path: str) -> str:
+    file_name = getattr(media, "file_name", None)
+    if file_name:
+        ext = os.path.splitext(file_name)[1]
+        if ext:
+            return ext
+    mime = getattr(media, "mime_type", None)
+    if mime:
+        guessed = mimetypes.guess_extension(mime.split(";")[0].strip())
+        if guessed:
+            return guessed
+    return os.path.splitext(in_path)[1]
 
 
 def _parse_time(value: str) -> float | None:
@@ -83,11 +98,11 @@ async def set_edit_state(message: Message, bot: Bot) -> None:
     }
 
 
-def _media_of(media_message: Message) -> tuple[str, str] | None:
+def _media_of(media_message: Message) -> tuple[str, str, object] | None:
     for field in MEDIA_FIELDS:
         media = getattr(media_message, field, None)
         if media:
-            return field, media.file_id
+            return field, media.file_id, media
     return None
 
 
@@ -112,7 +127,7 @@ async def handle_pending_edit(
     media_info = _media_of(media_message)
     if not media_info:
         return False
-    media_type, file_id = media_info
+    media_type, file_id, media = media_info
 
     parsed = _parse_range(message.text)
     if parsed == "format":
@@ -152,7 +167,7 @@ async def handle_pending_edit(
             return True
 
         trim_func, reply_method, forced_ext = TRIM_FUNCS[media_type]
-        ext = forced_ext or os.path.splitext(in_path)[1]
+        ext = forced_ext or _detect_ext(media, in_path)
         out_path += ext
 
         if not await trim_func(in_path, out_path, start_value, end_value):

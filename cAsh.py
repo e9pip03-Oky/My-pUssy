@@ -131,6 +131,12 @@ class ModeStorage(RedisBase):
     async def set_previous(self, mode_key: str, mode: str) -> None:
         await self._set(CACHE_PREFIX + f"prev_mode:{mode_key}", mode)
 
+    async def get_last_menu(self, mode_key: str) -> str:
+        return await self._get(CACHE_PREFIX + f"last_menu:{mode_key}") or "main"
+
+    async def set_last_menu(self, mode_key: str, menu: str) -> None:
+        await self._set(CACHE_PREFIX + f"last_menu:{mode_key}", menu)
+
 
 class LangStorage(RedisBase):
     async def get(self, mode_key: str) -> bool:
@@ -176,6 +182,14 @@ class ButtonCycleStorage(RedisBase):
     async def advance(self, chat_id: int, total: int) -> None:
         index = await self.get_index(chat_id)
         await self._set(CACHE_PREFIX + f"btn_cycle:{chat_id}", str((index + 1) % total))
+
+
+class NotifStorage(RedisBase):
+    async def get(self, mode_key: str) -> bool:
+        return await self._get(CACHE_PREFIX + f"notif:{mode_key}") == "1"
+
+    async def set(self, mode_key: str, active: bool) -> None:
+        await self._set(CACHE_PREFIX + f"notif:{mode_key}", _ser_bool(active))
 
 
 def _root(chat_id: int, bot_id: int, is_private: bool) -> str:

@@ -19,6 +19,7 @@ from cAsh_Two import (
     build_lang_code,
     build_modes,
     build_note,
+    build_notif,
     build_storage,
 )
 
@@ -55,6 +56,7 @@ async def main() -> None:
         build_note(REDIS_URL),
         build_default(REDIS_URL),
         build_file_cache(REDIS_URL),
+        build_notif(REDIS_URL),
     )
     await send_boot_notice(bot)
     await dispatcher.start_polling(bot, drop_pending_updates=True)

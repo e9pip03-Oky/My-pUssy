@@ -26,6 +26,8 @@ from Reply import (
     LANG_RUS,
     MODE_LANG,
     NOTE,
+    NOTIF_CLOSE,
+    NOTIF_OPEN,
     VOICE,
 )
 
@@ -102,7 +104,11 @@ def _setting_btn(
 
 
 def build_mode_markup(
-    current_mode: str, lang_active: bool, owner_id: int, mode_key: str
+    current_mode: str,
+    lang_active: bool,
+    owner_id: int,
+    mode_key: str,
+    notif_active: bool = False,
 ) -> InlineKeyboardMarkup:
     btn_animation = _btn(
         ANIMATION,
@@ -123,11 +129,16 @@ def build_mode_markup(
         f"lang|{owner_id}|{mode_key}",
         STYLE_BACK if lang_active else STYLE_OFF,
     )
+    btn_notif = _btn(
+        NOTIF_CLOSE if notif_active else NOTIF_OPEN,
+        f"toggle_notif|{owner_id}|{mode_key}",
+        STYLE_BACK if notif_active else STYLE_OFF,
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [btn_animation],
             [btn_voice, btn_default, btn_note],
-            [btn_lang],
+            [btn_lang, btn_notif],
         ]
     )
 
@@ -209,7 +220,8 @@ def build_note_markup(
                     ANIMATION_DOUBLE_ROTATE,
                     "double_rotate",
                     settings.get("double_rotate", False),
-                )
+                ),
+                setting(ANIMATION_MUTE, "muted", settings.get("muted", False)),
             ],
             [
                 setting(ANIMATION_PORTRAIT, "portrait", settings.get("portrait", False)),
@@ -223,7 +235,6 @@ def build_note_markup(
                 setting(ANIMATION_FLIP, "flip_left", settings.get("flip_left", False)),
                 btn_crop_up,
             ],
-            [setting(ANIMATION_MUTE, "muted", settings.get("muted", False))],
             [_back("note", owner_id, mode_key)],
         ]
     )
@@ -246,7 +257,13 @@ def build_dimensions_markup(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [btn_9_16, btn_16_9],
-            [_back("animation", owner_id, mode_key)],
+            [
+                _btn(
+                    LANG_BACK,
+                    f"back_to_animation|{owner_id}|{mode_key}",
+                    STYLE_BACK,
+                )
+            ],
         ]
     )
 
@@ -264,6 +281,12 @@ def build_lang_markup(
         inline_keyboard=[
             [_state_toggle("lang", owner_id, mode_key, lang_active)],
             [btn_eng, btn_rus],
-            [_back("lang", owner_id, mode_key)],
+            [
+                _btn(
+                    LANG_BACK,
+                    f"back_to_default|{owner_id}|{mode_key}",
+                    STYLE_BACK,
+                )
+            ],
         ]
     )
