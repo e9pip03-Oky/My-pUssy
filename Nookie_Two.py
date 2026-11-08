@@ -128,8 +128,9 @@ def make_message_handler(
             return
         text = message.text.strip()
 
-        if await handle_pending_edit(message, bot, file_cache):
-            return
+        if message.from_user is not None:
+            if await handle_pending_edit(message, bot, file_cache):
+                return
 
         if message.reply_to_message and text in (NOTE, VOICE, ANIMATION):
             if await handle_media_request(
@@ -137,7 +138,11 @@ def make_message_handler(
             ):
                 return
 
-        if message.reply_to_message and text.startswith(EDIT_KEYWORDS):
+        if (
+            message.from_user is not None
+            and message.reply_to_message
+            and text.startswith(EDIT_KEYWORDS)
+        ):
             reply = message.reply_to_message
             if reply.voice or reply.video_note or reply.video or reply.animation:
                 await set_edit_state(message, bot)
