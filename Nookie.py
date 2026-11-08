@@ -106,7 +106,18 @@ def make_handler(
             )
             return
 
-        if user_id != owner_id and action in OWNER_ACTIONS:
+        if callback.message.chat.type == "channel":
+            try:
+                member = await callback.bot.get_chat_member(
+                    callback.message.chat.id, user_id
+                )
+                if member.status not in ("administrator", "creator"):
+                    await _deny(callback)
+                    return
+            except Exception:
+                await _deny(callback)
+                return
+        elif user_id != owner_id and action in OWNER_ACTIONS:
             await _deny(callback)
             return
 
@@ -393,25 +404,24 @@ def register(
 ):
     from Nookie_Two import make_message_handler
 
-    dispatcher.message.register(
-        make_message_handler(
-            counter,
-            modes,
-            adt,
-            lang,
-            lang_code,
-            btn_cycle,
-            animation,
-            note,
-            default,
-            file_cache,
-            notif,
-            allowed,
-            pending,
-            boot_notice,
-        ),
-        F.text,
+    message_handler = make_message_handler(
+        counter,
+        modes,
+        adt,
+        lang,
+        lang_code,
+        btn_cycle,
+        animation,
+        note,
+        default,
+        file_cache,
+        notif,
+        allowed,
+        pending,
+        boot_notice,
     )
+    dispatcher.message.register(message_handler, F.text)
+    dispatcher.channel_post.register(message_handler, F.text)
     dispatcher.message.register(make_service_cleaner(notif))
     dispatcher.callback_query.register(
         make_handler(

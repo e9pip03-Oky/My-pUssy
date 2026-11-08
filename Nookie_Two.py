@@ -112,14 +112,12 @@ def make_message_handler(
     pending: PendingStorage,
     boot_notice: str,
 ):
-    async def _random_reply(
-        message: Message, chat_id: int, user_id: int
-    ):
+    async def _random_reply(message: Message, chat_id: int, user_id: int):
         index = await counter.next_index(user_id, len(RANDOM_REPLIES))
         markup = await get_random_reply_markup(chat_id, btn_cycle, boot_notice)
         await message.reply(RANDOM_REPLIES[index], reply_markup=markup)
 
-    async def on_message(message: Message, bot: Bot):
+    async def _process(message: Message, bot: Bot):
         chat_id, user_id, mode_key = get_mode_key(message)
 
         if message.chat.type == "private":
@@ -181,10 +179,9 @@ def make_message_handler(
                     notif_active,
                 )
                 sent = await message.reply(text_to_send, reply_markup=markup)
-                if message.chat.type != "private":
-                    old = await adt.get_messages(mode_key)
-                    old.append(sent.message_id)
-                    await adt.save_messages(mode_key, old)
+                old = await adt.get_messages(mode_key)
+                old.append(sent.message_id)
+                await adt.save_messages(mode_key, old)
                 return
 
         if await lang.get(mode_key):
@@ -196,4 +193,10 @@ def make_message_handler(
         if message.chat.type == "private" or text == BOT_TRIGGER:
             await _random_reply(message, chat_id, user_id)
 
-    return on_message
+    async def on_message(message: Message, bot: Bot):
+        await _process(message, bot)
+
+    async def on_channel_post(message: Message, bot: Bot):
+        await _process(message, bot)
+
+    return on_message, on_channel_post

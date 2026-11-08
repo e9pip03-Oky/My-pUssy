@@ -229,14 +229,13 @@ async def process_url(
 async def handle_admin_logic(
     message: Message, bot: Bot, mode_key: str, adt: AdtStorage
 ) -> bool:
-    if message.chat.type == "private":
-        return True
     chat_id = message.chat.id
-    user_id = message.from_user.id if message.from_user else 0
-    if not await check_is_admin(
-        bot, chat_id, user_id, message.chat.type == "channel"
-    ):
-        return False
+    if message.chat.type != "private":
+        user_id = message.from_user.id if message.from_user else 0
+        if not await check_is_admin(
+            bot, chat_id, user_id, message.chat.type == "channel"
+        ):
+            return False
     old_messages = await adt.get_messages(mode_key)
     if len(old_messages) >= 3:
         old = old_messages.pop(0)
