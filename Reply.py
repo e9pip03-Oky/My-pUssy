@@ -11,6 +11,12 @@ MODE_DENIED = "ليس مسموح لك القيام\nبهذا التغيير"
 NOTIF_OPEN = "فتح الاشعارات"
 NOTIF_CLOSE = "قفل الاشعارات"
 
+PERM_REQUEST_MSG = "يود هذا الطيز استعمال البوت هل\nتسمح بذلك"
+PERM_ALLOW_BTN = "سماح"
+PERM_DENY_BTN = "رفض"
+PERM_ALLOWED_MSG = "تم السماح للطيز باستعمال البوت\nيستطيع ذلك"
+PERM_DENIED_MSG = "تم رفض هذا الطيز من استعمال البوت\nلن يستطيع ذلك"
+
 DEFAULT_SEND_DOCUMENT = "مستند"
 DEFAULT_SEND_VIDEO = "فيديو"
 

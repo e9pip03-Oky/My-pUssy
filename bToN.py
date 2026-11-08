@@ -1,5 +1,4 @@
 import logging
-import os
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -65,8 +64,10 @@ def build_markup(name: str, user_id: int, style: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
 
-def build_specific_markup(index: int) -> InlineKeyboardMarkup | None:
-    ids = parse_ids(os.environ.get("boT_NoTice", ""))
+def build_specific_markup(
+    index: int, boot_notice: str
+) -> InlineKeyboardMarkup | None:
+    ids = parse_ids(boot_notice)
     if not ids:
         return None
     unique_ids = list(dict.fromkeys(ids))

@@ -13,6 +13,7 @@ MAX_WAITING = 18
 BASE_DIR = "downloads"
 CACHE_PREFIX = "voice:"
 FILE_ID_TTL = 60 * 60 * 24 * 30
+PENDING_TTL = 6 * 60 * 60
 
 ffmpeg_semaphore = asyncio.Semaphore(1)
 
@@ -190,6 +191,29 @@ class NotifStorage(RedisBase):
 
     async def set(self, mode_key: str, active: bool) -> None:
         await self._set(CACHE_PREFIX + f"notif:{mode_key}", _ser_bool(active))
+
+
+class AllowedStorage(RedisBase):
+    async def get(self, user_id: int) -> bool | None:
+        value = await self._get(CACHE_PREFIX + f"allowed:{user_id}")
+        if value is None:
+            return None
+        return value == "1"
+
+    async def set(self, user_id: int, allowed: bool) -> None:
+        await self._set(CACHE_PREFIX + f"allowed:{user_id}", _ser_bool(allowed))
+
+
+class PendingStorage(RedisBase):
+    async def get(self, user_id: int) -> bool:
+        return await self._get(CACHE_PREFIX + f"pending:{user_id}") == "1"
+
+    async def set(self, user_id: int, pending: bool) -> None:
+        key = CACHE_PREFIX + f"pending:{user_id}"
+        if pending:
+            await self._set(key, "1", ttl=PENDING_TTL)
+        else:
+            await self._del(key)
 
 
 def _root(chat_id: int, bot_id: int, is_private: bool) -> str:

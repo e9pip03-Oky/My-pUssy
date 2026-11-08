@@ -24,6 +24,7 @@ from bToN import (
 )
 from cAsh_Two import (
     AdtStorage,
+    AllowedStorage,
     AnimationSettings,
     ButtonCycleStorage,
     DefaultSettings,
@@ -33,8 +34,10 @@ from cAsh_Two import (
     ModeStorage,
     NoteSettings,
     NotifStorage,
+    PendingStorage,
     ReplyCounter,
 )
+from perM import handle_perm_callback
 from poeMs import make_service_cleaner
 
 log = logging.getLogger("voicebot")
@@ -59,9 +62,11 @@ OWNER_ACTIONS = {
 }
 
 
-async def get_random_reply_markup(chat_id: int, btn_cycle: ButtonCycleStorage):
+async def get_random_reply_markup(
+    chat_id: int, btn_cycle: ButtonCycleStorage, boot_notice: str
+):
     index = await btn_cycle.get_index(chat_id)
-    markup = build_specific_markup(index)
+    markup = build_specific_markup(index, boot_notice)
     await btn_cycle.advance(chat_id, len(BUTTON_NAMES))
     return markup
 
@@ -84,6 +89,9 @@ def make_handler(
     note: NoteSettings,
     default: DefaultSettings,
     notif: NotifStorage,
+    allowed: AllowedStorage,
+    pending: PendingStorage,
+    boot_notice: str,
 ):
     async def on_callback(callback: CallbackQuery):
         data = callback.data
@@ -91,6 +99,12 @@ def make_handler(
             return
         action, field, owner_id, mode_key = _parse_data(data)
         user_id = callback.from_user.id
+
+        if action == "perm":
+            await handle_perm_callback(
+                callback, field, owner_id, allowed, pending, boot_notice
+            )
+            return
 
         if user_id != owner_id and action in OWNER_ACTIONS:
             await _deny(callback)
@@ -373,6 +387,9 @@ def register(
     default: DefaultSettings,
     file_cache: FileIdCache,
     notif: NotifStorage,
+    allowed: AllowedStorage,
+    pending: PendingStorage,
+    boot_notice: str,
 ):
     from Nookie_Two import make_message_handler
 
@@ -389,10 +406,24 @@ def register(
             default,
             file_cache,
             notif,
+            allowed,
+            pending,
+            boot_notice,
         ),
         F.text,
     )
     dispatcher.message.register(make_service_cleaner(notif))
     dispatcher.callback_query.register(
-        make_handler(modes, lang, lang_code, animation, note, default, notif)
+        make_handler(
+            modes,
+            lang,
+            lang_code,
+            animation,
+            note,
+            default,
+            notif,
+            allowed,
+            pending,
+            boot_notice,
+        )
     )

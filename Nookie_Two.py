@@ -28,6 +28,7 @@ from bToN import (
 from cAsh import get_mode_key
 from cAsh_Two import (
     AdtStorage,
+    AllowedStorage,
     AnimationSettings,
     ButtonCycleStorage,
     DefaultSettings,
@@ -37,11 +38,13 @@ from cAsh_Two import (
     ModeStorage,
     NoteSettings,
     NotifStorage,
+    PendingStorage,
     ReplyCounter,
 )
 from ediT import handle_pending_edit, set_edit_state
 from MesSA import handle_admin_logic, handle_translation_logic, process_url
 from MesSA_Two import handle_media_request
+from perM import authorize
 
 log = logging.getLogger("voicebot")
 URL_RE = re.compile(r"https?://\S+")
@@ -105,17 +108,27 @@ def make_message_handler(
     default: DefaultSettings,
     file_cache: FileIdCache,
     notif: NotifStorage,
+    allowed: AllowedStorage,
+    pending: PendingStorage,
+    boot_notice: str,
 ):
-    async def _random_reply(message: Message, chat_id: int, user_id: int):
+    async def _random_reply(
+        message: Message, chat_id: int, user_id: int
+    ):
         index = await counter.next_index(user_id, len(RANDOM_REPLIES))
-        markup = await get_random_reply_markup(chat_id, btn_cycle)
+        markup = await get_random_reply_markup(chat_id, btn_cycle, boot_notice)
         await message.reply(RANDOM_REPLIES[index], reply_markup=markup)
 
     async def on_message(message: Message, bot: Bot):
+        chat_id, user_id, mode_key = get_mode_key(message)
+
+        if message.chat.type == "private":
+            if not await authorize(message, allowed, pending, bot, boot_notice):
+                return
+
         if not message.text:
             return
         text = message.text.strip()
-        chat_id, user_id, mode_key = get_mode_key(message)
 
         if await handle_pending_edit(message, bot, file_cache):
             return

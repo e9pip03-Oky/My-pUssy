@@ -10,6 +10,7 @@ from Reply import BOOT_TEXT
 from bToN import build_buttons, build_markup, parse_ids
 from cAsh_Two import (
     build_adt,
+    build_allowed,
     build_animation,
     build_btn_cycle,
     build_counter,
@@ -20,6 +21,7 @@ from cAsh_Two import (
     build_modes,
     build_note,
     build_notif,
+    build_pending,
     build_storage,
 )
 
@@ -57,6 +59,9 @@ async def main() -> None:
         build_default(REDIS_URL),
         build_file_cache(REDIS_URL),
         build_notif(REDIS_URL),
+        build_allowed(REDIS_URL),
+        build_pending(REDIS_URL),
+        BOT_NOTICE,
     )
     await send_boot_notice(bot)
     await dispatcher.start_polling(bot, drop_pending_updates=True)

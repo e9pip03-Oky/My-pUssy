@@ -7,11 +7,13 @@ from cAsh import (
     CACHE_PREFIX,
     FILE_ID_TTL,
     AdtStorage,
+    AllowedStorage,
     ButtonCycleStorage,
     LangCodeStorage,
     LangStorage,
     ModeStorage,
     NotifStorage,
+    PendingStorage,
     RedisBase,
     ReplyCounter,
     _hash_key,
@@ -252,6 +254,14 @@ def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
 
 def build_notif(url: str | None) -> NotifStorage:
     return NotifStorage(_redis_client(url))
+
+
+def build_allowed(url: str | None) -> AllowedStorage:
+    return AllowedStorage(_redis_client(url))
+
+
+def build_pending(url: str | None) -> PendingStorage:
+    return PendingStorage(_redis_client(url))
 
 
 def build_animation(url: str | None) -> AnimationSettings:
