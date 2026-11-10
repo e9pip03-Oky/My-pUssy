@@ -5,8 +5,8 @@ import yt_dlp
 
 from cAsh import ffmpeg_semaphore
 
-MAX_FILESIZE = 48 * 1024 * 1024
-MAX_NOTE_FILESIZE = 20 * 1024 * 1024
+MAX_FILESIZE = 439 * 1024 * 1024
+MAX_NOTE_FILESIZE = 439 * 1024 * 1024
 
 
 def _extract_entries(url: str) -> list[dict]:
@@ -84,7 +84,7 @@ async def trim_voice(
     in_path: str, out_path: str, start: str, end: str | None = None
 ) -> bool:
     args = _trim_args(start, end, in_path)
-    args.extend(["-c", "copy", "-f", "ogg", out_path])
+    args.extend(["-c", "copy", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -97,6 +97,14 @@ async def trim_audio(
 
 
 async def trim_note(
+    in_path: str, out_path: str, start: str, end: str | None = None
+) -> bool:
+    args = _trim_args(start, end, in_path)
+    args.extend(["-c:v", "libx264", "-c:a", "copy", out_path])
+    return await _run_ffmpeg(*args)
+
+
+async def trim_animation(
     in_path: str, out_path: str, start: str, end: str | None = None
 ) -> bool:
     args = _trim_args(start, end, in_path)
@@ -143,12 +151,13 @@ async def to_note_trim(
         "top": "0",
     }.get(crop_align, "(ih-min(iw\\,ih))/2")
     filters.append(f"crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:{y_expr}")
+    filters.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
     filters.append("scale=640:640,setsar=1/1")
     args = _trim_args(start, end, in_path)
     args.extend(["-t", "60", "-vf", ",".join(filters)])
     if settings.get("muted"):
         args.append("-an")
-    args.extend(["-c:v", "libx264", out_path])
+    args.extend(["-c:v", "libx264", "-f", "mp4", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -172,8 +181,9 @@ async def to_animation(
             )
         except Exception:
             pass
+    filters.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:
         args.extend(["-vf", ",".join(filters)])
-    args.append(out_path)
+    args.extend(["-f", "mp4", out_path])
     return await _run_ffmpeg(*args)

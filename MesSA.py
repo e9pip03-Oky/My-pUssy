@@ -10,7 +10,6 @@ from Reply import LINK_FAIL_TEXT, LOADING_TEXT, WAIT_TEXT
 from TrANs import fix_format, has_formatting_chars, make_name, process_translation
 from cAsh import cleanup, get_mode_key, queue, safe_delete, user_dir
 from cAsh_Two import (
-    AdtStorage,
     AnimationSettings,
     DefaultSettings,
     FileIdCache,
@@ -227,23 +226,15 @@ async def process_url(
 
 
 async def handle_admin_logic(
-    message: Message, bot: Bot, mode_key: str, adt: AdtStorage
+    message: Message, bot: Bot, mode_key: str, adt
 ) -> bool:
-    chat_id = message.chat.id
     if message.chat.type != "private":
+        chat_id = message.chat.id
         user_id = message.from_user.id if message.from_user else 0
         if not await check_is_admin(
             bot, chat_id, user_id, message.chat.type == "channel"
         ):
             return False
-    old_messages = await adt.get_messages(mode_key)
-    if len(old_messages) >= 3:
-        old = old_messages.pop(0)
-        try:
-            await bot.delete_message(chat_id, old)
-        except Exception:
-            pass
-    await adt.save_messages(mode_key, old_messages)
     return True
 
 

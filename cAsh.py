@@ -4,6 +4,7 @@ import logging
 import os
 
 import redis.asyncio as aioredis
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Message
 
 log = logging.getLogger("voicebot")
@@ -12,7 +13,6 @@ MAX_CONCURRENT = 3
 MAX_WAITING = 18
 BASE_DIR = "downloads"
 CACHE_PREFIX = "voice:"
-FILE_ID_TTL = 60 * 60 * 24 * 30
 PENDING_TTL = 6 * 60 * 60
 
 ffmpeg_semaphore = asyncio.Semaphore(1)
@@ -93,30 +93,21 @@ class ChatQueue:
 
 
 class RedisBase:
-    def __init__(self, client: aioredis.Redis | None) -> None:
+    def __init__(self, client: aioredis.Redis) -> None:
         self._client = client
-        self._memory: dict[str, str] = {}
 
     async def _get(self, key: str) -> str | None:
-        if self._client:
-            value = await self._client.get(key)
-            return value.decode() if value else None
-        return self._memory.get(key)
+        value = await self._client.get(key)
+        return value.decode() if value else None
 
     async def _set(self, key: str, value: str, ttl: int | None = None) -> None:
-        if self._client:
-            if ttl:
-                await self._client.set(key, value, ex=ttl)
-            else:
-                await self._client.set(key, value)
+        if ttl:
+            await self._client.set(key, value, ex=ttl)
         else:
-            self._memory[key] = value
+            await self._client.set(key, value)
 
     async def _del(self, key: str) -> None:
-        if self._client:
-            await self._client.delete(key)
-        else:
-            self._memory.pop(key, None)
+        await self._client.delete(key)
 
 
 class ModeStorage(RedisBase):
@@ -226,6 +217,19 @@ def user_dir(chat_id: int, user_id: int, bot_id: int, is_private: bool) -> str:
     return path
 
 
+def prune_downloads() -> None:
+    if not os.path.isdir(BASE_DIR):
+        return
+    for root, dirs, files in os.walk(BASE_DIR, topdown=False):
+        if root == BASE_DIR:
+            continue
+        if not dirs and not files:
+            try:
+                os.rmdir(root)
+            except OSError:
+                pass
+
+
 def cleanup(
     chat_id: int, user_id: int, bot_id: int, is_private: bool, *message_ids: int
 ) -> None:
@@ -250,6 +254,51 @@ def cleanup(
             os.rmdir(path)
         except OSError:
             pass
+    prune_downloads()
+
+
+def _redis_client(url: str) -> aioredis.Redis:
+    return aioredis.from_url(url, health_check_interval=48, socket_keepalive=True)
+
+
+def build_storage(url: str) -> RedisStorage:
+    return RedisStorage.from_url(url, health_check_interval=48, socket_keepalive=True)
+
+
+def build_counter(url: str) -> ReplyCounter:
+    return ReplyCounter(_redis_client(url))
+
+
+def build_modes(url: str) -> ModeStorage:
+    return ModeStorage(_redis_client(url))
+
+
+def build_adt(url: str) -> AdtStorage:
+    return AdtStorage(_redis_client(url))
+
+
+def build_lang(url: str) -> LangStorage:
+    return LangStorage(_redis_client(url))
+
+
+def build_lang_code(url: str) -> LangCodeStorage:
+    return LangCodeStorage(_redis_client(url))
+
+
+def build_btn_cycle(url: str) -> ButtonCycleStorage:
+    return ButtonCycleStorage(_redis_client(url))
+
+
+def build_notif(url: str) -> NotifStorage:
+    return NotifStorage(_redis_client(url))
+
+
+def build_allowed(url: str) -> AllowedStorage:
+    return AllowedStorage(_redis_client(url))
+
+
+def build_pending(url: str) -> PendingStorage:
+    return PendingStorage(_redis_client(url))
 
 
 queue = ChatQueue()

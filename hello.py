@@ -4,10 +4,13 @@ import os
 import sys
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 
 from Nookie import register
 from Reply import BOOT_TEXT
 from bToN import build_buttons, build_markup, parse_ids
+from cAsh import build_storage
 from cAsh_Two import (
     build_adt,
     build_allowed,
@@ -22,12 +25,14 @@ from cAsh_Two import (
     build_note,
     build_notif,
     build_pending,
-    build_storage,
 )
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-REDIS_URL = os.environ.get("REDIS_URL")
+REDIS_URL = os.environ.get("REDIS_URL", "")
 BOT_NOTICE = os.environ.get("boT_NoTice", "")
+API_ID = os.environ.get("API_ID", "")
+API_HASH = os.environ.get("API_HASH", "")
+API_URL = os.environ.get("API_URL", "http://127.0.0.1:8081")
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 log = logging.getLogger("voicebot")
@@ -44,7 +49,10 @@ async def send_boot_notice(bot: Bot) -> None:
 
 
 async def main() -> None:
-    bot = Bot(token=BOT_TOKEN)
+    if not REDIS_URL:
+        raise RuntimeError("REDIS_URL is required")
+    session = AiohttpSession(api=TelegramAPIServer.from_base(API_URL))
+    bot = Bot(token=BOT_TOKEN, session=session)
     dispatcher = Dispatcher(storage=build_storage(REDIS_URL))
     register(
         dispatcher,

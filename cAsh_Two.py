@@ -1,11 +1,9 @@
 import logging
 
 import redis.asyncio as aioredis
-from aiogram.fsm.storage.redis import RedisStorage
 
 from cAsh import (
     CACHE_PREFIX,
-    FILE_ID_TTL,
     AdtStorage,
     AllowedStorage,
     ButtonCycleStorage,
@@ -18,6 +16,7 @@ from cAsh import (
     ReplyCounter,
     _hash_key,
     _parse_bool,
+    _redis_client,
     _ser_bool,
 )
 
@@ -185,7 +184,7 @@ class FileIdCache(RedisBase):
     async def set(
         self, url: str, mode: str, file_id: str, settings: dict | None = None
     ) -> None:
-        await self._set(self.key(url, mode, settings), file_id, ttl=FILE_ID_TTL)
+        await self._set(self.key(url, mode, settings), file_id)
 
     async def delete(self, url: str, mode: str, settings: dict | None = None) -> None:
         await self._del(self.key(url, mode, settings))
@@ -204,9 +203,7 @@ class FileIdCache(RedisBase):
     async def set_by_source(
         self, source_file_id: str, action: str, detail: str, file_id: str
     ) -> None:
-        await self._set(
-            self.source_key(source_file_id, action, detail), file_id, ttl=FILE_ID_TTL
-        )
+        await self._set(self.source_key(source_file_id, action, detail), file_id)
 
     async def delete_by_source(
         self, source_file_id: str, action: str, detail: str
@@ -214,67 +211,17 @@ class FileIdCache(RedisBase):
         await self._del(self.source_key(source_file_id, action, detail))
 
 
-def _redis_client(url: str | None) -> aioredis.Redis | None:
-    if not url:
-        return None
-    return aioredis.from_url(url, health_check_interval=48, socket_keepalive=True)
-
-
-def build_storage(url: str | None) -> RedisStorage | None:
-    return (
-        RedisStorage.from_url(url, health_check_interval=48, socket_keepalive=True)
-        if url
-        else None
-    )
-
-
-def build_counter(url: str | None) -> ReplyCounter:
-    return ReplyCounter(_redis_client(url))
-
-
-def build_modes(url: str | None) -> ModeStorage:
-    return ModeStorage(_redis_client(url))
-
-
-def build_adt(url: str | None) -> AdtStorage:
-    return AdtStorage(_redis_client(url))
-
-
-def build_lang(url: str | None) -> LangStorage:
-    return LangStorage(_redis_client(url))
-
-
-def build_lang_code(url: str | None) -> LangCodeStorage:
-    return LangCodeStorage(_redis_client(url))
-
-
-def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
-    return ButtonCycleStorage(_redis_client(url))
-
-
-def build_notif(url: str | None) -> NotifStorage:
-    return NotifStorage(_redis_client(url))
-
-
-def build_allowed(url: str | None) -> AllowedStorage:
-    return AllowedStorage(_redis_client(url))
-
-
-def build_pending(url: str | None) -> PendingStorage:
-    return PendingStorage(_redis_client(url))
-
-
-def build_animation(url: str | None) -> AnimationSettings:
+def build_animation(url: str) -> AnimationSettings:
     return AnimationSettings(_redis_client(url))
 
 
-def build_note(url: str | None) -> NoteSettings:
+def build_note(url: str) -> NoteSettings:
     return NoteSettings(_redis_client(url))
 
 
-def build_default(url: str | None) -> DefaultSettings:
+def build_default(url: str) -> DefaultSettings:
     return DefaultSettings(_redis_client(url))
 
 
-def build_file_cache(url: str | None) -> FileIdCache:
+def build_file_cache(url: str) -> FileIdCache:
     return FileIdCache(_redis_client(url))

@@ -10,7 +10,14 @@ from aiogram.types import FSInputFile, Message
 from Reply import EDIT_FAIL_MSG, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG
 from cAsh import cleanup, safe_delete, user_dir
 from cAsh_Two import FileIdCache
-from yTFMe import MAX_FILESIZE, trim_audio, trim_note, trim_video, trim_voice
+from yTFMe import (
+    MAX_FILESIZE,
+    trim_animation,
+    trim_audio,
+    trim_note,
+    trim_video,
+    trim_voice,
+)
 
 log = logging.getLogger("voicebot")
 
@@ -18,15 +25,29 @@ EDIT_STATE = {}
 
 MEDIA_FIELDS = ("voice", "audio", "video_note", "animation", "video")
 TRIM_FUNCS = {
-    "voice": (trim_voice, "reply_voice", ".ogg"),
-    "audio": (trim_audio, "reply_audio", None),
-    "video_note": (trim_note, "reply_video_note", ".mp4"),
-    "animation": (trim_video, "reply_animation", ".mp4"),
-    "video": (trim_video, "reply_video", None),
+    "voice": (trim_voice, "reply_voice"),
+    "audio": (trim_audio, "reply_audio"),
+    "video_note": (trim_note, "reply_video_note"),
+    "animation": (trim_animation, "reply_animation"),
+    "video": (trim_video, "reply_video"),
+}
+
+OUTPUT_EXTS = {
+    "voice": ".ogg",
+    "audio": None,
+    "video_note": ".mp4",
+    "animation": ".mp4",
+    "video": None,
 }
 
 
-def _detect_ext(media, in_path: str) -> str:
+def _detect_ext(media, in_path: str, media_type: str) -> str:
+    forced = OUTPUT_EXTS.get(media_type)
+    if forced:
+        return forced
+    ext = os.path.splitext(in_path)[1]
+    if ext:
+        return ext
     file_name = getattr(media, "file_name", None)
     if file_name:
         ext = os.path.splitext(file_name)[1]
@@ -37,7 +58,7 @@ def _detect_ext(media, in_path: str) -> str:
         guessed = mimetypes.guess_extension(mime.split(";")[0].strip())
         if guessed:
             return guessed
-    return os.path.splitext(in_path)[1]
+    return ""
 
 
 def _parse_time(value: str) -> float | None:
@@ -155,19 +176,20 @@ async def handle_pending_edit(
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
     temp_id = random.randint(100000, 999999)
 
-    in_path = os.path.join(workdir, f"{temp_id}_in")
-    out_path = os.path.join(workdir, f"{temp_id}_out")
+    out_path = os.path.join(workdir, f"{temp_id}_edit")
 
     try:
         telegram_file = await bot.get_file(file_id)
+        file_ext = os.path.splitext(telegram_file.file_path)[1]
+        in_path = os.path.join(workdir, f"{temp_id}_{media_type}{file_ext}")
         await bot.download_file(telegram_file.file_path, in_path)
 
         if os.path.getsize(in_path) > MAX_FILESIZE:
             await message.reply(EDIT_FAIL_MSG)
             return True
 
-        trim_func, reply_method, forced_ext = TRIM_FUNCS[media_type]
-        ext = forced_ext or _detect_ext(media, in_path)
+        trim_func, reply_method = TRIM_FUNCS[media_type]
+        ext = _detect_ext(media, in_path, media_type)
         out_path += ext
 
         if not await trim_func(in_path, out_path, start_value, end_value):

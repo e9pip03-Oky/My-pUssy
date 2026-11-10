@@ -183,10 +183,7 @@ def make_message_handler(
                     mode_key,
                     notif_active,
                 )
-                sent = await message.reply(text_to_send, reply_markup=markup)
-                old = await adt.get_messages(mode_key)
-                old.append(sent.message_id)
-                await adt.save_messages(mode_key, old)
+                await message.reply(text_to_send, reply_markup=markup)
                 return
 
         if await lang.get(mode_key):
