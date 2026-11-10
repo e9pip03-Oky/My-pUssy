@@ -181,7 +181,7 @@ async def handle_media_request(
     media_file_id = media.file_id  
   
     if text == NOTE:  
-        current_settings = await note.get(mode_key)  
+    v    current_settings = await note.get(mode_key)  
         detail = FileIdCache._signature("note", current_settings)  
     elif text == ANIMATION:  
         current_settings = await animation.get(mode_key)  
@@ -206,8 +206,7 @@ async def handle_media_request(
   
     wait_message = await message.reply(_wait_text(text, source_name))  
     is_private = message.chat.type == "private"  
-    workdir = user_dir(chat_id, user_id, bot.id, is_private)  
-    temp_id = random.randint(100000, 999999)  
+    workdir = user_dir(chat_id, user_id, bot.id, is_private)  project_temp_id = random.randint(100000, 999999)  
     in_path = os.path.join(workdir, str(temp_id))  
   
     try:  

@@ -8,8 +8,8 @@ MODE_LANG = "لغتي"
 MODE_MSG = "تستطيع تغيير وضع عمل البوت\nمن هنا"  
 MODE_DENIED = "ليس مسموح لك القيام\nبهذا التغيير"  
   
-NOTIF_OPEN = "قفل الاشعارات"  
-NOTIF_CLOSE = "فتح الاشعارات"  
+NOTIF_OPEN = "فتح الاشعارات"  
+NOTIF_CLOSE = "قفل الاشعارات"  
   
 PERM_REQUEST_MSG = "يود هذا الطيز استعمال البوت هل\nتسمح بذلك"  
 PERM_ALLOW_BTN = "سماح"  
