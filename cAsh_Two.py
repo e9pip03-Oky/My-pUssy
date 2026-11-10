@@ -12,6 +12,14 @@ from cAsh import (
 log = logging.getLogger("voicebot")  
   
   
+class NotifStorage(RedisBase):  
+    async def get(self, mode_key: str) -> bool:  
+        return await self._get(CACHE_PREFIX + f"notif:{mode_key}") == "1"  
+
+    async def set(self, mode_key: str, active: bool) -> None:  
+        await self._set(CACHE_PREFIX + f"notif:{mode_key}", _ser_bool(active))  
+
+
 class AnimationSettings(RedisBase):  
     DEFAULT = {  
         "enabled": False,  
@@ -213,4 +221,7 @@ def build_default(url: str) -> DefaultSettings:
   
   
 def build_file_cache(url: str) -> FileIdCache:  
-    return FileIdCache(_redis_client(url))
+    return FileIdCache(_redis_client(url))  
+  
+def build_notif(url: str) -> NotifStorage:  
+    return NotifStorage(_redis_client(url))

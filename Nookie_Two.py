@@ -32,7 +32,6 @@ from cAsh import (
     LangCodeStorage,  
     LangStorage,  
     ModeStorage,  
-    NotifStorage,  
     PendingStorage,  
     ReplyCounter,  
     get_mode_key,  
@@ -41,6 +40,7 @@ from cAsh_Two import (
     AnimationSettings,  
     DefaultSettings,  
     FileIdCache,  
+    NotifStorage,  
     NoteSettings,  
 )  
 from ediT import handle_pending_edit, set_edit_state  

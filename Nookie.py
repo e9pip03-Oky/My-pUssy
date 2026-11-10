@@ -29,7 +29,6 @@ from cAsh import (
     LangCodeStorage,  
     LangStorage,  
     ModeStorage,  
-    NotifStorage,  
     PendingStorage,  
     ReplyCounter,  
 )  
@@ -37,6 +36,7 @@ from cAsh_Two import (
     AnimationSettings,  
     DefaultSettings,  
     FileIdCache,  
+    NotifStorage,  
     NoteSettings,  
 )  
 from perM import handle_perm_callback  

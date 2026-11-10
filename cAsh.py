@@ -164,14 +164,6 @@ class ButtonCycleStorage(RedisBase):
         await self._set(CACHE_PREFIX + f"btn_cycle:{chat_id}", str((index + 1) % total))  
   
   
-class NotifStorage(RedisBase):  
-    async def get(self, mode_key: str) -> bool:  
-        return await self._get(CACHE_PREFIX + f"notif:{mode_key}") == "1"  
-  
-    async def set(self, mode_key: str, active: bool) -> None:  
-        await self._set(CACHE_PREFIX + f"notif:{mode_key}", _ser_bool(active))  
-  
-  
 class AllowedStorage(RedisBase):  
     async def get(self, user_id: int) -> bool | None:  
         value = await self._get(CACHE_PREFIX + f"allowed:{user_id}")  
@@ -275,10 +267,6 @@ def build_lang_code(url: str) -> LangCodeStorage:
   
 def build_btn_cycle(url: str) -> ButtonCycleStorage:  
     return ButtonCycleStorage(_redis_client(url))  
-  
-  
-def build_notif(url: str) -> NotifStorage:  
-    return NotifStorage(_redis_client(url))  
   
   
 def build_allowed(url: str) -> AllowedStorage:  

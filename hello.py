@@ -17,13 +17,13 @@ from cAsh import (
     build_lang,
     build_lang_code,
     build_modes,
-    build_notif,
     build_pending,
 )
 from cAsh_Two import (
     build_animation,
     build_default,
     build_file_cache,
+    build_notif,
     build_note,
 )
 
