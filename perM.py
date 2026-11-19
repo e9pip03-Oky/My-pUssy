@@ -1,5 +1,4 @@
 import logging
-from functools import lru_cache
 
 from aiogram import Bot
 from aiogram.types import (
@@ -24,9 +23,8 @@ from cAsh import AllowedStorage, PendingStorage
 log = logging.getLogger("voicebot")
 
 
-@lru_cache(maxsize=8)
-def _boot_ids(boot_notice: str) -> tuple[int, ...]:
-    return tuple(parse_ids(boot_notice))
+def _boot_ids(boot_notice: str) -> list[int]:
+    return parse_ids(boot_notice)
 
 
 async def authorize(

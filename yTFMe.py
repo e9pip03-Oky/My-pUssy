@@ -138,7 +138,7 @@ async def to_note_trim(
     filters = _rotation_filters(settings)
     crop_align = settings.get("crop_align", "center")
     horizontal = settings.get("horizontal", False)
-    size = "min(iw\,ih)"
+    size = "min(iw\\,ih)"
 
     if horizontal and crop_align == "top":
         x_expr = f"iw-{size}"

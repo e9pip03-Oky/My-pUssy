@@ -43,7 +43,6 @@ async def _send_by_mode(
     settings: dict | None,
     cache_settings: dict | None,
     file_cache: FileIdCache | None,
-    mode_key: str,
 ) -> bool:
     if mode == "voice":
         _, in_path = await download(entry_url, base)
@@ -58,7 +57,7 @@ async def _send_by_mode(
     if mode == "note":
         _, in_path = await download_merge(entry_url, base)
         out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
-        note_settings = await note.get(mode_key)
+        note_settings = await note.get(get_mode_key(message)[2])
         if not await to_note_trim(in_path, out_path, note_settings, "0"):
             return False
         sent = await message.reply_video_note(FSInputFile(out_path))
@@ -84,7 +83,9 @@ async def _send_by_mode(
     if not in_path or not os.path.exists(in_path):
         return False
 
-    send_as = (await default.get(mode_key)).get("send_as", "document")
+    send_as = (await default.get(get_mode_key(message)[2])).get(
+        "send_as", "document"
+    )
     ext = os.path.splitext(in_path)[1]
     doc_name = f"{make_name(entry)}{ext}"
 
@@ -158,7 +159,6 @@ async def process_entry(
         settings,
         cache_settings,
         file_cache,
-        mode_key,
     )
 
 
@@ -185,9 +185,6 @@ async def process_url(
             wait_message = await message.reply(WAIT_TEXT)
         settings = await animation.get(mode_key) if mode == "animation" else None
         status = await message.reply(LOADING_TEXT)
-        if wait_message:
-            await safe_delete(wait_message)
-            wait_message = None
         failed = True
         try:
             workdir = user_dir(chat_id, user_id, bot.id, is_private)

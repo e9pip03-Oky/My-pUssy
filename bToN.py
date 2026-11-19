@@ -39,13 +39,6 @@ STYLE_OFF = "danger"
 STYLE_BACK = "success"
 
 
-def _pick(index: int) -> tuple[str, str]:
-    return (
-        BUTTON_NAMES[index % len(BUTTON_NAMES)],
-        BUTTON_STYLES[index % len(BUTTON_STYLES)],
-    )
-
-
 def parse_ids(raw: str) -> list[int]:
     return [int(part.strip()) for part in raw.split("/") if part.strip().isdigit()]
 
@@ -57,8 +50,13 @@ def build_buttons(ids: list[int]) -> list[tuple[int, str, str]]:
         if user_id in seen:
             continue
         seen.add(user_id)
-        name, style = _pick(index)
-        result.append((user_id, name, style))
+        result.append(
+            (
+                user_id,
+                BUTTON_NAMES[index % len(BUTTON_NAMES)],
+                BUTTON_STYLES[index % len(BUTTON_STYLES)],
+            )
+        )
     return result
 
 
@@ -75,7 +73,8 @@ def build_specific_markup(
         return None
     unique_ids = list(dict.fromkeys(ids))
     user_id = unique_ids[index % len(unique_ids)]
-    name, style = _pick(index)
+    name = BUTTON_NAMES[index % len(BUTTON_NAMES)]
+    style = BUTTON_STYLES[index % len(BUTTON_STYLES)]
     return build_markup(name, user_id, style)
 
 

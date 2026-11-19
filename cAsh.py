@@ -58,6 +58,7 @@ class ChatQueue:
                 self._waiters[chat_id] = collections.deque()
 
     async def _handoff(self, chat_id: int) -> None:
+        # يُستدعى تحت _meta_lock فقط
         waiters = self._waiters[chat_id]
         if waiters:
             fut = waiters.popleft()
