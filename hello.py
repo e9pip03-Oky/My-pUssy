@@ -4,31 +4,29 @@ import os
 import sys
 
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.redis import RedisStorage
 
 from Nookie import register
 from Reply import BOOT_TEXT
 from bToN import build_buttons, build_markup, parse_ids
-from cAsh import (
+from cAsh_Two import (
     build_adt,
     build_allowed,
+    build_animation,
     build_btn_cycle,
     build_counter,
+    build_default,
+    build_file_cache,
     build_lang,
     build_lang_code,
     build_modes,
-    build_pending,
-)
-from cAsh_Two import (
-    build_animation,
-    build_default,
-    build_file_cache,
-    build_notif,
     build_note,
+    build_notif,
+    build_pending,
+    build_storage,
 )
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-REDIS_URL = os.environ.get("REDIS_URL", "")
+REDIS_URL = os.environ.get("REDIS_URL")
 BOT_NOTICE = os.environ.get("boT_NoTice", "")
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
@@ -46,13 +44,8 @@ async def send_boot_notice(bot: Bot) -> None:
 
 
 async def main() -> None:
-    if not REDIS_URL:
-        raise RuntimeError("REDIS_URL is required")
     bot = Bot(token=BOT_TOKEN)
-    storage = RedisStorage.from_url(
-        REDIS_URL, health_check_interval=48, socket_keepalive=True
-    )
-    dispatcher = Dispatcher(storage=storage)
+    dispatcher = Dispatcher(storage=build_storage(REDIS_URL))
     register(
         dispatcher,
         build_counter(REDIS_URL),

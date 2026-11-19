@@ -5,8 +5,7 @@ import yt_dlp
 
 from cAsh import ffmpeg_semaphore
 
-MAX_FILESIZE = 50 * 1024 * 1024
-MAX_NOTE_FILESIZE = 24 * 1024 * 1024
+MAX_FILESIZE = 48 * 1024 * 1024
 
 
 def _extract_entries(url: str) -> list[dict]:
@@ -25,7 +24,7 @@ def _extract_entries(url: str) -> list[dict]:
 
 def _run_download(url: str, base: str, merge: bool) -> tuple[dict, str]:
     options = {
-        "format": "bv+ba/b" if merge else "ba/b",
+        "format": "bv*+ba/b" if merge else "ba/b",
         "outtmpl": base + ".%(ext)s",
         "quiet": True,
         "no_warnings": True,
@@ -84,7 +83,7 @@ async def trim_voice(
     in_path: str, out_path: str, start: str, end: str | None = None
 ) -> bool:
     args = _trim_args(start, end, in_path)
-    args.extend(["-c", "copy", out_path])
+    args.extend(["-c", "copy", "-f", "ogg", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -104,14 +103,6 @@ async def trim_note(
     return await _run_ffmpeg(*args)
 
 
-async def trim_animation(
-    in_path: str, out_path: str, start: str, end: str | None = None
-) -> bool:
-    args = _trim_args(start, end, in_path)
-    args.extend(["-c", "copy", out_path])
-    return await _run_ffmpeg(*args)
-
-
 async def trim_video(
     in_path: str, out_path: str, start: str, end: str | None = None
 ) -> bool:
@@ -122,8 +113,6 @@ async def trim_video(
 
 def _rotation_filters(settings: dict) -> list[str]:
     filters: list[str] = []
-    if settings.get("flip_left") or settings.get("flip_right"):
-        filters.append("hflip")
     double_rot = settings.get("double_rotate")
     if settings.get("landscape"):
         filters.append(
@@ -133,6 +122,8 @@ def _rotation_filters(settings: dict) -> list[str]:
         filters.append(
             "transpose=2,transpose=2,transpose=2" if double_rot else "transpose=2"
         )
+    if settings.get("flip_left") or settings.get("flip_right"):
+        filters.append("hflip")
     return filters
 
 
@@ -146,18 +137,32 @@ async def to_note_trim(
     settings = settings or {}
     filters = _rotation_filters(settings)
     crop_align = settings.get("crop_align", "center")
-    y_expr = {
-        "bottom": "ih-min(iw\\,ih)",
-        "top": "0",
-    }.get(crop_align, "(ih-min(iw\\,ih))/2")
-    filters.append(f"crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:{y_expr}")
-    filters.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
+    horizontal = settings.get("horizontal", False)
+    size = "min(iw\,ih)"
+
+    if horizontal and crop_align == "top":
+        x_expr = f"iw-{size}"
+        y_expr = f"(ih-{size})/2"
+    elif horizontal and crop_align == "bottom":
+        x_expr = "0"
+        y_expr = f"(ih-{size})/2"
+    elif crop_align == "bottom":
+        x_expr = f"(iw-{size})/2"
+        y_expr = f"ih-{size}"
+    elif crop_align == "top":
+        x_expr = f"(iw-{size})/2"
+        y_expr = "0"
+    else:
+        x_expr = f"(iw-{size})/2"
+        y_expr = f"(ih-{size})/2"
+
+    filters.append(f"crop={size}:{size}:{x_expr}:{y_expr}")
     filters.append("scale=640:640,setsar=1/1")
     args = _trim_args(start, end, in_path)
     args.extend(["-t", "60", "-vf", ",".join(filters)])
     if settings.get("muted"):
         args.append("-an")
-    args.extend(["-c:v", "libx264", "-f", "mp4", out_path])
+    args.extend(["-c:v", "libx264", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -176,14 +181,12 @@ async def to_animation(
             else:
                 crop_w = "iw"
                 crop_h = f"iw*{ratio_h}/{ratio_w}"
-            filters.append(
-                f"crop={crop_w}:{crop_h}:(iw-{crop_w})/2:(ih-{crop_h})/2"
-            )
+            filters.append(f"crop={crop_w}:{crop_h}")
         except Exception:
             pass
     filters.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
     args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
     if filters:
         args.extend(["-vf", ",".join(filters)])
-    args.extend(["-f", "mp4", out_path])
+    args.append(out_path)
     return await _run_ffmpeg(*args)
