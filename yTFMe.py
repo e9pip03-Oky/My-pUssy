@@ -83,7 +83,7 @@ async def trim_voice(
     in_path: str, out_path: str, start: str, end: str | None = None
 ) -> bool:
     args = _trim_args(start, end, in_path)
-    args.extend(["-c", "copy", "-f", "ogg", out_path])
+    args.extend(["-c:a", "libopus", "-f", "ogg", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -184,7 +184,6 @@ async def to_animation(
             filters.append(f"crop={crop_w}:{crop_h}")
         except Exception:
             pass
-    filters.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
     args = [
         "-y", "-i", in_path,
         "-an",

@@ -34,7 +34,6 @@ async def _send_by_mode(
     entry: dict,
     entry_url: str,
     base: str,
-    temp_id: int,
     mode: str,
     workdir: str,
     animation: AnimationSettings,
@@ -43,51 +42,53 @@ async def _send_by_mode(
     settings: dict | None,
     cache_settings: dict | None,
     file_cache: FileIdCache | None,
-) -> bool:
+) -> str | None:
+    file_name = make_name(entry)
+
     if mode == "voice":
         _, in_path = await download(entry_url, base)
-        out_path = os.path.join(workdir, f"{temp_id}_voice.ogg")
+        out_path = os.path.join(workdir, f"{file_name}.ogg")
         if not await to_voice(in_path, out_path) or not os.path.exists(out_path):
-            return False
+            return None
         sent = await message.reply_voice(FSInputFile(out_path))
         if file_cache:
             await file_cache.set(entry_url, mode, sent.voice.file_id, settings)
-        return True
+        return file_name
 
     if mode == "note":
         _, in_path = await download_merge(entry_url, base)
-        out_path = os.path.join(workdir, f"{temp_id}_note.mp4")
+        out_path = os.path.join(workdir, f"{file_name}.mp4")
         note_settings = await note.get(get_mode_key(message)[2])
         if not await to_note_trim(in_path, out_path, note_settings, "0"):
-            return False
+            return None
         sent = await message.reply_video_note(FSInputFile(out_path))
         if file_cache:
             await file_cache.set(
                 entry_url, mode, sent.video_note.file_id, note_settings
             )
-        return True
+        return file_name
 
     if mode == "animation":
         _, in_path = await download_merge(entry_url, base)
-        out_path = os.path.join(workdir, f"{temp_id}_animation.mp4")
+        out_path = os.path.join(workdir, f"{file_name}.mp4")
         if not await to_animation(in_path, out_path, settings) or not os.path.exists(
             out_path
         ):
-            return False
+            return None
         sent = await message.reply_animation(FSInputFile(out_path))
         if file_cache:
             await file_cache.set(entry_url, mode, sent.animation.file_id, settings)
-        return True
+        return file_name
 
     _, in_path = await download_merge(entry_url, base)
     if not in_path or not os.path.exists(in_path):
-        return False
+        return None
 
     send_as = (await default.get(get_mode_key(message)[2])).get(
         "send_as", "document"
     )
     ext = os.path.splitext(in_path)[1]
-    doc_name = f"{make_name(entry)}{ext}"
+    doc_name = f"{file_name}{ext}"
 
     if send_as == "video":
         video_path = os.path.join(workdir, doc_name)
@@ -112,7 +113,7 @@ async def _send_by_mode(
             await file_cache.set(
                 entry_url, mode, sent.document.file_id, cache_settings
             )
-    return True
+    return file_name
 
 
 async def process_entry(
@@ -120,16 +121,15 @@ async def process_entry(
     message: Message,
     workdir: str,
     mode: str,
-    temp_id: int,
     animation: AnimationSettings,
     note: NoteSettings,
     default: DefaultSettings,
     settings: dict | None = None,
     file_cache: FileIdCache | None = None,
-) -> bool:
+) -> str | None:
     entry_url = entry.get("webpage_url") or entry.get("url")
     if not entry_url:
-        return False
+        return None
 
     mode_key = get_mode_key(message)[2]
     cache_settings = settings
@@ -142,15 +142,14 @@ async def process_entry(
         cached = await file_cache.get(entry_url, mode, cache_settings)
         if cached:
             if await send_cached(cached, message, mode):
-                return True
+                return make_name(entry)
             await file_cache.delete(entry_url, mode, cache_settings)
 
     return await _send_by_mode(
         message,
         entry,
         entry_url,
-        os.path.join(workdir, str(temp_id)),
-        temp_id,
+        os.path.join(workdir, make_name(entry)),
         mode,
         workdir,
         animation,
@@ -179,7 +178,7 @@ async def process_url(
     if not accepted:
         return
     wait_message: Message | None = None
-    used_ids: list[int] = []
+    used_names: list[str] = []
     try:
         if waited:
             wait_message = await message.reply(WAIT_TEXT)
@@ -193,20 +192,19 @@ async def process_url(
                 raise RuntimeError("no results")
             sent_count = 0
             for entry in entries:
-                temp_id = random.randint(100000, 999999)
-                used_ids.append(temp_id)
-                if await process_entry(
+                result_name = await process_entry(
                     entry,
                     message,
                     workdir,
                     mode,
-                    temp_id,
                     animation,
                     note,
                     default,
                     settings,
                     file_cache,
-                ):
+                )
+                if result_name:
+                    used_names.append(result_name)
                     sent_count += 1
             if sent_count > 0:
                 failed = False
@@ -219,7 +217,7 @@ async def process_url(
     finally:
         if wait_message:
             await safe_delete(wait_message)
-        cleanup(chat_id, user_id, bot.id, is_private, *used_ids)
+        cleanup(chat_id, user_id, bot.id, is_private, *used_names)
         await queue.release(chat_id)
 
 
