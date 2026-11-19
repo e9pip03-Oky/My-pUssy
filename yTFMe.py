@@ -138,7 +138,7 @@ async def to_note_trim(
     filters = _rotation_filters(settings)
     crop_align = settings.get("crop_align", "center")
     horizontal = settings.get("horizontal", False)
-    size = "min(iw\\,ih)"
+    size = "min(iw\,ih)"
 
     if horizontal and crop_align == "top":
         x_expr = f"iw-{size}"
@@ -185,7 +185,13 @@ async def to_animation(
         except Exception:
             pass
     filters.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
-    args = ["-y", "-i", in_path, "-an", "-c:v", "libx264"]
+    args = [
+        "-y", "-i", in_path,
+        "-an",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+    ]
     if filters:
         args.extend(["-vf", ",".join(filters)])
     args.append(out_path)
