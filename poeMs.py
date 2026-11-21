@@ -1,14 +1,15 @@
 import logging
+from typing import Final
 
 from aiogram import Bot
 from aiogram.types import Message
 
-from cAsh import get_mode_key
+from cAsh import get_mode_context
 from cAsh_Two import NotifStorage
 
 log = logging.getLogger("voicebot")
 
-SERVICE_FIELDS = (
+SERVICE_FIELDS: Final = (
     "new_chat_members",
     "left_chat_member",
     "chat_owner_left",
@@ -43,11 +44,11 @@ async def on_service_message(message: Message, bot: Bot, notif: NotifStorage) ->
         return
     if not _is_service_message(message):
         return
-    chat_id, _, mode_key = get_mode_key(message)
-    if not await notif.get(mode_key):
+    ctx = get_mode_context(message)
+    if not await notif.get(ctx.mode_key):
         return
     try:
-        await bot.delete_message(chat_id, message.message_id)
+        await bot.delete_message(ctx.chat_id, message.message_id)
     except Exception:
         pass
 

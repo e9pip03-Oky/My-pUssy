@@ -1,11 +1,18 @@
 import asyncio
 import os
+from typing import Final, NamedTuple
 
 import yt_dlp
 
 from cAsh import ffmpeg_semaphore
 
-MAX_FILESIZE = 48 * 1024 * 1024
+MAX_FILESIZE: Final = 48 * 1024 * 1024
+
+
+class TrimSpec(NamedTuple):
+    func: object
+    reply_method: str
+    forced_ext: str | None
 
 
 def _extract_entries(url: str) -> list[dict]:
@@ -22,9 +29,28 @@ def _extract_entries(url: str) -> list[dict]:
     return [info]
 
 
-def _run_download(url: str, base: str, merge: bool) -> tuple[dict, str]:
+def _download_voice(url: str, base: str) -> tuple[dict, str]:
     options = {
-        "format": "bv*+ba/b" if merge else "ba/b",
+        "format": "ba/b",
+        "outtmpl": base + ".%(ext)s",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "max_filesize": MAX_FILESIZE,
+    }
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(url, download=True)
+        path = ydl.prepare_filename(info)
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            if size > MAX_FILESIZE:
+                raise RuntimeError(f"file too large: {size}")
+        return info, path
+
+
+def _download_media(url: str, base: str) -> tuple[dict, str]:
+    options = {
+        "format": "bv*+ba/b",
         "outtmpl": base + ".%(ext)s",
         "quiet": True,
         "no_warnings": True,
@@ -46,11 +72,11 @@ async def get_entries(url: str) -> list[dict]:
 
 
 async def download(url: str, base: str) -> tuple[dict, str]:
-    return await asyncio.to_thread(_run_download, url, base, False)
+    return await asyncio.to_thread(_download_voice, url, base)
 
 
 async def download_merge(url: str, base: str) -> tuple[dict, str]:
-    return await asyncio.to_thread(_run_download, url, base, True)
+    return await asyncio.to_thread(_download_media, url, base)
 
 
 async def _run_ffmpeg(*args: str) -> bool:
@@ -83,7 +109,7 @@ async def trim_voice(
     in_path: str, out_path: str, start: str, end: str | None = None
 ) -> bool:
     args = _trim_args(start, end, in_path)
-    args.extend(["-c:a", "libopus", "-f", "ogg", out_path])
+    args.extend(["-c", "copy", "-f", "ogg", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -127,6 +153,19 @@ def _rotation_filters(settings: dict) -> list[str]:
     return filters
 
 
+def _note_crop_expr(crop_align: str, horizontal: bool) -> tuple[str, str]:
+    size = "min(iw\\,ih)"
+    if horizontal and crop_align == "top":
+        return f"iw-{size}", f"(ih-{size})/2"
+    if horizontal and crop_align == "bottom":
+        return "0", f"(ih-{size})/2"
+    if crop_align == "bottom":
+        return f"(iw-{size})/2", f"ih-{size}"
+    if crop_align == "top":
+        return f"(iw-{size})/2", "0"
+    return f"(iw-{size})/2", f"(ih-{size})/2"
+
+
 async def to_note_trim(
     in_path: str,
     out_path: str,
@@ -138,24 +177,8 @@ async def to_note_trim(
     filters = _rotation_filters(settings)
     crop_align = settings.get("crop_align", "center")
     horizontal = settings.get("horizontal", False)
-    size = "min(iw\,ih)"
-
-    if horizontal and crop_align == "top":
-        x_expr = f"iw-{size}"
-        y_expr = f"(ih-{size})/2"
-    elif horizontal and crop_align == "bottom":
-        x_expr = "0"
-        y_expr = f"(ih-{size})/2"
-    elif crop_align == "bottom":
-        x_expr = f"(iw-{size})/2"
-        y_expr = f"ih-{size}"
-    elif crop_align == "top":
-        x_expr = f"(iw-{size})/2"
-        y_expr = "0"
-    else:
-        x_expr = f"(iw-{size})/2"
-        y_expr = f"(ih-{size})/2"
-
+    size = "min(iw\\,ih)"
+    x_expr, y_expr = _note_crop_expr(crop_align, horizontal)
     filters.append(f"crop={size}:{size}:{x_expr}:{y_expr}")
     filters.append("scale=640:640,setsar=1/1")
     args = _trim_args(start, end, in_path)
@@ -184,12 +207,16 @@ async def to_animation(
             filters.append(f"crop={crop_w}:{crop_h}")
         except Exception:
             pass
+    filters.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
     args = [
-        "-y", "-i", in_path,
+        "-y",
+        "-i",
+        in_path,
         "-an",
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
     ]
     if filters:
         args.extend(["-vf", ",".join(filters)])

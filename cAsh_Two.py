@@ -1,4 +1,5 @@
 import logging
+from typing import Final
 
 import redis.asyncio as aioredis
 from aiogram.fsm.storage.redis import RedisStorage
@@ -190,7 +191,9 @@ class FileIdCache(RedisBase):
     ) -> None:
         await self._set(self.key(url, mode, settings), file_id)
 
-    async def delete(self, url: str, mode: str, settings: dict | None = None) -> None:
+    async def delete(
+        self, url: str, mode: str, settings: dict | None = None
+    ) -> None:
         await self._del(self.key(url, mode, settings))
 
     @staticmethod
@@ -221,7 +224,7 @@ def _redis_client(url: str | None) -> aioredis.Redis | None:
     return aioredis.from_url(url, health_check_interval=48, socket_keepalive=True)
 
 
-def build_storage(url: str | None) -> RedisStorage | None:
+def _storage(url: str | None) -> RedisStorage | None:
     return (
         RedisStorage.from_url(url, health_check_interval=48, socket_keepalive=True)
         if url
@@ -229,53 +232,60 @@ def build_storage(url: str | None) -> RedisStorage | None:
     )
 
 
-def build_counter(url: str | None) -> ReplyCounter:
-    return ReplyCounter(_redis_client(url))
+class _BuildAll:
+    storage = staticmethod(_storage)
+
+    @staticmethod
+    def counter(url: str | None) -> ReplyCounter:
+        return ReplyCounter(_redis_client(url))
+
+    @staticmethod
+    def modes(url: str | None) -> ModeStorage:
+        return ModeStorage(_redis_client(url))
+
+    @staticmethod
+    def adt(url: str | None) -> AdtStorage:
+        return AdtStorage(_redis_client(url))
+
+    @staticmethod
+    def lang(url: str | None) -> LangStorage:
+        return LangStorage(_redis_client(url))
+
+    @staticmethod
+    def lang_code(url: str | None) -> LangCodeStorage:
+        return LangCodeStorage(_redis_client(url))
+
+    @staticmethod
+    def btn_cycle(url: str | None) -> ButtonCycleStorage:
+        return ButtonCycleStorage(_redis_client(url))
+
+    @staticmethod
+    def notif(url: str | None) -> NotifStorage:
+        return NotifStorage(_redis_client(url))
+
+    @staticmethod
+    def allowed(url: str | None) -> AllowedStorage:
+        return AllowedStorage(_redis_client(url))
+
+    @staticmethod
+    def pending(url: str | None) -> PendingStorage:
+        return PendingStorage(_redis_client(url))
+
+    @staticmethod
+    def animation(url: str | None) -> AnimationSettings:
+        return AnimationSettings(_redis_client(url))
+
+    @staticmethod
+    def note(url: str | None) -> NoteSettings:
+        return NoteSettings(_redis_client(url))
+
+    @staticmethod
+    def default(url: str | None) -> DefaultSettings:
+        return DefaultSettings(_redis_client(url))
+
+    @staticmethod
+    def file_cache(url: str | None) -> FileIdCache:
+        return FileIdCache(_redis_client(url))
 
 
-def build_modes(url: str | None) -> ModeStorage:
-    return ModeStorage(_redis_client(url))
-
-
-def build_adt(url: str | None) -> AdtStorage:
-    return AdtStorage(_redis_client(url))
-
-
-def build_lang(url: str | None) -> LangStorage:
-    return LangStorage(_redis_client(url))
-
-
-def build_lang_code(url: str | None) -> LangCodeStorage:
-    return LangCodeStorage(_redis_client(url))
-
-
-def build_btn_cycle(url: str | None) -> ButtonCycleStorage:
-    return ButtonCycleStorage(_redis_client(url))
-
-
-def build_notif(url: str | None) -> NotifStorage:
-    return NotifStorage(_redis_client(url))
-
-
-def build_allowed(url: str | None) -> AllowedStorage:
-    return AllowedStorage(_redis_client(url))
-
-
-def build_pending(url: str | None) -> PendingStorage:
-    return PendingStorage(_redis_client(url))
-
-
-def build_animation(url: str | None) -> AnimationSettings:
-    return AnimationSettings(_redis_client(url))
-
-
-def build_note(url: str | None) -> NoteSettings:
-    return NoteSettings(_redis_client(url))
-
-
-def build_default(url: str | None) -> DefaultSettings:
-    return DefaultSettings(_redis_client(url))
-
-
-def build_file_cache(url: str | None) -> FileIdCache:
-    return FileIdCache(_redis_client(url))
+build_all: Final = _BuildAll()

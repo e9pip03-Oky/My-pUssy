@@ -1,7 +1,6 @@
 import logging
 import mimetypes
 import os
-import random
 import re
 
 from aiogram import Bot
@@ -10,19 +9,26 @@ from aiogram.types import FSInputFile, Message
 from Reply import EDIT_FAIL_MSG, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG
 from cAsh import cleanup, safe_delete, user_dir
 from cAsh_Two import FileIdCache
-from yTFMe import MAX_FILESIZE, trim_audio, trim_note, trim_video, trim_voice
+from yTFMe import (
+    MAX_FILESIZE,
+    TrimSpec,
+    trim_audio,
+    trim_note,
+    trim_video,
+    trim_voice,
+)
 
 log = logging.getLogger("voicebot")
 
-EDIT_STATE = {}
+_EDIT_STATE: dict[int, dict] = {}
 
 MEDIA_FIELDS = ("voice", "audio", "video_note", "animation", "video")
-TRIM_FUNCS = {
-    "voice": (trim_voice, "reply_voice", ".ogg"),
-    "audio": (trim_audio, "reply_audio", None),
-    "video_note": (trim_note, "reply_video_note", ".mp4"),
-    "animation": (trim_video, "reply_animation", ".mp4"),
-    "video": (trim_video, "reply_video", None),
+TRIM_SPECS: dict[str, TrimSpec] = {
+    "voice": TrimSpec(trim_voice, "reply_voice", ".ogg"),
+    "audio": TrimSpec(trim_audio, "reply_audio", None),
+    "video_note": TrimSpec(trim_note, "reply_video_note", ".mp4"),
+    "animation": TrimSpec(trim_video, "reply_animation", ".mp4"),
+    "video": TrimSpec(trim_video, "reply_video", None),
 }
 
 
@@ -81,7 +87,8 @@ def _parse_range(text: str) -> tuple[str, str] | str:
         return "0", end_value
     if len(segments) == 2:
         start_value, end_value = segments
-        start_seconds, end_seconds = _parse_time(start_value), _parse_time(end_value)
+        start_seconds = _parse_time(start_value)
+        end_seconds = _parse_time(end_value)
         if start_seconds is None or end_seconds is None:
             return "format"
         if start_seconds >= end_seconds:
@@ -92,7 +99,7 @@ def _parse_range(text: str) -> tuple[str, str] | str:
 
 async def set_edit_state(message: Message, bot: Bot) -> None:
     reply_message = await message.reply(EDIT_SEPARATOR_MSG)
-    EDIT_STATE[message.from_user.id] = {
+    _EDIT_STATE[message.from_user.id] = {
         "msg": message.reply_to_message,
         "prompt": reply_message,
     }
@@ -108,7 +115,7 @@ def _media_of(media_message: Message) -> tuple[str, str, object] | None:
 
 async def _reply_cached(message: Message, media_type: str, file_id: str) -> bool:
     try:
-        await getattr(message, TRIM_FUNCS[media_type][1])(file_id)
+        await getattr(message, TRIM_SPECS[media_type].reply_method)(file_id)
         return True
     except Exception:
         return False
@@ -118,9 +125,9 @@ async def handle_pending_edit(
     message: Message, bot: Bot, file_cache: FileIdCache
 ) -> bool:
     user_id = message.from_user.id
-    if user_id not in EDIT_STATE:
+    if user_id not in _EDIT_STATE:
         return False
-    state = EDIT_STATE.pop(user_id)
+    state = _EDIT_STATE.pop(user_id)
     media_message = state["msg"]
     prompt_message = state["prompt"]
 
@@ -153,10 +160,10 @@ async def handle_pending_edit(
     chat_id = message.chat.id
     is_private = message.chat.type == "private"
     workdir = user_dir(chat_id, user_id, bot.id, is_private)
-    temp_id = random.randint(100000, 999999)
+    source_id = str(media_message.message_id)
 
-    in_path = os.path.join(workdir, f"{temp_id}_{media_type}")
-    out_path = os.path.join(workdir, f"{temp_id}_edit")
+    in_path = os.path.join(workdir, f"{source_id}_{media_type}")
+    out_path = os.path.join(workdir, f"{source_id}_edit")
 
     try:
         telegram_file = await bot.get_file(file_id)
@@ -166,15 +173,15 @@ async def handle_pending_edit(
             await message.reply(EDIT_FAIL_MSG)
             return True
 
-        trim_func, reply_method, forced_ext = TRIM_FUNCS[media_type]
-        ext = forced_ext or _detect_ext(media)
+        spec = TRIM_SPECS[media_type]
+        ext = spec.forced_ext or _detect_ext(media)
         out_path += ext
 
-        if not await trim_func(in_path, out_path, start_value, end_value):
+        if not await spec.func(in_path, out_path, start_value, end_value):
             await message.reply(EDIT_FAIL_MSG)
             return True
 
-        sent = await getattr(message, reply_method)(FSInputFile(out_path))
+        sent = await getattr(message, spec.reply_method)(FSInputFile(out_path))
         media_obj = getattr(sent, media_type, None)
         if media_obj:
             await file_cache.set_by_source(
@@ -183,5 +190,5 @@ async def handle_pending_edit(
     except Exception:
         await message.reply(EDIT_FAIL_MSG)
     finally:
-        cleanup(chat_id, user_id, bot.id, is_private, temp_id)
+        cleanup(chat_id, user_id, bot.id, is_private, source_id)
     return True

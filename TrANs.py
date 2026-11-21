@@ -1,11 +1,12 @@
 import logging
 import re
+from typing import Final
 
 from googletrans import Translator
 
 log = logging.getLogger("voicebot")
 
-UPPER_TARGETS = set("ATFGUJNMLБИА")
+UPPER_TARGETS: Final = set("ATFGUJNMLБИА")
 
 
 def has_formatting_chars(text: str) -> bool:

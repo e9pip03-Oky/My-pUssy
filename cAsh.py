@@ -3,19 +3,21 @@ import collections
 import hashlib
 import logging
 import os
+from dataclasses import dataclass
+from typing import Final
 
 import redis.asyncio as aioredis
 from aiogram.types import Message
 
 log = logging.getLogger("voicebot")
 
-MAX_CONCURRENT = 3
-MAX_WAITING = 18
-BASE_DIR = "downloads"
-CACHE_PREFIX = "voice:"
-PENDING_TTL = 6 * 60 * 60
+MAX_CONCURRENT: Final = 3
+MAX_WAITING: Final = 18
+BASE_DIR: Final = "downloads"
+CACHE_PREFIX: Final = "voice:"
+PENDING_TTL: Final = 6 * 60 * 60
 
-ffmpeg_semaphore = asyncio.Semaphore(1)
+ffmpeg_semaphore: Final = asyncio.Semaphore(1)
 
 
 def _hash_key(value: str) -> str:
@@ -37,12 +39,23 @@ async def safe_delete(message: Message) -> None:
         pass
 
 
-def get_mode_key(message: Message) -> tuple[int, int, str]:
+@dataclass(frozen=True)
+class ModeContext:
+    chat_id: int
+    user_id: int
+    mode_key: str
+
+
+def get_mode_context(message: Message) -> ModeContext:
     chat_id = message.chat.id
     user_id = message.from_user.id if message.from_user else 0
     thread_id = message.message_thread_id
     mode_key = f"{chat_id}:{thread_id}" if thread_id else str(chat_id)
-    return chat_id, user_id, mode_key
+    return ModeContext(chat_id, user_id, mode_key)
+
+
+def get_mode_key(message: Message) -> str:
+    return get_mode_context(message).mode_key
 
 
 class ChatQueue:
@@ -58,7 +71,6 @@ class ChatQueue:
                 self._waiters[chat_id] = collections.deque()
 
     async def _handoff(self, chat_id: int) -> None:
-        # يُستدعى تحت _meta_lock فقط
         waiters = self._waiters[chat_id]
         if waiters:
             fut = waiters.popleft()
@@ -93,6 +105,18 @@ class ChatQueue:
         await self._ensure(chat_id)
         async with self._meta_lock:
             await self._handoff(chat_id)
+
+
+class FileLockRegistry:
+    def __init__(self) -> None:
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._meta_lock = asyncio.Lock()
+
+    async def get(self, key: str) -> asyncio.Lock:
+        async with self._meta_lock:
+            if key not in self._locks:
+                self._locks[key] = asyncio.Lock()
+            return self._locks[key]
 
 
 class RedisBase:
@@ -134,12 +158,6 @@ class ModeStorage(RedisBase):
 
     async def set_previous(self, mode_key: str, mode: str) -> None:
         await self._set(CACHE_PREFIX + f"prev_mode:{mode_key}", mode)
-
-    async def get_last_menu(self, mode_key: str) -> str:
-        return await self._get(CACHE_PREFIX + f"last_menu:{mode_key}") or "main"
-
-    async def set_last_menu(self, mode_key: str, menu: str) -> None:
-        await self._set(CACHE_PREFIX + f"last_menu:{mode_key}", menu)
 
 
 class LangStorage(RedisBase):
@@ -243,19 +261,23 @@ def prune_downloads() -> None:
 
 
 def cleanup(
-    chat_id: int, user_id: int, bot_id: int, is_private: bool, *message_ids: int
+    chat_id: int,
+    user_id: int,
+    bot_id: int,
+    is_private: bool,
+    *prefixes: str | int,
 ) -> None:
     root = _root(chat_id, bot_id, is_private)
     user_path = os.path.join(BASE_DIR, root, str(user_id))
     if os.path.isdir(user_path):
-        prefixes = tuple(str(mid) for mid in message_ids if mid)
-        if prefixes:
+        valid = tuple(str(prefix) for prefix in prefixes if prefix)
+        if valid:
             for filename in os.listdir(user_path):
                 if any(
                     filename == prefix
                     or filename.startswith(prefix + ".")
                     or filename.startswith(prefix + "_")
-                    for prefix in prefixes
+                    for prefix in valid
                 ):
                     try:
                         os.remove(os.path.join(user_path, filename))
@@ -269,4 +291,5 @@ def cleanup(
     prune_downloads()
 
 
-queue = ChatQueue()
+queue: Final = ChatQueue()
+file_locks: Final = FileLockRegistry()

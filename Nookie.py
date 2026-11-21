@@ -1,4 +1,5 @@
 import logging
+from typing import Final
 
 from aiogram import F
 from aiogram.types import CallbackQuery
@@ -42,24 +43,27 @@ from poeMs import make_service_cleaner
 
 log = logging.getLogger("voicebot")
 
-OWNER_ACTIONS = {
-    "toggle_state",
-    "back_to_animation",
-    "back_to_default",
-    "back",
-    "toggle",
-    "default_menu",
-    "default_toggle",
-    "animation_set",
-    "note_set",
-    "lang",
-    "setlang",
-    "animation_menu",
-    "note_menu",
-    "dimensions_menu",
-    "dim_ratio",
-    "toggle_notif",
-}
+OWNER_ACTIONS: Final = frozenset(
+    {
+        "toggle_state",
+        "back_to_animation",
+        "back_to_default",
+        "back",
+        "toggle",
+        "default_menu",
+        "default_toggle",
+        "animation_set",
+        "note_set",
+        "lang",
+        "setlang",
+        "animation_menu",
+        "note_menu",
+        "dimensions_menu",
+        "dim_ratio",
+        "toggle_notif",
+    }
+)
+BACK_ACTIONS: Final = frozenset({"back", "back_to_animation", "back_to_default"})
 
 
 async def get_random_reply_markup(
@@ -79,6 +83,40 @@ def _parse_data(data: str) -> tuple[str, str | None, int, str]:
     head, owner_part, mode_key = data.split("|", 2)
     action, field = head.split(":", 1) if ":" in head else (head, None)
     return action, field, int(owner_part), mode_key
+
+
+async def _edit_to_main(
+    callback: CallbackQuery,
+    owner_id: int,
+    mode_key: str,
+    modes: ModeStorage,
+    lang: LangStorage,
+    notif: NotifStorage,
+) -> None:
+    await callback.message.edit_text(
+        MODE_MSG,
+        reply_markup=build_mode_markup(
+            await modes.get(mode_key),
+            await lang.get(mode_key),
+            owner_id,
+            mode_key,
+            await notif.get(mode_key),
+        ),
+    )
+
+
+def _markup_for_mode(
+    field: str,
+    settings: dict,
+    owner_id: int,
+    mode_key: str,
+    active: bool,
+):
+    if field == "animation":
+        return build_animation_markup(settings, owner_id, mode_key, active)
+    if field == "note":
+        return build_note_markup(settings, owner_id, mode_key, active)
+    return build_default_markup(settings, owner_id, mode_key, active)
 
 
 def make_handler(
@@ -141,64 +179,19 @@ def make_handler(
                     await modes.set(mode_key, await modes.get_previous(mode_key))
                 new_mode = await modes.get(mode_key)
                 if field == "animation":
-                    markup = build_animation_markup(
-                        await animation.get(mode_key),
-                        owner_id,
-                        mode_key,
-                        new_mode == "animation",
-                    )
+                    settings = await animation.get(mode_key)
                 elif field == "note":
-                    markup = build_note_markup(
-                        await note.get(mode_key),
-                        owner_id,
-                        mode_key,
-                        new_mode == "note",
-                    )
+                    settings = await note.get(mode_key)
                 else:
-                    markup = build_default_markup(
-                        await default.get(mode_key),
-                        owner_id,
-                        mode_key,
-                        new_mode == "default",
+                    settings = await default.get(mode_key)
+                await callback.message.edit_reply_markup(
+                    reply_markup=_markup_for_mode(
+                        field, settings, owner_id, mode_key, new_mode == field
                     )
-                await callback.message.edit_reply_markup(reply_markup=markup)
+                )
 
-        elif action == "back_to_animation":
-            await modes.set_last_menu(mode_key, "animation")
-            await callback.message.edit_text(
-                ANIMATION_MSG.format(ANIMATION),
-                reply_markup=build_animation_markup(
-                    await animation.get(mode_key),
-                    owner_id,
-                    mode_key,
-                    await modes.get(mode_key) == "animation",
-                ),
-            )
-
-        elif action == "back_to_default":
-            await modes.set_last_menu(mode_key, "main")
-            await callback.message.edit_text(
-                ANIMATION_MSG.format(DEFAULT),
-                reply_markup=build_default_markup(
-                    await default.get(mode_key),
-                    owner_id,
-                    mode_key,
-                    await modes.get(mode_key) == "default",
-                ),
-            )
-
-        elif action == "back":
-            await modes.set_last_menu(mode_key, "main")
-            await callback.message.edit_text(
-                MODE_MSG,
-                reply_markup=build_mode_markup(
-                    await modes.get(mode_key),
-                    await lang.get(mode_key),
-                    owner_id,
-                    mode_key,
-                    await notif.get(mode_key),
-                ),
-            )
+        elif action in BACK_ACTIONS:
+            await _edit_to_main(callback, owner_id, mode_key, modes, lang, notif)
 
         elif action == "toggle":
             current_mode = await modes.get(mode_key)
@@ -218,7 +211,6 @@ def make_handler(
             )
 
         elif action == "default_menu":
-            await modes.set_last_menu(mode_key, "default")
             await callback.message.edit_text(
                 ANIMATION_MSG.format(DEFAULT),
                 reply_markup=build_default_markup(
@@ -286,7 +278,9 @@ def make_handler(
                 settings["flip_left"] = not settings["flip_left"]
             elif field == "crop_down":
                 settings["crop_align"] = (
-                    "center" if settings.get("crop_align") == "bottom" else "bottom"
+                    "center"
+                    if settings.get("crop_align") == "bottom"
+                    else "bottom"
                 )
             elif field == "crop_up":
                 settings["crop_align"] = (
@@ -307,7 +301,6 @@ def make_handler(
             )
 
         elif action == "lang":
-            await modes.set_last_menu(mode_key, "lang")
             await callback.message.edit_text(
                 LANG_MSG,
                 reply_markup=build_lang_markup(
@@ -327,7 +320,6 @@ def make_handler(
             )
 
         elif action == "animation_menu":
-            await modes.set_last_menu(mode_key, "animation")
             await callback.message.edit_text(
                 ANIMATION_MSG.format(ANIMATION),
                 reply_markup=build_animation_markup(
@@ -339,7 +331,6 @@ def make_handler(
             )
 
         elif action == "note_menu":
-            await modes.set_last_menu(mode_key, "note")
             await callback.message.edit_text(
                 ANIMATION_MSG.format(NOTE),
                 reply_markup=build_note_markup(

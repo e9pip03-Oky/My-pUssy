@@ -1,4 +1,5 @@
 import logging
+from typing import Final
 
 from aiogram import Bot
 from aiogram.types import (
@@ -25,6 +26,25 @@ log = logging.getLogger("voicebot")
 
 def _boot_ids(boot_notice: str) -> list[int]:
     return parse_ids(boot_notice)
+
+
+def _perm_markup(target_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=PERM_ALLOW_BTN,
+                    callback_data=f"perm:allow|{target_id}|0",
+                    style="primary",
+                ),
+                InlineKeyboardButton(
+                    text=PERM_DENY_BTN,
+                    callback_data=f"perm:deny|{target_id}|0",
+                    style="danger",
+                ),
+            ]
+        ]
+    )
 
 
 async def authorize(
@@ -56,27 +76,11 @@ async def _send_requests(message: Message, bot: Bot, boot_notice: str) -> None:
         if notice_id == user.id:
             continue
         try:
-            markup = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text=PERM_ALLOW_BTN,
-                            callback_data=f"perm:allow|{user.id}|0",
-                            style="primary",
-                        ),
-                        InlineKeyboardButton(
-                            text=PERM_DENY_BTN,
-                            callback_data=f"perm:deny|{user.id}|0",
-                            style="danger",
-                        ),
-                    ]
-                ]
-            )
             await bot.send_message(
                 notice_id,
                 text,
                 parse_mode="HTML",
-                reply_markup=markup,
+                reply_markup=_perm_markup(user.id),
             )
         except Exception as exc:
             log.warning("perm request to %s failed: %s", notice_id, exc)
