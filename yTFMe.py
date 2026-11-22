@@ -185,7 +185,7 @@ async def to_note_trim(
     args.extend(["-t", "60", "-vf", ",".join(filters)])
     if settings.get("muted"):
         args.append("-an")
-    args.extend(["-c:v", "libx264", out_path])
+    args.extend(["-c:v", "libx264", "-f", "mp4", out_path])
     return await _run_ffmpeg(*args)
 
 
@@ -215,10 +215,8 @@ async def to_animation(
         "-an",
         "-c:v",
         "libx264",
-        "-pix_fmt",
-        "yuv420p",
     ]
     if filters:
         args.extend(["-vf", ",".join(filters)])
-    args.append(out_path)
+    args.extend(["-f", "mp4", out_path])
     return await _run_ffmpeg(*args)

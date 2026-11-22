@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from typing import Final
 
@@ -48,22 +49,43 @@ def fix_format(text: str) -> str:
     return "".join(result)
 
 
+def _clean_name_part(value: str, allowed_symbols: str) -> str:
+    normalized = re.sub(r"\s+", " ", value.strip())
+    allowed = re.escape(allowed_symbols)
+    cleaned = re.sub(rf"[^\w\s{allowed}]", "", normalized)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def make_name(info: dict) -> str:
-    uploader = info.get("uploader") or info.get("channel") or ""
-    publisher = re.sub(r"[^\w]", "", re.sub(r"\s+", "_", uploader.strip()))
-    title = re.sub(
-        r"\s+",
-        " ",
-        re.sub(r"[^\w\s]", "", (info.get("title") or "").strip()).replace("_", ""),
-    ).strip()
+    publisher = info.get("uploader") or info.get("channel") or ""
+    title = info.get("title") or ""
+    publisher = _clean_name_part(str(publisher), "_")
+    title = _clean_name_part(str(title), "&_")
     publisher = fix_format(publisher)
     title = fix_format(title)
-    name = (
-        f"{publisher} - {title}"
-        if publisher and title
-        else (title or publisher or "audio")
+    name = f"{publisher} - {title}" if publisher and title else title or publisher
+    return fix_format(name[:120].rstrip(" .")) or "media"
+
+
+def make_message_name(message, media=None) -> str:
+    origin = getattr(message, "forward_origin", None)
+    origin_chat = getattr(origin, "chat", None)
+    origin_user = getattr(origin, "sender_user", None)
+    publisher = (
+        getattr(origin, "author_signature", None)
+        or getattr(origin_user, "full_name", None)
+        or getattr(origin_user, "first_name", None)
     )
-    return name[:120].rstrip() or "audio"
+    channel = (
+        getattr(origin_chat, "title", None)
+        or getattr(getattr(message, "forward_from_chat", None), "title", None)
+    )
+    if not channel and getattr(message.chat, "type", None) == "channel":
+        channel = message.chat.title
+    file_name = getattr(media, "file_name", None)
+    file_title = os.path.splitext(file_name)[0] if file_name else ""
+    title = message.caption or file_title
+    return make_name({"uploader": publisher, "channel": channel, "title": title})
 
 
 async def process_translation(text: str, dest: str) -> str | None:

@@ -55,7 +55,9 @@ async def _send_by_mode(
         out_path = os.path.join(workdir, f"{name}_voice.ogg")
         if not await to_voice(in_path, out_path) or not os.path.exists(out_path):
             return False
-        sent = await message.reply_voice(FSInputFile(out_path))
+        sent = await message.reply_voice(
+            FSInputFile(out_path, filename=f"{name}.ogg")
+        )
         if file_cache:
             await file_cache.set(entry_url, mode, sent.voice.file_id, settings)
         return True
@@ -66,7 +68,9 @@ async def _send_by_mode(
         note_settings = await note.get(mode_key)
         if not await to_note_trim(in_path, out_path, note_settings, "0"):
             return False
-        sent = await message.reply_video_note(FSInputFile(out_path))
+        sent = await message.reply_video_note(
+            FSInputFile(out_path, filename=f"{name}.mp4")
+        )
         if file_cache:
             await file_cache.set(
                 entry_url, mode, sent.video_note.file_id, note_settings
@@ -80,7 +84,9 @@ async def _send_by_mode(
             out_path
         ):
             return False
-        sent = await message.reply_animation(FSInputFile(out_path))
+        sent = await message.reply_animation(
+            FSInputFile(out_path, filename=f"{name}.mp4")
+        )
         if file_cache:
             await file_cache.set(entry_url, mode, sent.animation.file_id, settings)
         return True
@@ -94,7 +100,9 @@ async def _send_by_mode(
     doc_name = f"{name}{ext}"
 
     if send_as == "video":
-        sent = await message.reply_video(FSInputFile(in_path))
+        sent = await message.reply_video(
+            FSInputFile(in_path, filename=doc_name)
+        )
         if file_cache and sent.video:
             await file_cache.set(
                 entry_url, mode, sent.video.file_id, cache_settings
@@ -268,7 +276,11 @@ async def process_url(
 
 
 async def handle_admin_logic(
-    message: Message, bot: Bot, mode_key: str, adt: AdtStorage
+    message: Message,
+    bot: Bot,
+    mode_key: str,
+    adt: AdtStorage,
+    new_message_id: int | None = None,
 ) -> bool:
     chat_id = message.chat.id
     if message.chat.type != "private":
@@ -284,6 +296,8 @@ async def handle_admin_logic(
             await bot.delete_message(chat_id, old)
         except Exception:
             pass
+    if new_message_id is not None:
+        old_messages.append(new_message_id)
     await adt.save_messages(mode_key, old_messages)
     return True
 

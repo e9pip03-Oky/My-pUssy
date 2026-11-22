@@ -23,6 +23,9 @@ from cAsh import (
 
 log = logging.getLogger("voicebot")
 
+_SHARED_CLIENTS: dict[str, aioredis.Redis] = {}
+_SHARED_STORAGES: dict[str, RedisStorage] = {}
+
 
 class AnimationSettings(RedisBase):
     DEFAULT = {
@@ -221,15 +224,21 @@ class FileIdCache(RedisBase):
 def _redis_client(url: str | None) -> aioredis.Redis | None:
     if not url:
         return None
-    return aioredis.from_url(url, health_check_interval=48, socket_keepalive=True)
+    if url not in _SHARED_CLIENTS:
+        _SHARED_CLIENTS[url] = aioredis.from_url(
+            url, health_check_interval=48, socket_keepalive=True
+        )
+    return _SHARED_CLIENTS[url]
 
 
 def _storage(url: str | None) -> RedisStorage | None:
-    return (
-        RedisStorage.from_url(url, health_check_interval=48, socket_keepalive=True)
-        if url
-        else None
-    )
+    if not url:
+        return None
+    if url not in _SHARED_STORAGES:
+        _SHARED_STORAGES[url] = RedisStorage.from_url(
+            url, health_check_interval=48, socket_keepalive=True
+        )
+    return _SHARED_STORAGES[url]
 
 
 class _BuildAll:

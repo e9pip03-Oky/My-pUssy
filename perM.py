@@ -1,5 +1,4 @@
 import logging
-from typing import Final
 
 from aiogram import Bot
 from aiogram.types import (
@@ -19,7 +18,7 @@ from Reply import (
     PERM_REQUEST_MSG,
 )
 from bToN import parse_ids
-from cAsh import AllowedStorage, PendingStorage
+from cAsh_Two import AllowedStorage, PendingStorage
 
 log = logging.getLogger("voicebot")
 

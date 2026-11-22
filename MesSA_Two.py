@@ -20,6 +20,7 @@ from Reply import (
 )
 from cAsh import cleanup, file_locks, get_mode_context, safe_delete, user_dir
 from cAsh_Two import AnimationSettings, FileIdCache, NoteSettings
+from TrANs import make_message_name
 from yTFMe import MAX_FILESIZE, to_animation, to_note_trim, to_voice
 
 log = logging.getLogger("voicebot")
@@ -105,6 +106,23 @@ def _wait_text(text: str, source_name: str) -> str:
     return WAIT_VOICE_MSG.format(source_name, VOICE)
 
 
+async def _try_send_cached_media(
+    message: Message,
+    text: str,
+    media_file_id: str,
+    cache_action: str,
+    detail: str,
+    file_cache: FileIdCache,
+) -> bool:
+    cached = await file_cache.get_by_source(media_file_id, cache_action, detail)
+    if not cached:
+        return False
+    if await send_cached(cached, message, text):
+        return True
+    await file_cache.delete_by_source(media_file_id, cache_action, detail)
+    return False
+
+
 async def _convert_and_send(
     message: Message,
     in_path: str,
@@ -114,25 +132,33 @@ async def _convert_and_send(
     mode_key: str,
     source_name: str,
     media_file_id: str,
+    media,
     detail: str,
     animation: AnimationSettings,
     note: NoteSettings,
     file_cache: FileIdCache,
 ) -> None:
     cache_action = f"direct_{text}"
+    reply = message.reply_to_message
 
     if text == ANIMATION:
         out_path = os.path.join(workdir, f"{source_id}_animation.mp4")
         if await to_animation(
             in_path, out_path, await animation.get(mode_key)
         ) and os.path.exists(out_path):
-            await message.reply_animation(FSInputFile(out_path))
+            filename = f"{make_message_name(reply, media)}.mp4"
+            await message.reply_animation(
+                FSInputFile(out_path, filename=filename)
+            )
         else:
             await message.reply(LINK_FAIL_TEXT)
     elif text == NOTE:
         out_path = os.path.join(workdir, f"{source_id}_note.mp4")
         if await to_note_trim(in_path, out_path, await note.get(mode_key), "0"):
-            sent = await message.reply_video_note(FSInputFile(out_path))
+            filename = f"{make_message_name(reply, media)}.mp4"
+            sent = await message.reply_video_note(
+                FSInputFile(out_path, filename=filename)
+            )
             await file_cache.set_by_source(
                 media_file_id, cache_action, detail, sent.video_note.file_id
             )
@@ -141,7 +167,10 @@ async def _convert_and_send(
     else:
         out_path = os.path.join(workdir, f"{source_id}_voice.ogg")
         if await to_voice(in_path, out_path) and os.path.exists(out_path):
-            sent = await message.reply_voice(FSInputFile(out_path))
+            filename = f"{make_message_name(reply, media)}.ogg"
+            sent = await message.reply_voice(
+                FSInputFile(out_path, filename=filename)
+            )
             await file_cache.set_by_source(
                 media_file_id, cache_action, detail, sent.voice.file_id
             )
@@ -186,21 +215,10 @@ async def handle_media_request(
 
     lock = await file_locks.get(f"{user_id}:{text}:{media_file_id}")
     async with lock:
-        if text != ANIMATION:
-            cached = await file_cache.get_by_source(
-                media_file_id, cache_action, detail
-            )
-            if cached:
-                try:
-                    if text == VOICE:
-                        await message.reply_voice(cached)
-                    elif text == NOTE:
-                        await message.reply_video_note(cached)
-                    return True
-                except Exception:
-                    await file_cache.delete_by_source(
-                        media_file_id, cache_action, detail
-                    )
+        if text != ANIMATION and await _try_send_cached_media(
+            message, text, media_file_id, cache_action, detail, file_cache
+        ):
+            return True
 
         wait_message = await message.reply(_wait_text(text, source_name))
         is_private = message.chat.type == "private"
@@ -226,6 +244,7 @@ async def handle_media_request(
                 mode_key,
                 source_name,
                 media_file_id,
+                media,
                 detail,
                 animation,
                 note,

@@ -92,7 +92,7 @@ def make_message_handler(
         ):
             reply = message.reply_to_message
             if reply.voice or reply.video_note or reply.video or reply.animation:
-                await set_edit_state(message, bot)
+                await set_edit_state(message)
                 return
 
         if url_match := URL_RE.search(text):
@@ -126,9 +126,9 @@ def make_message_handler(
                         await notif.get(mode_key),
                     ),
                 )
-                old = await adt.get_messages(mode_key)
-                old.append(sent.message_id)
-                await adt.save_messages(mode_key, old)
+                await handle_admin_logic(
+                    message, bot, mode_key, adt, new_message_id=sent.message_id
+                )
                 return
 
         if await lang.get(mode_key):

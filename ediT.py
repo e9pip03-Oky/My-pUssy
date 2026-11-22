@@ -1,4 +1,3 @@
-import logging
 import mimetypes
 import os
 import re
@@ -9,6 +8,7 @@ from aiogram.types import FSInputFile, Message
 from Reply import EDIT_FAIL_MSG, EDIT_SEPARATOR_MSG, EDIT_START_BIGGER_MSG
 from cAsh import cleanup, safe_delete, user_dir
 from cAsh_Two import FileIdCache
+from TrANs import make_message_name
 from yTFMe import (
     MAX_FILESIZE,
     TrimSpec,
@@ -17,8 +17,6 @@ from yTFMe import (
     trim_video,
     trim_voice,
 )
-
-log = logging.getLogger("voicebot")
 
 _EDIT_STATE: dict[int, dict] = {}
 
@@ -97,7 +95,7 @@ def _parse_range(text: str) -> tuple[str, str] | str:
     return "format"
 
 
-async def set_edit_state(message: Message, bot: Bot) -> None:
+async def set_edit_state(message: Message) -> None:
     reply_message = await message.reply(EDIT_SEPARATOR_MSG)
     _EDIT_STATE[message.from_user.id] = {
         "msg": message.reply_to_message,
@@ -181,7 +179,10 @@ async def handle_pending_edit(
             await message.reply(EDIT_FAIL_MSG)
             return True
 
-        sent = await getattr(message, spec.reply_method)(FSInputFile(out_path))
+        filename = f"{make_message_name(media_message, media)}{ext}"
+        sent = await getattr(message, spec.reply_method)(
+            FSInputFile(out_path, filename=filename)
+        )
         media_obj = getattr(sent, media_type, None)
         if media_obj:
             await file_cache.set_by_source(
